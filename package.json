@@ -1,0 +1,9 @@
+{
+  "name": "okeyhane",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "npm test -w @okeyhane/engine",
+    "simulate": "npm run simulate -w @okeyhane/engine"
+  }
+}
