@@ -133,12 +133,52 @@ on('quick', (m) => {
 });
 on('emote', (m) => {
   world.emote(m.seat, m.key);
+  if (m.seat !== null && m.seat === you.seat) selfFeedback(m.key);
   if (m.smoke) {
     setTimeout(() => world.smokeCloud(), 1400);
     addLog(h('div', { class: 'sys' }, `${nameOf(m.seat)} 💨`));
   }
 });
-on('eye', (m) => world.eye(m.seat, m.key));
+on('eye', (m) => {
+  world.eye(m.seat, m.key);
+  if (m.seat !== null && m.seat === you.seat) eyeFeedback(m.key);
+});
+
+/** Rückmeldung für eigene Aktionen (eigener Körper ist in Ego-Perspektive unsichtbar) */
+function selfFeedback(key: string) {
+  if (key === 'nargile') {
+    sfx.bubble();
+    setTimeout(() => {
+      sfx.exhale();
+      world.selfPuff('smoke');
+    }, 1900);
+  } else if (key === 'tea') {
+    world.selfPuff('steam');
+    setTimeout(() => sfx.sip(), 900);
+  } else if (key === 'slam') {
+    setTimeout(() => {
+      sfx.slam();
+      world.shake(0.3);
+    }, 450);
+  } else if (key === 'tespih') {
+    for (let i = 0; i < 6; i++) setTimeout(() => sfx.tile(), i * 180);
+  }
+  flashLabel(t('e_' + key));
+}
+
+function eyeFeedback(key: string) {
+  const el = h('div', { class: 'eyelids ' + key }, h('div', { class: 'lid top' }), h('div', { class: 'lid bottom' }));
+  document.body.append(el);
+  sfx.wink();
+  setTimeout(() => el.remove(), key === 'blink' ? 1300 : key === 'wide' ? 1500 : 700);
+  flashLabel(t('eye_' + key).replace(/ \(\d\)/, ''));
+}
+
+function flashLabel(text: string) {
+  const el = h('div', { class: 'selfflash' }, text);
+  document.body.append(el);
+  setTimeout(() => el.remove(), 1600);
+}
 on('sfx', (m) => {
   if (m.kind === 'draw') sfx.draw();
   else if (m.kind === 'discard' || m.kind === 'layoff' || m.kind === 'open') sfx.tile();

@@ -547,7 +547,10 @@ export class World {
       const dir = seatPos(s);
       a.root.position.set(dir.x * 1.04, 0.45, dir.z * 1.04);
       facing(a.root, dir.x, dir.z);
-      a.onSmoke = (pos, d, amt) => this.puff(pos, d ? 2 : 10, d, amt ?? 1);
+      a.onSmoke = (pos, d, amt) => {
+        if (s === this.mySeat) return; // eigener Rauch kommt über selfPuff
+        this.puff(pos, d ? 2 : 10, d, amt ?? 1);
+      };
       a.onSlam = () => {
         sfx.slam();
         this.shakeT = 0.25;
@@ -585,6 +588,31 @@ export class World {
         : new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.15 + Math.random() * 0.15, (Math.random() - 0.5) * 0.15);
       this.smoke.push({ s, v, life: 0, max, amount });
     }
+  }
+
+  /** Eigener Rauch/Dampf direkt vor der Kamera (Ego-Perspektive) */
+  selfPuff(kind: 'smoke' | 'steam') {
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const pos = this.camera.position.clone().add(fwd.clone().multiplyScalar(0.42)).add(new THREE.Vector3(0, 0.02, 0));
+    if (kind === 'smoke') {
+      let n = 0;
+      const iv = setInterval(() => {
+        this.puff(pos.clone().add(fwd.clone().multiplyScalar(n * 0.01)), 3, fwd.clone().multiplyScalar(0.35).add(new THREE.Vector3(0, 0.16, 0)), 1.5);
+        if (++n > 14) clearInterval(iv);
+      }, 70);
+    } else {
+      let n = 0;
+      const iv = setInterval(() => {
+        this.puff(pos.clone().add(new THREE.Vector3(0.08, -0.05, 0)), 1, new THREE.Vector3(0, 0.18, 0), 0.7);
+        if (++n > 10) clearInterval(iv);
+      }, 160);
+    }
+  }
+
+  /** Kamera kurz wackeln lassen */
+  shake(t = 0.25) {
+    this.shakeT = t;
   }
 
   /** Großer Rauch über dem Tisch (Taş Çalma) */

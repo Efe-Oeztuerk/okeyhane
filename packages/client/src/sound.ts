@@ -69,6 +69,18 @@ export const sfx = {
     setTimeout(() => click(3400, 0.08, 0.04, 'sine'), 120);
   },
   murmur: () => noise(1.2, 0.05, 500, 'volNpc'),
+  /** Nargile-Blubbern */
+  bubble: () => {
+    for (let i = 0; i < 9; i++)
+      setTimeout(() => {
+        click(140 + Math.random() * 120, 0.09, 0.22, 'sine');
+        noise(0.05, 0.08, 700);
+      }, i * 85 + Math.random() * 30);
+  },
+  /** Ausatmen */
+  exhale: () => noise(1.1, 0.18, 1200),
+  /** kurzes Zwinkern-Geräusch */
+  wink: () => click(1500, 0.05, 0.05, 'sine'),
 };
 
 export function unlockAudio() {
