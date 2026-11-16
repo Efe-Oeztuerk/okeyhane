@@ -322,6 +322,26 @@ export class World {
     placeModel(lokum, 'lokum', 0.45, 'width');
     lokum.position.set(1.75, 1.1, -d / 2 + 0.72);
     this.scene.add(lokum);
+    // Atatürk-Büste auf Sockel unter der Fahne (3D-Druck-Modell: metdiu3dprint)
+    const ped = new THREE.Group();
+    const marble = new THREE.MeshStandardMaterial({ color: '#e9e4da', roughness: 0.35 });
+    const col = new THREE.Mesh(new THREE.BoxGeometry(0.36, 1.05, 0.36), marble);
+    col.position.y = 0.525;
+    col.castShadow = col.receiveShadow = true;
+    const capTop = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.06, 0.44), marble);
+    capTop.position.y = 1.08;
+    const capBot = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.08, 0.44), marble);
+    capBot.position.y = 0.04;
+    ped.add(col, capTop, capBot);
+    const bust = new THREE.Group();
+    bust.position.y = 1.11;
+    placeModel(bust, 'ataturk', 0.5, 'height', {
+      upZ: true,
+      material: new THREE.MeshStandardMaterial({ color: '#8a6a3a', metalness: 0.75, roughness: 0.35 }),
+    });
+    ped.add(bust);
+    ped.position.set(-3.4, 0, -d / 2 + 0.35);
+    this.scene.add(ped);
     // Läufer am Eingang (Sketchfab: mfb64)
     const runner = new THREE.Group();
     placeModel(runner, 'carpet', 2.6, 'width', { layFlat: true });

@@ -35,12 +35,22 @@ export function placeModel(
   name: string,
   size: number,
   fit: 'height' | 'width' = 'height',
-  opts: { layFlat?: boolean } = {},
+  opts: { layFlat?: boolean; upZ?: boolean; material?: THREE.Material } = {},
 ) {
   loadModel(name)
     .then((model) => {
       const wrap = new THREE.Group();
       wrap.add(model);
+      if (opts.upZ) model.rotation.x = -Math.PI / 2; // Z-oben (3D-Druck) -> Y-oben
+      if (opts.material) {
+        model.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.isMesh) {
+            if (!m.geometry.attributes.normal) m.geometry.computeVertexNormals();
+            m.material = opts.material!;
+          }
+        });
+      }
       if (opts.layFlat) {
         const b0 = new THREE.Box3().setFromObject(model);
         const s0 = b0.getSize(new THREE.Vector3());
@@ -66,5 +76,6 @@ export const CREDITS = [
   { what: 'Hookah (Usta)', author: 'QwertModels', url: 'https://sketchfab.com/3d-models/hookah-e14b842465864eada037488b7e4281f2' },
   { what: 'Hookah (Sultan)', author: 'artyrey', url: 'https://sketchfab.com/3d-models/hookah-422820f79eed4502ac419b2fe9875696' },
   { what: 'Turkish Delight Scene', author: 'nur_ay', url: 'https://sketchfab.com/3d-models/turkish-delight-scene-0fb7741c63a442a19b6932a4f8f9fecc' },
+  { what: 'Atatürk Büste', author: 'metdiu3dprint', url: 'https://www.printables.com/' },
   { what: 'Antique Turkish Runner Carpet', author: 'mfb64', url: 'https://sketchfab.com/3d-models/antique-turkish-runner-carpet-8509133148294571a5ac062a6bdf6d98' },
 ];
