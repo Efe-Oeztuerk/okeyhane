@@ -408,7 +408,9 @@ function enterCafe() {
     if (!ids.length) return toast(t('selectMeld'));
     act({ action: 'layoff', meldIndex: index, tileIds: ids });
   };
-  istaka.onDoubleClick = (id) => myTurn('discard') && act({ action: 'discard', tileId: id });
+  istaka.isOverTable = (x, y) => world.isOverTable(x, y);
+  istaka.canDiscard = () => myTurn('discard');
+  world.onFocusChange = () => renderFocusBadge();
   istaka.onDropZone = (zone, id) => {
     if (zone === 'discard') act({ action: 'discard', tileId: id });
     else if (zone === 'finish') act({ action: 'finish', tileId: id });
@@ -469,13 +471,23 @@ function renderAll() {
   renderHint();
 }
 
+function renderFocusBadge() {
+  const el = slot('focus', 'focusbadge');
+  const show = inCafe && world.seated !== null;
+  el.classList.toggle('hidden', !show);
+  el.textContent = world.focus
+    ? (getLang() === 'de' ? '🎯 Blick aufs Brett · Leertaste / daneben klicken = umschauen' : '🎯 Masaya odaklı · Boşluk / boş yere tıkla = etrafa bak')
+    : (getLang() === 'de' ? '👀 Umschauen: Maus ziehen · Leertaste / Tisch anklicken = zurück zum Brett' : '👀 Etrafa bak: fareyi sürükle · Boşluk / masaya tıkla = masaya dön');
+}
+
 function renderHint() {
+  renderFocusBadge();
   const el = slot('hint', 'hint');
   const cross = slot('cross', 'crosshair');
   const walking = world.seated === null;
-  cross.classList.toggle('hidden', !walking);
+  cross.classList.add('hidden');
   el.classList.toggle('hidden', !walking);
-  el.textContent = `${t('clickChair')} · ${t('walkHint')}`;
+  el.textContent = getLang() === 'de' ? 'Maus ziehen: umschauen · WASD: laufen · Stuhl anklicken: hinsetzen' : 'Fareyi sürükle: etrafa bak · WASD: yürü · Sandalyeye tıkla: otur';
 }
 
 function renderLeft() {

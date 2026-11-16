@@ -307,3 +307,21 @@ export function smokeSprite() {
     g.fillRect(0, 0, 128, 128);
   });
 }
+
+export function tvStandby() {
+  return canvasTex(640, 360, (g) => {
+    const gr = g.createLinearGradient(0, 0, 0, 360);
+    gr.addColorStop(0, '#10233f');
+    gr.addColorStop(1, '#05080f');
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 640, 360);
+    g.fillStyle = '#e3b04b';
+    g.font = 'bold 54px Georgia, serif';
+    g.textAlign = 'center';
+    g.fillText('📺 OKEYHANE TV', 320, 160);
+    g.fillStyle = '#b8c4d8';
+    g.font = '26px Inter, sans-serif';
+    g.fillText('Masa sahibi YouTube linki açabilir', 320, 220);
+    g.fillText('Tischbesitzer kann einen YouTube-Link starten', 320, 256);
+  });
+}

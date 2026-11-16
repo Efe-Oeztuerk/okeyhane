@@ -53,7 +53,7 @@ export class World {
   private chairs: THREE.Group[] = [];
   private gameGroup = new THREE.Group();
   private clickables: THREE.Object3D[] = [];
-  private smoke: { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number }[] = [];
+  private smoke: { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number; amount: number }[] = [];
   private smokeTex = D.smokeSprite();
   private npcs: Avatar3D[] = [];
   private cayci!: Avatar3D;
@@ -237,15 +237,18 @@ export class World {
     this.scene.add(clk);
 
     // Fernseher (Nordwand, links)
-    const tvW = 1.6;
-    const tvH = 0.9;
+    const tvW = 2.0;
+    const tvH = 1.125;
     const tvX = -1.2;
     const tvY = 2.25;
     const tvZ = -d / 2 + 0.12;
     const body = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.12, tvH + 0.12, 0.08), new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.4 }));
     body.position.set(tvX, tvY, tvZ - 0.05);
     this.scene.add(body);
-    this.tvScreen = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), new THREE.MeshStandardMaterial({ color: '#0a0a0a', roughness: 0.2, emissive: '#050810' }));
+    this.tvScreen = new THREE.Mesh(
+      new THREE.PlaneGeometry(tvW, tvH),
+      new THREE.MeshBasicMaterial({ map: D.tvStandby() }),
+    );
     this.tvScreen.position.set(tvX, tvY, tvZ - 0.005);
     this.scene.add(this.tvScreen);
     this.tvHole = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, transparent: false, blending: THREE.NoBlending }));
@@ -365,11 +368,15 @@ export class World {
     const top = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 1.2), wood);
     top.position.y = TABLE_Y - 0.03;
     top.castShadow = top.receiveShadow = true;
+    top.userData.table = true;
+    this.tableMeshes.push(top);
     this.scene.add(top);
     const felt = new THREE.Mesh(new THREE.PlaneGeometry(1.08, 1.08), new THREE.MeshStandardMaterial({ map: D.feltTexture(), roughness: 1 }));
     felt.rotation.x = -Math.PI / 2;
     felt.position.y = TABLE_Y - 0.004;
     felt.receiveShadow = true;
+    felt.userData.table = true;
+    this.tableMeshes.push(felt);
     this.scene.add(felt);
     for (const [x, z] of [
       [-0.5, -0.5],
@@ -481,7 +488,7 @@ export class World {
         a.root.position.set(sp.x + side * 0.62, 0.45, sp.z);
         facing(a.root, side, 0);
         a.root.scale.setScalar(1);
-        a.onSmoke = (p) => this.puff(p, 6);
+        a.onSmoke = (p, d, amt) => this.puff(p, d ? 2 : 6, d, amt ?? 0.6);
         this.scene.add(a.root);
         this.npcs.push(a);
       }
@@ -540,7 +547,7 @@ export class World {
       const dir = seatPos(s);
       a.root.position.set(dir.x * 1.04, 0.45, dir.z * 1.04);
       facing(a.root, dir.x, dir.z);
-      a.onSmoke = (pos) => this.puff(pos, 14);
+      a.onSmoke = (pos, d, amt) => this.puff(pos, d ? 2 : 10, d, amt ?? 1);
       a.onSlam = () => {
         sfx.slam();
         this.shakeT = 0.25;
@@ -565,29 +572,46 @@ export class World {
     this.avatars[seat]?.say(text);
   }
 
-  puff(pos: THREE.Vector3, n = 10) {
+  puff(pos: THREE.Vector3, n = 10, dir?: THREE.Vector3, amount = 1) {
     if (!settings.smoke) return;
     for (let i = 0; i < n; i++) {
-      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, transparent: true, depthWrite: false, opacity: 0.6 }));
-      s.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.1, 0, (Math.random() - 0.5) * 0.1));
-      s.scale.setScalar(0.15);
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, transparent: true, depthWrite: false, opacity: 0.6 * amount }));
+      s.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.03, 0, (Math.random() - 0.5) * 0.03));
+      s.scale.setScalar(0.06 + 0.06 * amount);
       this.scene.add(s);
-      const max = 2.5 + Math.random() * 1.5;
-      this.smoke.push({ s, v: new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.15 + Math.random() * 0.15, (Math.random() - 0.5) * 0.15), life: 0, max });
+      const max = (1.6 + Math.random() * 1.2) * (0.6 + amount * 0.5);
+      const v = dir
+        ? dir.clone().add(new THREE.Vector3((Math.random() - 0.5) * 0.08, Math.random() * 0.05, (Math.random() - 0.5) * 0.08))
+        : new THREE.Vector3((Math.random() - 0.5) * 0.15, 0.15 + Math.random() * 0.15, (Math.random() - 0.5) * 0.15);
+      this.smoke.push({ s, v, life: 0, max, amount });
     }
   }
 
   /** Großer Rauch über dem Tisch (Taş Çalma) */
   smokeCloud() {
-    if (!settings.smoke) {
-      return;
-    }
+    if (!settings.smoke) return;
     for (let i = 0; i < 40; i++) {
       this.puff(new THREE.Vector3((Math.random() - 0.5) * 0.8, TABLE_Y + 0.15, (Math.random() - 0.5) * 0.8), 1);
     }
   }
 
   // ------------------------------------------------------------ Kamera / Bewegung
+
+  /** im Sitzen: true = auf das Brett fixiert, false = frei umschauen */
+  focus = true;
+  private seatYaw = 0;
+  private seatPitch = 0;
+  onFocusChange: ((focus: boolean) => void) | null = null;
+
+  setFocus(f: boolean) {
+    if (this.focus === f) return;
+    this.focus = f;
+    if (f) {
+      this.seatYaw = 0;
+      this.seatPitch = 0;
+    }
+    this.onFocusChange?.(f);
+  }
 
   sitAt(seat: number | null) {
     this.seated = seat;
@@ -602,66 +626,113 @@ export class World {
         pos: new THREE.Vector3(dir.x * 1.18, 1.5, dir.z * 1.18),
         look: new THREE.Vector3(dir.x * 0.12, TABLE_Y - 0.12, dir.z * 0.12),
       };
-      document.exitPointerLock?.();
+      this.focus = true;
+      this.seatYaw = 0;
+      this.seatPitch = 0;
+      this.onFocusChange?.(true);
     }
-    // eigenen Avatar ausblenden (Ego-Perspektive)
     this.avatars.forEach((a, s) => a && (a.root.visible = s !== this.mySeat));
   }
 
   private bindInput() {
     const el = this.container;
     addEventListener('keydown', (e) => {
-      if ((e.target as HTMLElement)?.tagName === 'INPUT' || (e.target as HTMLElement)?.tagName === 'TEXTAREA') return;
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
       this.keys.add(e.code);
+      if (e.code === 'Space' && this.seated !== null) {
+        e.preventDefault();
+        this.setFocus(!this.focus);
+      }
     });
     addEventListener('keyup', (e) => this.keys.delete(e.code));
-    el.addEventListener('mousemove', (e) => {
-      if (document.pointerLockElement === el) {
-        this.yaw -= e.movementX * 0.0025;
-        this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch - e.movementY * 0.0025));
-      } else if (this.seated !== null) {
-        // im Sitzen: leicht umschauen mit der Maus
-        const nx = (e.clientX / innerWidth - 0.5) * 2;
-        const ny = (e.clientY / innerHeight - 0.5) * 2;
-        this.seatLook.set(nx, ny);
+    addEventListener('blur', () => this.keys.clear());
+    // Umschauen: Maus gedrückt halten und ziehen (kein Pointer-Lock, UI bleibt klickbar)
+    let down: { x: number; y: number; moved: boolean } | null = null;
+    el.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0 && e.button !== 2) return;
+      down = { x: e.clientX, y: e.clientY, moved: false };
+    });
+    addEventListener('pointermove', (e) => {
+      if (!down || !(e.buttons & 3)) return;
+      const dx = e.clientX - down.x;
+      const dy = e.clientY - down.y;
+      if (!down.moved && Math.hypot(dx, dy) < 5) return;
+      if (!down.moved) {
+        down.moved = true;
+        if (this.seated !== null) this.setFocus(false);
+      }
+      down.x = e.clientX;
+      down.y = e.clientY;
+      const sens = 0.0042;
+      if (this.seated === null) {
+        this.yaw -= dx * sens;
+        this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch - dy * sens));
+      } else {
+        this.seatYaw = Math.max(-2.6, Math.min(2.6, this.seatYaw - dx * sens));
+        this.seatPitch = Math.max(-0.9, Math.min(1.0, this.seatPitch - dy * sens));
       }
     });
-    el.addEventListener('click', (e) => {
-      const hit = this.pick(e);
-      if (this.seated === null) {
-        if (hit?.userData.seat !== undefined) {
-          this.onChair?.(hit.userData.seat);
-          return;
-        }
-        if (document.pointerLockElement !== el) el.requestPointerLock?.();
-        return;
-      }
-      if (!hit) return;
-      if (hit.userData.pile) this.onPile?.();
-      else if (hit.userData.side) this.onSide?.();
-      else if (hit.userData.meld !== undefined) this.onMeld?.(hit.userData.meld);
+    addEventListener('pointerup', (e) => {
+      const d = down;
+      down = null;
+      if (!d || d.moved || e.button !== 0) return;
+      if (!(e.target instanceof Node) || !el.contains(e.target)) return;
+      this.handleClick(e);
+    });
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
+    el.addEventListener('pointermove', (e) => {
+      const r = el.getBoundingClientRect();
+      this.mouseNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     });
   }
-  private seatLook = new THREE.Vector2();
+  private mouseNdc = new THREE.Vector2(0, 0);
 
+  private handleClick(e: PointerEvent) {
+    if (this.seated === null) {
+      const hit = this.pick(e, this.chairs);
+      if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat);
+      return;
+    }
+    const hit = this.pick(e, [...this.clickables, ...this.tableMeshes]);
+    if (!hit) {
+      // daneben geklickt → frei umschauen
+      this.setFocus(false);
+      return;
+    }
+    this.setFocus(true);
+    if (hit.userData.pile) this.onPile?.();
+    else if (hit.userData.side) this.onSide?.();
+    else if (hit.userData.meld !== undefined) this.onMeld?.(hit.userData.meld);
+  }
+
+  private tableMeshes: THREE.Object3D[] = [];
   private raycaster = new THREE.Raycaster();
-  private pick(e: MouseEvent): THREE.Object3D | null {
+  private pick(e: { clientX: number; clientY: number }, targets: THREE.Object3D[]): THREE.Object3D | null {
     const r = this.renderer.domElement.getBoundingClientRect();
-    const locked = document.pointerLockElement === this.container;
-    const ndc = locked ? new THREE.Vector2(0, 0) : new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+    const ndc = new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(ndc, this.camera);
-    const targets = this.seated === null ? this.chairs : this.clickables;
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length) return null;
     let o: THREE.Object3D | null = hits[0].object;
-    while (o && o.userData.seat === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined) o = o.parent;
+    while (o && o.userData.seat === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
     return o;
+  }
+
+  /** Bildschirmpunkt über dem Tisch? (für Drag & Drop-Abwurf) */
+  isOverTable(x: number, y: number) {
+    return !!this.pick({ clientX: x, clientY: y }, [...this.tableMeshes, ...this.clickables]);
   }
 
   // ------------------------------------------------------------ Spielzustand
 
+  private prevDiscards: number[] = [];
+  private flyers: { m: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; spin: number }[] = [];
+
   setGame(v: GameVisual | null) {
     this.visual = v;
+    this.flyers = [];
+    if (!v) this.prevDiscards = [];
     this.gameGroup.clear();
     this.clickables = [];
     if (!v) return;
@@ -759,6 +830,11 @@ export class World {
         m.rotation.z = readRot + (i - shown.length + 1) * 0.08;
         m.position.set(corner.x, TABLE_Y + 0.01 + i * 0.021, corner.z);
         const isTop = i === shown.length - 1;
+        if (isTop && this.prevDiscards[s] !== undefined && pile.length === this.prevDiscards[s] + 1) {
+          const from = seatPos(s).multiplyScalar(0.47);
+          this.flyers.push({ m, from: new THREE.Vector3(from.x, TABLE_Y + 0.09, from.z), to: m.position.clone(), t: 0, spin: (Math.random() - 0.5) * 3 });
+          m.position.copy(this.flyers[this.flyers.length - 1].from);
+        }
         if (isTop && v.mySeat !== null && (s + 1) % 4 === v.mySeat) {
           m.userData.side = true;
           this.clickables.push(m);
@@ -766,6 +842,19 @@ export class World {
         this.gameGroup.add(m);
       });
     }
+
+    this.prevDiscards = v.discards.map((d) => d.length);
+    // Köpfe schauen zum Spieler am Zug
+    this.avatars.forEach((a, s) => {
+      if (!a) return;
+      if (s === v.current) a.lookAtYaw(0);
+      else {
+        const target = seatPos(v.current).multiplyScalar(1.0);
+        target.y = 1.3;
+        const local = a.root.worldToLocal(target.clone());
+        a.lookAtYaw(Math.atan2(local.x, local.z));
+      }
+    });
 
     // 101: Kombinationen auf dem Tisch
     const perOwner = [0, 0, 0, 0];
@@ -821,13 +910,21 @@ export class World {
 
     // Kamera
     if (this.camTarget) {
-      const look = this.camTarget.look.clone();
-      // leichtes Umschauen
-      const dir = seatPos(this.seated!);
-      const side = new THREE.Vector3(-dir.z, 0, dir.x);
-      look.add(side.multiplyScalar(-this.seatLook.x * 0.6)).add(new THREE.Vector3(0, -this.seatLook.y * 0.25 + 0.05, 0));
-      this.camera.position.lerp(this.camTarget.pos, 1 - Math.pow(0.001, dt));
-      this.camLook.lerp(look, 1 - Math.pow(0.001, dt));
+      const pos = this.camTarget.pos;
+      let look: THREE.Vector3;
+      if (this.focus) look = this.camTarget.look.clone();
+      else {
+        // frei umschauen: Richtung = zum Tisch + Drehung
+        const base = this.camTarget.look.clone().sub(pos).normalize();
+        const baseYaw = Math.atan2(base.x, base.z);
+        const basePitch = Math.asin(base.y);
+        const yaw = baseYaw + this.seatYaw;
+        const pitch = Math.max(-1.2, Math.min(1.2, basePitch + this.seatPitch));
+        look = pos.clone().add(new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)));
+      }
+      const kpos = 1 - Math.pow(0.002, dt);
+      this.camera.position.lerp(pos, kpos);
+      this.camLook.lerp(look, 1 - Math.pow(0.0005, dt));
       this.camera.lookAt(this.camLook);
     } else {
       const speed = 2.2 * dt;
@@ -851,7 +948,7 @@ export class World {
       const look = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
       this.camera.lookAt(this.camera.position.clone().add(look));
       // Hover über Stühlen
-      this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+      this.raycaster.setFromCamera(this.mouseNdc, this.camera);
       const hit = this.raycaster.intersectObjects(this.chairs, true)[0];
       const hs = hit && hit.distance < 4 ? hit.object.userData.seat : -1;
       if (hs !== this.hoverChair) {
@@ -869,6 +966,18 @@ export class World {
       this.camera.position.y += Math.sin(t * 90) * 0.004;
     }
 
+    // geworfene Steine fliegen im Bogen auf den Abwurfstapel
+    for (let i = this.flyers.length - 1; i >= 0; i--) {
+      const f = this.flyers[i];
+      f.t = Math.min(1, f.t + dt / 0.38);
+      const e = 1 - Math.pow(1 - f.t, 3);
+      f.m.position.lerpVectors(f.from, f.to, e);
+      f.m.position.y += Math.sin(f.t * Math.PI) * 0.12;
+      if (f.t >= 1) {
+        this.flyers.splice(i, 1);
+        sfx.tile();
+      }
+    }
     this.fan.rotation.y += dt * 2.5;
     if (this.clockHands) {
       const d = new Date();
@@ -888,8 +997,8 @@ export class World {
       p.life += dt;
       p.s.position.addScaledVector(p.v, dt);
       p.v.multiplyScalar(0.995);
-      p.s.scale.setScalar(0.15 + p.life * 0.25);
-      (p.s.material as THREE.SpriteMaterial).opacity = 0.55 * (1 - p.life / p.max);
+      p.s.scale.setScalar((0.06 + 0.06 * p.amount) + p.life * 0.22 * (0.5 + p.amount * 0.5));
+      (p.s.material as THREE.SpriteMaterial).opacity = 0.55 * p.amount * (1 - p.life / p.max) * Math.min(1, p.life * 6);
       if (p.life >= p.max) {
         this.scene.remove(p.s);
         this.smoke.splice(i, 1);

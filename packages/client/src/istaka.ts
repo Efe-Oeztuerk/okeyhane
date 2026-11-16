@@ -18,7 +18,6 @@ export class Istaka {
   private ghost: HTMLElement | null = null;
   private justAdded = new Set<number>();
   onDropZone: ((zone: string, id: number) => void) | null = null;
-  onDoubleClick: ((id: number) => void) | null = null;
   onChange: (() => void) | null = null;
 
   constructor() {
@@ -36,6 +35,7 @@ export class Istaka {
     this.justAdded.clear();
     for (let i = 0; i < SLOTS; i++) if (this.slots[i] !== null && !ids.has(this.slots[i]!)) this.slots[i] = null;
     for (const s of [...this.selected]) if (!ids.has(s)) this.selected.delete(s);
+    for (const f of [...this.flipped]) if (!ids.has(f)) this.flipped.delete(f);
     this.tiles = new Map(hand.map((t) => [t.id, t]));
     const placed = new Set(this.slots.filter((x) => x !== null));
     const fresh = hand.filter((t) => !placed.has(t.id));
@@ -57,6 +57,7 @@ export class Istaka {
   }
 
   clear() {
+    this.flipped.clear();
     this.slots.fill(null);
     this.tiles.clear();
     this.selected.clear();
@@ -67,8 +68,17 @@ export class Istaka {
     sessionStorage.setItem('istaka', JSON.stringify(this.slots));
   }
 
+  /** Umgedrehte Steine (z. B. um den Okey zu verstecken) – nur lokal */
+  flipped = new Set<number>(JSON.parse(sessionStorage.getItem('flipped') || '[]'));
+  /** Liegt der Punkt über dem Tisch? (wird von außen gesetzt) */
+  isOverTable: ((x: number, y: number) => boolean) | null = null;
+  /** Darf gerade abgeworfen werden? */
+  canDiscard: (() => boolean) | null = null;
+  private lastClick = { id: -1, t: 0 };
+
   render() {
     this.persist();
+    sessionStorage.setItem('flipped', JSON.stringify([...this.flipped]));
     this.el.innerHTML = '';
     for (let r = 0; r < 2; r++) {
       const row = h('div', { class: 'rowslots' });
@@ -81,10 +91,10 @@ export class Istaka {
           const tile = this.tiles.get(id);
           if (tile) {
             const te = tileElement(tile, this.okey ?? undefined);
+            if (this.flipped.has(id)) te.classList.add('flipped');
             if (this.selected.has(id)) te.classList.add('sel');
             if (this.justAdded.has(id)) te.classList.add('new');
             te.addEventListener('pointerdown', (e) => this.startDrag(e, id, te));
-            te.addEventListener('dblclick', () => this.onDoubleClick?.(id));
             slot.append(te);
           }
         }
@@ -94,19 +104,48 @@ export class Istaka {
     }
   }
 
+  /** Auswahl ohne kompletten Neuaufbau aktualisieren */
+  private refreshSelection() {
+    this.el.querySelectorAll('.tile').forEach((el) => {
+      const id = Number((el as HTMLElement).dataset.id);
+      el.classList.toggle('sel', this.selected.has(id));
+      el.classList.toggle('flipped', this.flipped.has(id));
+    });
+    sessionStorage.setItem('flipped', JSON.stringify([...this.flipped]));
+  }
+
+  /** Zusammenhängende Gruppe (Peri) um einen Stein */
+  private groupOf(id: number): number[] {
+    const i = this.slots.indexOf(id);
+    const rowStart = Math.floor(i / COLS) * COLS;
+    let a = i;
+    let b = i;
+    while (a > rowStart && this.slots[a - 1] !== null) a--;
+    while (b < rowStart + COLS - 1 && this.slots[b + 1] !== null) b++;
+    return this.slots.slice(a, b + 1) as number[];
+  }
+
   private startDrag(e: PointerEvent, id: number, te: HTMLElement) {
     e.preventDefault();
+    e.stopPropagation();
     const startX = e.clientX;
     const startY = e.clientY;
     let moved = false;
+    // Wird ein markierter Stein gezogen, wandern alle markierten mit
+    const group = this.selected.has(id) && this.selected.size > 1 ? this.orderedSelection() : [id];
     const move = (ev: PointerEvent) => {
       if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) {
         moved = true;
         this.dragId = id;
-        this.ghost = te.cloneNode(true) as HTMLElement;
-        this.ghost.classList.add('dragghost');
+        this.ghost = h('div', { class: 'dragghost', style: { display: 'flex', gap: '3px' } });
+        for (const gid of group) {
+          const src = this.el.querySelector(`.tile[data-id="${gid}"]`) as HTMLElement | null;
+          if (src) {
+            this.ghost.append(src.cloneNode(true));
+            src.classList.add('dragging');
+          }
+        }
         document.body.append(this.ghost);
-        te.classList.add('dragging');
       }
       if (moved && this.ghost) {
         this.ghost.style.left = ev.clientX - 23 + 'px';
@@ -114,6 +153,8 @@ export class Istaka {
         document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
         const target = this.targetAt(ev.clientX, ev.clientY);
         target?.classList.add('over');
+        const overTable = !target && group.length === 1 && this.canDiscard?.() && this.isOverTable?.(ev.clientX, ev.clientY);
+        this.ghost.classList.toggle('throw', !!overTable);
       }
     };
     const up = (ev: PointerEvent) => {
@@ -121,10 +162,29 @@ export class Istaka {
       removeEventListener('pointerup', up);
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
       if (!moved) {
-        // Klick = auswählen
-        if (this.selected.has(id)) this.selected.delete(id);
+        const now = performance.now();
+        if (this.lastClick.id === id && now - this.lastClick.t < 450) {
+          // Doppelklick: Stein umdrehen
+          this.lastClick = { id: -1, t: 0 };
+          if (this.flipped.has(id)) this.flipped.delete(id);
+          else this.flipped.add(id);
+          // der erste Klick hatte ausgewählt → wieder zurücknehmen
+          if (this.selected.has(id)) this.selected.delete(id);
+          else this.selected.add(id);
+          this.refreshSelection();
+          this.onChange?.();
+          sfx.tile();
+          return;
+        }
+        this.lastClick = { id, t: now };
+        if (ev.shiftKey) {
+          // Shift+Klick: ganze Peri auswählen
+          const g = this.groupOf(id);
+          const allSel = g.every((x) => this.selected.has(x));
+          for (const x of g) allSel ? this.selected.delete(x) : this.selected.add(x);
+        } else if (this.selected.has(id)) this.selected.delete(id);
         else this.selected.add(id);
-        this.render();
+        this.refreshSelection();
         this.onChange?.();
         return;
       }
@@ -133,10 +193,14 @@ export class Istaka {
       this.dragId = null;
       const target = this.targetAt(ev.clientX, ev.clientY);
       if (target?.dataset.slot !== undefined) {
-        this.moveTo(id, Number(target.dataset.slot));
+        if (group.length > 1) this.moveGroup(group, Number(target.dataset.slot));
+        else this.moveTo(id, Number(target.dataset.slot));
         sfx.tile();
       } else if (target?.dataset.zone) {
         this.onDropZone?.(target.dataset.zone, id);
+      } else if (group.length === 1 && this.canDiscard?.() && this.isOverTable?.(ev.clientX, ev.clientY)) {
+        // auf den Tisch geworfen = abwerfen
+        this.onDropZone?.('discard', id);
       }
       this.render();
     };
@@ -144,10 +208,43 @@ export class Istaka {
     addEventListener('pointerup', up);
   }
 
+  private orderedSelection(): number[] {
+    return this.slots.filter((x): x is number => x !== null && this.selected.has(x));
+  }
+
+  /** Mehrere Steine zusammen an eine Stelle legen (Reihenfolge bleibt) */
+  private moveGroup(ids: number[], target: number) {
+    const n = ids.length;
+    for (let i = 0; i < SLOTS; i++) if (this.slots[i] !== null && ids.includes(this.slots[i]!)) this.slots[i] = null;
+    const rowStart = Math.floor(target / COLS) * COLS;
+    let start = Math.min(target, rowStart + COLS - n);
+    if (start < rowStart) start = rowStart;
+    const displaced: number[] = [];
+    for (let k = 0; k < n && start + k < SLOTS; k++) {
+      const cur = this.slots[start + k];
+      if (cur !== null) displaced.push(cur);
+      this.slots[start + k] = ids[k];
+    }
+    // Verdrängte Steine: nächster freier Platz (gleiche Reihe zuerst)
+    for (const d of displaced) {
+      let best = -1;
+      let bestDist = Infinity;
+      for (let i = 0; i < SLOTS; i++) {
+        if (this.slots[i] !== null) continue;
+        const dist = Math.abs(i - start) + (Math.floor(i / COLS) === Math.floor(start / COLS) ? 0 : 50);
+        if (dist < bestDist) {
+          bestDist = dist;
+          best = i;
+        }
+      }
+      if (best >= 0) this.slots[best] = d;
+    }
+  }
+
   private targetAt(x: number, y: number): HTMLElement | null {
     const els = document.elementsFromPoint(x, y) as HTMLElement[];
     for (const el of els) {
-      if (el.classList.contains('dragghost')) continue;
+      if (el.closest('.dragghost')) continue;
       const slot = el.closest('.slot') as HTMLElement | null;
       if (slot && this.el.contains(slot)) return slot;
       const zone = el.closest('.zone') as HTMLElement | null;
