@@ -1,10 +1,14 @@
 // Detaillierte Requisiten (selbst modelliert, gehören komplett zum Spiel)
 
 import * as THREE from 'three';
+import { placeModel } from './models.ts';
 
-export type ShishaStyle = 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black';
+export type ShishaStyle = 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black' | 'saray' | 'usta' | 'sultan';
 
-export const SHISHA_STYLES: Record<ShishaStyle, { glass: string; metal: string; metalness: number; water: string; label: string }> = {
+/** Premium-Nargiles aus Sketchfab-Modellen */
+export const MODEL_SHISHAS: Partial<Record<ShishaStyle, string>> = { saray: 'hookah_nick', usta: 'hookah_qwert', sultan: 'hookah_artyrey' };
+
+export const SHISHA_STYLES: Record<'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black', { glass: string; metal: string; metalness: number; water: string; label: string }> = {
   classic: { glass: '#2a6a8a', metal: '#b08a3a', metalness: 0.75, water: '#5a9ab8', label: 'Klasik' },
   gold: { glass: '#c9a04a', metal: '#e8c45a', metalness: 0.95, water: '#e8d08a', label: 'Altın · Gold' },
   crystal: { glass: '#cfe8f2', metal: '#c8ccd2', metalness: 0.95, water: '#a8d8ea', label: 'Kristal' },
@@ -18,7 +22,14 @@ const lathe = (pts: [number, number][], m: THREE.Material, seg = 32) =>
 
 /** Nargile ohne Schlauch, ca. 0,82 m hoch. Ursprung = Boden. */
 export function makeShisha(style: ShishaStyle = 'classic'): THREE.Group {
-  const s = SHISHA_STYLES[style] ?? SHISHA_STYLES.classic;
+  const modelName = MODEL_SHISHAS[style];
+  if (modelName) {
+    const g = new THREE.Group();
+    placeModel(g, modelName, 0.85, 'height');
+    g.userData.isShisha = true;
+    return g;
+  }
+  const s = SHISHA_STYLES[style as keyof typeof SHISHA_STYLES] ?? SHISHA_STYLES.classic;
   const g = new THREE.Group();
   const glass = new THREE.MeshPhysicalMaterial({
     color: s.glass,

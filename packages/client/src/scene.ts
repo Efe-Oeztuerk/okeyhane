@@ -10,6 +10,7 @@ import * as D from './decor.ts';
 import { settings, onSettings } from './settings.ts';
 import { sfx } from './sound.ts';
 import { makeShisha, animateShisha, type ShishaStyle } from './props.ts';
+import { placeModel } from './models.ts';
 
 const TABLE_Y = 0.74;
 const FLAT = 1.7;
@@ -316,6 +317,16 @@ export class World {
     glass.position.set(0, 1.55, d / 2 - 0.07);
     glass.rotation.y = Math.PI;
     this.scene.add(glass);
+    // Lokum-Teller auf der Theke (Sketchfab: nur_ay)
+    const lokum = new THREE.Group();
+    placeModel(lokum, 'lokum', 0.45, 'width');
+    lokum.position.set(1.75, 1.1, -d / 2 + 0.72);
+    this.scene.add(lokum);
+    // Läufer am Eingang (Sketchfab: mfb64)
+    const runner = new THREE.Group();
+    placeModel(runner, 'carpet', 2.6, 'width', { layFlat: true });
+    runner.position.set(0, 0.006, 2.95);
+    this.scene.add(runner);
     // Nargile am Rand
     for (const [x, z, st] of [
       [1.6, 1.2, 'ruby'],

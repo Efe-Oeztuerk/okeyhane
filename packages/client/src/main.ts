@@ -14,6 +14,7 @@ import { Voice } from './voice.ts';
 import { sfx, unlockAudio } from './sound.ts';
 import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, type Profile } from './settings.ts';
 import { tileElement } from './tileArt.ts';
+import { CREDITS } from './models.ts';
 
 // ------------------------------------------------------------------ Zustand
 
@@ -301,6 +302,7 @@ function showMenu() {
         h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, codeInput, h('label', { class: 'row', style: { gap: '4px' } }, specBox, t('spectate')), h('button', { onclick: () => go({ type: 'joinTable', code: codeInput.value, spectate: specBox.checked }) }, t('join'))),
         h('button', { onclick: () => go({ type: 'findPublic' }) }, '🎲 ' + t('randomTable')),
         h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, h('button', { class: 'ghost', onclick: () => openStats() }, '📊 ' + t('stats')), h('button', { class: 'ghost', onclick: () => openSettings() }, '⚙️ ' + t('settings'))),
+        h('button', { class: 'ghost small', onclick: () => openCredits() }, '© Credits'),
       ),
     ),
   );
@@ -321,6 +323,15 @@ function openStats() {
   modal(
     h('h2', {}, t('stats') + ' · ' + (profile.name || '')),
     h('table', { style: { width: '100%' } }, h('tr', {}, h('th', {}, t('mode')), h('th', {}, t('wins')), h('th', {}, t('losses'))), rows),
+  );
+}
+
+function openCredits() {
+  modal(
+    h('h2', {}, '© Credits'),
+    h('div', { class: 'muted', style: { marginBottom: '8px' } }, '3D-Modelle unter CC BY 4.0 (creativecommons.org/licenses/by/4.0):'),
+    h('ul', {}, CREDITS.map((c) => h('li', {}, h('a', { href: c.url, target: '_blank', rel: 'noopener', style: { color: '#e3b04b' } }, c.what), ' – ', c.author))),
+    h('div', { class: 'muted' }, 'Größe/Detailgrad für das Spiel angepasst. Alles andere: Okeyhane.'),
   );
 }
 

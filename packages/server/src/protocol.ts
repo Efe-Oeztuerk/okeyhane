@@ -15,7 +15,7 @@ export interface Avatar {
   accessory: 'none' | 'tespih' | 'cigar' | 'toothpick';
   jewelry: 'none' | 'chain' | 'ring' | 'watch';
   /** eigene Nargile neben dem Stuhl */
-  shisha?: 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black';
+  shisha?: 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black' | 'saray' | 'usta' | 'sultan';
 }
 
 export interface PlayerInfo {

@@ -555,6 +555,7 @@ const MIME: Record<string, string> = {
   '.png': 'image/png',
   '.json': 'application/json',
   '.woff2': 'font/woff2',
+  '.glb': 'model/gltf-binary',
 };
 
 const server = http.createServer((req, res) => {
