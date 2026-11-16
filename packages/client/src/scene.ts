@@ -9,6 +9,7 @@ import { tileMesh } from './tileArt.ts';
 import * as D from './decor.ts';
 import { settings, onSettings } from './settings.ts';
 import { sfx } from './sound.ts';
+import { makeShisha, animateShisha, type ShishaStyle } from './props.ts';
 
 const TABLE_Y = 0.74;
 const FLAT = 1.7;
@@ -316,8 +317,17 @@ export class World {
     glass.rotation.y = Math.PI;
     this.scene.add(glass);
     // Nargile am Rand
-    this.scene.add(this.nargile(1.6, 0, 1.2));
-    this.scene.add(this.nargile(-3.6, 0, -0.6));
+    for (const [x, z, st] of [
+      [1.6, 1.2, 'ruby'],
+      [-3.6, -0.6, 'classic'],
+      [3.9, 2.0, 'emerald'],
+    ] as [number, number, ShishaStyle][]) {
+      const sh = makeShisha(st);
+      sh.position.set(x, 0, z);
+      sh.rotation.y = x;
+      this.scene.add(sh);
+      this.decoShishas.push(sh);
+    }
   }
 
   private semaver(x: number, y: number, z: number) {
@@ -542,6 +552,8 @@ export class World {
       const old = this.avatars[s];
       if (old) this.scene.remove(old.root);
       this.avatars[s] = null;
+      if (this.seatShishas[s]) this.scene.remove(this.seatShishas[s]!);
+      this.seatShishas[s] = null;
       if (!p) continue;
       const a = new Avatar3D(p.avatar, p.name);
       const dir = seatPos(s);
@@ -558,10 +570,20 @@ export class World {
       a.root.visible = s !== mySeat;
       this.scene.add(a.root);
       this.avatars[s] = a;
+      // eigene Nargile neben dem Stuhl (Seite des Schlauchs)
+      a.root.updateMatrixWorld(true);
+      const sh = makeShisha((p.avatar.shisha as ShishaStyle) ?? 'classic');
+      const wp = a.root.localToWorld(new THREE.Vector3(0.5, -0.45, 0.02));
+      sh.position.copy(wp);
+      sh.rotation.y = a.root.rotation.y + Math.PI / 2;
+      this.scene.add(sh);
+      this.seatShishas[s] = sh;
     }
   }
 
   private shakeT = 0;
+  private decoShishas: THREE.Group[] = [];
+  private seatShishas: (THREE.Group | null)[] = [null, null, null, null];
 
   emote(seat: number, key: string) {
     this.avatars[seat]?.emote(key);
@@ -1032,9 +1054,10 @@ export class World {
         this.smoke.splice(i, 1);
       }
     }
-    if (settings.smoke && Math.random() < dt * 0.4) {
-      this.puff(new THREE.Vector3(1.6, 0.95, 1.2), 1);
-      this.puff(new THREE.Vector3(-3.6, 0.95, -0.6), 1);
+    for (const sh of [...this.decoShishas, ...this.seatShishas]) {
+      if (!sh) continue;
+      animateShisha(sh, t);
+      if (settings.smoke && Math.random() < dt * 0.25) this.puff(sh.position.clone().add(new THREE.Vector3(0, 0.84, 0)), 1, new THREE.Vector3(0, 0.12, 0), 0.5);
     }
     if (Math.random() < dt * 0.02) this.applyTimeOfDay();
 
@@ -1100,10 +1123,13 @@ export class World {
     dl.position.set(1, 2, 2);
     scene.add(dl);
     const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 10);
-    cam.position.set(0, 1.0, 2.2);
-    cam.lookAt(0, 0.75, 0);
+    cam.position.set(0.18, 0.85, 2.5);
+    cam.lookAt(0.18, 0.6, 0);
     let a = new Avatar3D(spec, name);
     scene.add(a.root);
+    let sh = makeShisha((spec.shisha as ShishaStyle) ?? 'classic');
+    sh.position.set(0.62, -0.45, 0.05);
+    scene.add(sh);
     container.append(r.domElement);
     let rot = 0.4;
     let running = true;
@@ -1129,6 +1155,10 @@ export class World {
         scene.remove(a.root);
         a = new Avatar3D(s, n);
         scene.add(a.root);
+        scene.remove(sh);
+        sh = makeShisha((s.shisha as ShishaStyle) ?? 'classic');
+        sh.position.set(0.62, -0.45, 0.05);
+        scene.add(sh);
       },
       emote(k: string) {
         a.emote(k);

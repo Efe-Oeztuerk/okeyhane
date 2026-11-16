@@ -17,6 +17,7 @@ const OPTIONS: { key: keyof Avatar; values: string[]; labels: Record<string, str
   { key: 'glasses', values: ['none', 'reading', 'sun'], labels: { none: 'Yok · Keine', reading: 'Okuma · Lesebrille', sun: 'Güneş · Sonnenbrille' } },
   { key: 'accessory', values: ['none', 'tespih', 'cigar', 'toothpick'], labels: { none: 'Yok · Nichts', tespih: 'Tespih', cigar: 'Puro · Zigarre', toothpick: 'Kürdan · Zahnstocher' } },
   { key: 'jewelry', values: ['none', 'chain', 'ring', 'watch'], labels: { none: 'Yok · Nichts', chain: 'Kolye · Kette', ring: 'Yüzük · Ring', watch: 'Saat · Uhr' } },
+  { key: 'shisha', values: ['classic', 'gold', 'crystal', 'ruby', 'emerald', 'black'], labels: { classic: 'Klasik', gold: 'Altın · Gold', crystal: 'Kristal', ruby: 'Yakut · Rubin', emerald: 'Zümrüt · Smaragd', black: 'Siyah · Schwarz' } },
 ];
 const SKINS = ['#f3d2b3', '#e8b991', '#d9a77c', '#c48a5c', '#a26e4a', '#7a4f32', '#5a3a24'];
 const HAIR = ['#1a1a1a', '#2b1d14', '#4a3020', '#7a5a3a', '#a8a8a8', '#e0e0e0', '#b5651d'];

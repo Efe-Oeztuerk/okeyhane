@@ -1,6 +1,7 @@
 // Testseite für Charaktere (nicht im Spiel verlinkt): /lab.html#emote=tea&p=0.5&view=front
 import * as THREE from 'three';
 import { Avatar3D } from './avatar.ts';
+import { makeShisha } from './props.ts';
 import type { Avatar } from '../../server/src/protocol.ts';
 
 const q = new URLSearchParams(location.hash.slice(1));
@@ -35,6 +36,16 @@ else if (view === 'side') cam.position.set(3.4, 1.0, 1.2);
 else if (view === 'close') cam.position.set(Number(q.get('x') ?? 0), 0.95, 1.1);
 cam.lookAt(view === 'close' ? Number(q.get('x') ?? 0) : 0, 0.8, 0);
 if (q.get('emote')) for (const a of avatars) a.update(0, true);
+if (q.get('shisha')) {
+  ['classic', 'gold', 'crystal', 'ruby', 'emerald', 'black'].forEach((st, i) => {
+    const sh = makeShisha(st as any);
+    sh.position.set((i - 2.5) * 0.45, -0.1, 0.6);
+    scene.add(sh);
+  });
+  for (const a of avatars) a.root.visible = false;
+  cam.position.set(0, 0.7, 2.6);
+  cam.lookAt(0, 0.35, 0.6);
+}
 (window as any).__ready = true;
 r.setAnimationLoop(() => {
   if (!q.get('emote')) for (const a of avatars) a.update(0.016);

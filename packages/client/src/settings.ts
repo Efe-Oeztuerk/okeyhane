@@ -59,6 +59,7 @@ export const defaultAvatar: Avatar = {
   glasses: 'none',
   accessory: 'tespih',
   jewelry: 'none',
+  shisha: 'classic',
 };
 
 export interface Profile {

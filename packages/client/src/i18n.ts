@@ -148,6 +148,7 @@ const dict = {
     char_glasses: 'Gözlük',
     char_accessory: 'Aksesuar',
     char_jewelry: 'Takı',
+    char_shisha: 'Nargilen',
   },
   de: {
     title: 'Okeyhane',
@@ -294,6 +295,7 @@ const dict = {
     char_glasses: 'Brille',
     char_accessory: 'Zubehör',
     char_jewelry: 'Schmuck',
+    char_shisha: 'Deine Nargile',
   },
 } as const;
 
