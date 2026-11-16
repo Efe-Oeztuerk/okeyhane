@@ -85,6 +85,11 @@ export class World {
   onSide: (() => void) | null = null;
   onMeld: ((index: number) => void) | null = null;
   private hoverChair = -1;
+  private boardHover = false;
+  /** wird gerade ein Stuhl angeschaut? */
+  get lookingAtChair() {
+    return this.hoverChair;
+  }
   private visual: GameVisual | null = null;
 
   constructor(private container: HTMLElement) {
@@ -690,7 +695,8 @@ export class World {
     if (f) {
       this.seatYaw = 0;
       this.seatPitch = 0;
-    }
+      this.stopLook();
+    } else this.startLook();
     this.onFocusChange?.(f);
   }
 
@@ -710,81 +716,121 @@ export class World {
       this.focus = true;
       this.seatYaw = 0;
       this.seatPitch = 0;
+      this.stopLook();
       this.onFocusChange?.(true);
     }
     this.avatars.forEach((a, s) => a && (a.root.visible = s !== this.mySeat));
   }
 
+  /** Maus steuert die Kamera (Pointer-Lock) */
+  isLooking() {
+    return document.pointerLockElement === this.container;
+  }
+  onLookChange: ((looking: boolean) => void) | null = null;
+
+  private startLook() {
+    if (this.isLooking()) return;
+    try {
+      const r = this.container.requestPointerLock?.() as unknown as Promise<void> | undefined;
+      r?.catch?.(() => {});
+    } catch {}
+  }
+  private stopLook() {
+    if (this.isLooking()) document.exitPointerLock?.();
+  }
+
   private bindInput() {
     const el = this.container;
-    addEventListener('keydown', (e) => {
+    const typing = (e: Event) => {
       const tag = (e.target as HTMLElement)?.tagName;
-      if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT';
+    };
+    addEventListener('keydown', (e) => {
+      if (typing(e)) return;
       this.keys.add(e.code);
-      if (e.code === 'Space' && this.seated !== null) {
+      if (e.code === settings.keys.look && this.seated !== null) {
         e.preventDefault();
+        (document.activeElement as HTMLElement)?.blur?.();
         this.setFocus(!this.focus);
       }
+      if (e.code === settings.keys.zoom) this.zooming = true;
     });
-    addEventListener('keyup', (e) => this.keys.delete(e.code));
-    addEventListener('blur', () => this.keys.clear());
-    // Umschauen: Maus gedrückt halten und ziehen (kein Pointer-Lock, UI bleibt klickbar)
-    let down: { x: number; y: number; moved: boolean } | null = null;
-    el.addEventListener('pointerdown', (e) => {
-      if (e.button !== 0 && e.button !== 2) return;
-      down = { x: e.clientX, y: e.clientY, moved: false };
+    addEventListener('keyup', (e) => {
+      this.keys.delete(e.code);
+      if (e.code === settings.keys.zoom) this.zooming = false;
     });
-    addEventListener('pointermove', (e) => {
-      if (!down || !(e.buttons & 3)) return;
-      const dx = e.clientX - down.x;
-      const dy = e.clientY - down.y;
-      if (!down.moved && Math.hypot(dx, dy) < 5) return;
-      if (!down.moved) {
-        down.moved = true;
-        if (this.seated !== null) this.setFocus(false);
+    addEventListener('blur', () => {
+      this.keys.clear();
+      this.zooming = false;
+    });
+    document.addEventListener('pointerlockchange', () => {
+      const looking = this.isLooking();
+      // Esc beim Umschauen im Sitzen → zurück aufs Brett
+      if (!looking && this.seated !== null && !this.focus) {
+        this.focus = true;
+        this.seatYaw = 0;
+        this.seatPitch = 0;
+        this.onFocusChange?.(true);
       }
-      down.x = e.clientX;
-      down.y = e.clientY;
-      const sens = 0.0042;
-      if (this.seated === null) {
-        this.yaw -= dx * sens;
-        this.pitch = Math.max(-1.2, Math.min(1.2, this.pitch - dy * sens));
-      } else {
-        this.seatYaw = Math.max(-2.6, Math.min(2.6, this.seatYaw - dx * sens));
-        this.seatPitch = Math.max(-0.9, Math.min(1.0, this.seatPitch - dy * sens));
-      }
+      this.onLookChange?.(looking);
     });
-    addEventListener('pointerup', (e) => {
-      const d = down;
-      down = null;
-      if (!d || d.moved || e.button !== 0) return;
-      if (!(e.target instanceof Node) || !el.contains(e.target)) return;
-      this.handleClick(e);
-    });
-    el.addEventListener('contextmenu', (e) => e.preventDefault());
-    el.addEventListener('pointermove', (e) => {
+    el.addEventListener('mousemove', (e) => {
       const r = el.getBoundingClientRect();
       this.mouseNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      if (!this.isLooking()) return;
+      const sens = 0.0022 * (this.zooming ? 0.45 : 1);
+      if (this.seated === null) {
+        this.yaw -= e.movementX * sens;
+        this.pitch = Math.max(-1.3, Math.min(1.3, this.pitch - e.movementY * sens));
+      } else if (!this.focus) {
+        this.seatYaw = Math.max(-2.7, Math.min(2.7, this.seatYaw - e.movementX * sens));
+        this.seatPitch = Math.max(-1.0, Math.min(1.1, this.seatPitch - e.movementY * sens));
+      }
     });
+    el.addEventListener('click', (e) => this.handleClick(e));
+    el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
   private mouseNdc = new THREE.Vector2(0, 0);
+  private zooming = false;
 
-  private handleClick(e: PointerEvent) {
+  /** Ray aus der Bildmitte (beim Umschauen) oder vom Mauszeiger */
+  private rayNdc() {
+    return this.isLooking() ? new THREE.Vector2(0, 0) : this.mouseNdc;
+  }
+
+  private handleClick(e: MouseEvent) {
     if (this.seated === null) {
-      const hit = this.pick(e, this.chairs);
+      if (!this.isLooking()) {
+        this.startLook();
+        return;
+      }
+      const hit = this.pickNdc(new THREE.Vector2(0, 0), this.chairs);
       if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat);
+      return;
+    }
+    if (!this.focus) {
+      // Umschauen: Brett anvisieren und klicken → zurück zum Brett
+      const hit = this.pickNdc(new THREE.Vector2(0, 0), [...this.clickables, ...this.tableMeshes]);
+      if (hit) this.setFocus(true);
       return;
     }
     const hit = this.pick(e, [...this.clickables, ...this.tableMeshes]);
     if (!hit) {
-      // daneben geklickt → frei umschauen
       this.setFocus(false);
       return;
     }
-    this.setFocus(true);
     if (hit.userData.pile) this.onPile?.();
     else if (hit.userData.side) this.onSide?.();
     else if (hit.userData.meld !== undefined) this.onMeld?.(hit.userData.meld);
+  }
+
+  private pickNdc(ndc: THREE.Vector2, targets: THREE.Object3D[]): THREE.Object3D | null {
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hits = this.raycaster.intersectObjects(targets, true);
+    if (!hits.length || hits[0].distance > 5) return null;
+    let o: THREE.Object3D | null = hits[0].object;
+    while (o && o.userData.seat === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
+    return o;
   }
 
   private tableMeshes: THREE.Object3D[] = [];
@@ -1011,10 +1057,11 @@ export class World {
       const speed = 2.2 * dt;
       const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
       const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-      if (this.keys.has('KeyW') || this.keys.has('ArrowUp')) this.walkPos.addScaledVector(fwd, speed);
-      if (this.keys.has('KeyS') || this.keys.has('ArrowDown')) this.walkPos.addScaledVector(fwd, -speed);
-      if (this.keys.has('KeyA') || this.keys.has('ArrowLeft')) this.walkPos.addScaledVector(right, -speed);
-      if (this.keys.has('KeyD') || this.keys.has('ArrowRight')) this.walkPos.addScaledVector(right, speed);
+      const K = settings.keys;
+      if (this.keys.has(K.forward) || this.keys.has('ArrowUp')) this.walkPos.addScaledVector(fwd, speed);
+      if (this.keys.has(K.back) || this.keys.has('ArrowDown')) this.walkPos.addScaledVector(fwd, -speed);
+      if (this.keys.has(K.left) || this.keys.has('ArrowLeft')) this.walkPos.addScaledVector(right, -speed);
+      if (this.keys.has(K.right) || this.keys.has('ArrowRight')) this.walkPos.addScaledVector(right, speed);
       // Grenzen + Tisch
       this.walkPos.x = Math.max(-ROOM.w / 2 + 0.4, Math.min(ROOM.w / 2 - 0.4, this.walkPos.x));
       this.walkPos.z = Math.max(-ROOM.d / 2 + 1.2, Math.min(ROOM.d / 2 - 0.4, this.walkPos.z));
@@ -1029,7 +1076,7 @@ export class World {
       const look = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
       this.camera.lookAt(this.camera.position.clone().add(look));
       // Hover über Stühlen
-      this.raycaster.setFromCamera(this.mouseNdc, this.camera);
+      this.raycaster.setFromCamera(this.rayNdc(), this.camera);
       const hit = this.raycaster.intersectObjects(this.chairs, true)[0];
       const hs = hit && hit.distance < 4 ? hit.object.userData.seat : -1;
       if (hs !== this.hoverChair) {
@@ -1041,6 +1088,22 @@ export class World {
           }),
         );
       }
+    }
+    // Brett leuchtet, wenn man es beim Umschauen anvisiert
+    let boardHover = false;
+    if (this.seated !== null && !this.focus) boardHover = !!this.pickNdc(new THREE.Vector2(0, 0), [...this.tableMeshes, ...this.clickables]);
+    if (boardHover !== this.boardHover) {
+      this.boardHover = boardHover;
+      for (const m of this.tableMeshes) {
+        const mm = (m as THREE.Mesh).material as THREE.MeshStandardMaterial;
+        mm.emissive?.set(boardHover ? '#3a2a00' : '#000000');
+      }
+    }
+    // Zoom
+    const fov = this.zooming ? 30 : 62;
+    if (Math.abs(this.camera.fov - fov) > 0.05) {
+      this.camera.fov += (fov - this.camera.fov) * (1 - Math.pow(0.0001, dt));
+      this.camera.updateProjectionMatrix();
     }
     if (this.shakeT > 0) {
       this.shakeT -= dt;

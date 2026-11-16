@@ -16,6 +16,43 @@ export interface Settings {
   musicMode: 'table' | 'off' | 'own';
   ownMusicUrl: string;
   pushToTalk: boolean;
+  keys: KeyBinds;
+}
+
+export interface KeyBinds {
+  forward: string;
+  back: string;
+  left: string;
+  right: string;
+  look: string;
+  zoom: string;
+  ptt: string;
+  wink: string;
+  blink: string;
+  wide: string;
+  sheet: string;
+}
+
+export const defaultKeys: KeyBinds = {
+  forward: 'KeyW',
+  back: 'KeyS',
+  left: 'KeyA',
+  right: 'KeyD',
+  look: 'Space',
+  zoom: 'KeyC',
+  ptt: 'KeyV',
+  wink: 'Digit1',
+  blink: 'Digit2',
+  wide: 'Digit3',
+  sheet: 'KeyY',
+};
+
+/** Lesbarer Name einer Taste */
+export function keyLabel(code: string) {
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  const map: Record<string, string> = { Space: 'Leertaste', ShiftLeft: 'Shift', ControlLeft: 'Strg', AltLeft: 'Alt', Tab: 'Tab', CapsLock: 'Caps', Backquote: '^' };
+  return map[code] ?? code;
 }
 
 const defaults: Settings = {
@@ -32,9 +69,11 @@ const defaults: Settings = {
   musicMode: 'table',
   ownMusicUrl: '',
   pushToTalk: false,
+  keys: { ...defaultKeys },
 };
 
-export const settings: Settings = { ...defaults, ...JSON.parse(localStorage.getItem('settings') || '{}') };
+const stored = JSON.parse(localStorage.getItem('settings') || '{}');
+export const settings: Settings = { ...defaults, ...stored, keys: { ...defaultKeys, ...(stored.keys ?? {}) } };
 const listeners = new Set<() => void>();
 
 export function saveSettings() {

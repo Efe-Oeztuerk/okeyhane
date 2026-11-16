@@ -12,7 +12,7 @@ import { openEditor } from './editor.ts';
 import { MediaPlayer, parseYouTube } from './media.ts';
 import { Voice } from './voice.ts';
 import { sfx, unlockAudio } from './sound.ts';
-import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, type Profile } from './settings.ts';
+import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
 import { CREDITS } from './models.ts';
 
@@ -404,6 +404,7 @@ function openSettings() {
         ['evening', '🌇'],
         ['night', '🌙'],
       ]),
+      keybindSection(),
       h(
         'label',
         {},
@@ -417,6 +418,49 @@ function openSettings() {
       ),
     ),
   );
+}
+
+function keybindSection() {
+  const de = getLang() === 'de';
+  const names: Record<keyof KeyBinds, string> = {
+    forward: de ? 'Vorwärts' : 'İleri',
+    back: de ? 'Rückwärts' : 'Geri',
+    left: de ? 'Links' : 'Sol',
+    right: de ? 'Rechts' : 'Sağ',
+    look: de ? 'Umschauen / Brett' : 'Etrafa bak / Masa',
+    zoom: de ? 'Zoom (halten)' : 'Yakınlaştır (basılı)',
+    ptt: de ? 'Push-to-Talk' : 'Bas-konuş',
+    wink: t('eye_wink').replace(/ \(\d\)/, ''),
+    blink: t('eye_blink').replace(/ \(\d\)/, ''),
+    wide: t('eye_wide').replace(/ \(\d\)/, ''),
+    sheet: t('sheet'),
+  };
+  const box = h('div', { class: 'col', style: { margin: '10px 0', gap: '4px' } }, h('b', {}, de ? '⌨️ Tastenbelegung' : '⌨️ Tuş ayarları'));
+  const render = () => {
+    box.querySelectorAll('label').forEach((l) => l.remove());
+    for (const k of Object.keys(names) as (keyof KeyBinds)[]) {
+      const btn = h('button', { class: 'small ghost', style: { minWidth: '110px' } }, keyLabel(settings.keys[k]));
+      btn.onclick = () => {
+        btn.textContent = de ? 'Taste drücken…' : 'Tuşa bas…';
+        const cap = (e: KeyboardEvent) => {
+          e.preventDefault();
+          e.stopPropagation();
+          removeEventListener('keydown', cap, true);
+          if (e.code !== 'Escape') {
+            settings.keys[k] = e.code;
+            saveSettings();
+          }
+          render();
+          renderFocusBadge();
+        };
+        addEventListener('keydown', cap, true);
+      };
+      box.append(h('label', {}, names[k], btn));
+    }
+  };
+  render();
+  box.append(h('button', { class: 'small ghost', onclick: () => ((settings.keys = { ...defaultKeys }), saveSettings(), render()) }, de ? 'Standard wiederherstellen' : 'Varsayılana dön'));
+  return box;
 }
 
 // ------------------------------------------------------------------ Kahvehane
@@ -462,6 +506,7 @@ function enterCafe() {
   istaka.isOverTable = (x, y) => world.isOverTable(x, y);
   istaka.canDiscard = () => myTurn('discard');
   world.onFocusChange = () => renderFocusBadge();
+  world.onLookChange = () => renderHint();
   istaka.onDropZone = (zone, id) => {
     if (zone === 'discard') act({ action: 'discard', tileId: id });
     else if (zone === 'finish') act({ action: 'finish', tileId: id });
@@ -526,9 +571,15 @@ function renderFocusBadge() {
   const el = slot('focus', 'focusbadge');
   const show = inCafe && world.seated !== null;
   el.classList.toggle('hidden', !show);
+  const L = keyLabel(settings.keys.look);
+  const Z = keyLabel(settings.keys.zoom);
   el.textContent = world.focus
-    ? (getLang() === 'de' ? '🎯 Blick aufs Brett · Leertaste / daneben klicken = umschauen' : '🎯 Masaya odaklı · Boşluk / boş yere tıkla = etrafa bak')
-    : (getLang() === 'de' ? '👀 Umschauen: Maus ziehen · Leertaste / Tisch anklicken = zurück zum Brett' : '👀 Etrafa bak: fareyi sürükle · Boşluk / masaya tıkla = masaya dön');
+    ? getLang() === 'de'
+      ? `🎯 Blick aufs Brett · ${L} = umschauen · ${Z} halten = Zoom`
+      : `🎯 Masaya odaklı · ${L} = etrafa bak · ${Z} basılı = yakınlaştır`
+    : getLang() === 'de'
+      ? `👀 Umschauen mit der Maus · Brett anvisieren + Klick oder ${L} = zurück · ${Z} = Zoom`
+      : `👀 Fareyle etrafa bak · masaya nişan al + tıkla ya da ${L} = geri · ${Z} = yakınlaştır`;
 }
 
 function renderHint() {
@@ -536,9 +587,18 @@ function renderHint() {
   const el = slot('hint', 'hint');
   const cross = slot('cross', 'crosshair');
   const walking = world.seated === null;
-  cross.classList.add('hidden');
+  const looking = world.isLooking();
+  cross.classList.toggle('hidden', !looking);
   el.classList.toggle('hidden', !walking);
-  el.textContent = getLang() === 'de' ? 'Maus ziehen: umschauen · WASD: laufen · Stuhl anklicken: hinsetzen' : 'Fareyi sürükle: etrafa bak · WASD: yürü · Sandalyeye tıkla: otur';
+  const K = settings.keys;
+  const mv = [K.forward, K.left, K.back, K.right].map(keyLabel).join('');
+  el.textContent = looking
+    ? getLang() === 'de'
+      ? `Maus: umschauen · ${mv}: laufen · Stuhl anvisieren + Klick: hinsetzen · Esc: Mauszeiger`
+      : `Fare: etrafa bak · ${mv}: yürü · Sandalyeye nişan al + tıkla: otur · Esc: imleç`
+    : getLang() === 'de'
+      ? 'Ins Bild klicken, um dich mit der Maus umzuschauen'
+      : 'Fareyle etrafa bakmak için ekrana tıkla';
 }
 
 function renderLeft() {
@@ -653,9 +713,14 @@ function renderChat() {
 // Tastatur: 1/2/3 Augen-Signale
 addEventListener('keydown', (e) => {
   if (!inCafe || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-  if (e.key === '1') send({ type: 'eye', key: 'wink' });
-  if (e.key === '2') send({ type: 'eye', key: 'blink' });
-  if (e.key === '3') send({ type: 'eye', key: 'wide' });
+  const K = settings.keys;
+  if (e.code === K.wink) send({ type: 'eye', key: 'wink' });
+  if (e.code === K.blink) send({ type: 'eye', key: 'blink' });
+  if (e.code === K.wide) send({ type: 'eye', key: 'wide' });
+  if (e.code === K.sheet && table?.started) {
+    sheetOpen = !sheetOpen;
+    renderSheet();
+  }
   if (e.key === 'Escape' && world.seated !== null && table && !table.started) {
     world.sitAt(null);
     renderAll();

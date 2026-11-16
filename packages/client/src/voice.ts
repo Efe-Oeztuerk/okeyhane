@@ -22,13 +22,13 @@ export class Voice {
   constructor() {
     on('rtc', (m) => this.onSignal(m.from, m.data));
     addEventListener('keydown', (e) => {
-      if (e.code === 'KeyV' && settings.pushToTalk && !(e.target instanceof HTMLInputElement)) {
+      if (e.code === settings.keys.ptt && settings.pushToTalk && !(e.target instanceof HTMLInputElement)) {
         this.pttDown = true;
         this.updateTrack();
       }
     });
     addEventListener('keyup', (e) => {
-      if (e.code === 'KeyV') {
+      if (e.code === settings.keys.ptt) {
         this.pttDown = false;
         this.updateTrack();
       }
