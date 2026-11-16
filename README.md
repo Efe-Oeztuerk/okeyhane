@@ -1,34 +1,52 @@
 # Okeyhane
 
-Multiplayer-Okey im türkischen Kahvehane: Ego-Perspektive, mit Freunden, Teams gegenüber.
-Modi: Standard-Okey, 101 Okey, Perişan Okey. Später kommen Batak, Pişti, Tavla und ein Kartenspiel dazu.
+Multiplayer-Okey im türkischen Kahvehane. Man spielt in Ego-Perspektive mit Freunden, die Teams sitzen sich gegenüber.
+Modi: **Standard-Okey**, **101 Okey** und **Perişan Okey**. Batak, Pişti, Tavla und ein Kartenspiel kommen später dazu.
 
-## Stand: Meilenstein 1 – Regel-Engine
-
-`packages/engine` enthält die reine Spiellogik, ohne Grafik. Der Spielserver nutzt sie später direkt.
-
-| Datei | Inhalt |
-|---|---|
-| `tiles.ts` | 106 Steine, Gösterge → Okey, Sahte Okey |
-| `evaluate.ts` | Optimale Aufteilung in Reihen/Gruppen, lose Steine, 7 Paare, Kombinationsprüfung (inkl. 12-13-1) |
-| `scoring.ts` | Wertung Standard (renksiz/renkli), 101, Perişan (Multiplikator, Okey bir, Çift, Okey yakalanmak) |
-| `game.ts` | Spielablauf: ziehen, abwerfen, beenden, Gösterge zeigen, Okey bir, Açmak/İşlemek, Taş Çalma, Punktezettel |
-| `rules.ts` | Alle Hausregeln, die der Tischbesitzer einstellen kann |
-| `bot.ts` | Einfacher Bot, der einen freien Platz füllen kann |
+## Starten (lokal)
 
 ```bash
 npm install
-npm test                                   # 28 Tests
-npm run simulate -- perisan 42             # 4 Bots spielen ein ganzes Spiel
-npm run simulate -- okey101 7
-npm run simulate -- standard 3
+npm run build      # baut den 3D-Client
+npm start          # startet den Server auf http://localhost:3000
 ```
 
-## Nächste Meilensteine
+Danach `http://localhost:3000` im Browser öffnen. Freunde im selben WLAN erreichen das Spiel über `http://<deine-IP>:3000`.
 
-1. ~~Regel-Engine~~
-2. Multiplayer-Server (Colyseus): Tisch erstellen, Raumcode, 4 Plätze, Bots auffüllen
-3. Erster spielbarer Client: 3D-Tisch in Ego-Perspektive, Istaka mit Drag & Drop, Punktezettel
-4. Kahvehane, Charakter-Editor, Voice, Fernseher, Musik
+## Online stellen (Render)
+
+1. Auf render.com **New → Blueprint** wählen und dieses Repo auswählen. Die Einstellungen kommen aus `render.yaml`.
+2. Nach dem Deploy die Render-URL an deine Freunde schicken. Jeder erstellt dort seinen Charakter, einer erstellt einen Tisch und teilt den 5-stelligen Code.
+
+Hinweis: Im kostenlosen Render-Plan wird die Statistik (`stats.json`) bei jedem Neustart gelöscht. Für eine dauerhafte Statistik kommt später Supabase dazu.
+
+## Was drin ist
+
+| Bereich | Funktionen |
+|---|---|
+| Kahvehane | Ego-Perspektive, mit WASD laufen, auf einen Stuhl klicken zum Hinsetzen, Kilims, Türkei-Fahne, erfundene Schwarz-Weiß-Porträts, Semaver, Uhr mit echter Zeit, Ventilator, Nargile, Rauch, Tageszeit mit Fensterblick, NPC-Gäste beim Tavla, Çaycı bringt Tee |
+| Charakter | Hautfarbe, Gesicht, Frisur, Haarfarbe, Augenbrauen, Bart, Schnurrbart, Kleidung und Farbe, Kopfbedeckung, Brille, Zubehör (Tespih, Zigarre, Zahnstocher), Schmuck, Unterschrift. Der Name steht über dem Kopf. |
+| Tisch | Privat oder öffentlich, Raumcode, zufälliger Tisch, Bots für freie Plätze, Zuschauer (nur mit Code), Tischbesitzer stellt die Regeln ein und alle sehen sie, Kick, Revanche |
+| Regeln | Standard (renksiz/renkli, Startpunkte), 101 (Açmak ≥ 101 / Paare, İşlemek, Strafen, Verdopplung, Anzahl Hände), Perişan (Farb-Multiplikatoren, Okey bir, Çift, Okey yakalanmak), Taş Çalma optional, Schwer-Modus, Zug-Timer |
+| Spielen | Istaka mit Drag & Drop, Auto-Sortieren nach Reihen oder Paaren, Doppelklick oder Drag zum Abwerfen bzw. Beenden, auf den Stapel oder Seitenstein in 3D klicken |
+| Zettel | Karierter Block in Kugelschreiberschrift, der sich nach jeder Hand animiert selbst schreibt. Die Verlierer unterschreiben am Ende. |
+| Kommunikation | Voice-Chat (WebRTC, Push-to-Talk mit V, jeden einzeln stummschalten), Text-Chat, Schnellsprüche als Sprechblase, Emotes (auf den Tisch hauen, Tee, Nargile, Kopfschütteln …), Augen-Signale (Tasten 1/2/3) |
+| Fernseher & Musik | YouTube-Links und Livestreams, für den ganzen Tisch synchron (nur der Tischbesitzer steuert). Jeder Spieler wählt „mit dem Tisch“, „aus“ oder „eigene Musik“. Radio-Streams per Link. |
+| Einstellungen | Getrennte Lautstärken (Gesamt, Effekte, Voice, Fernseher, Musik, NPCs), Rauch an/aus, Grafikqualität, Tageszeit, Türkisch/Deutsch |
+| Statistik | Siege und Niederlagen pro Modus |
+
+## Aufbau
+
+```
+packages/engine   Regel-Engine (reine Logik, 28 Tests, Bot)
+packages/server   Node-Server: liefert den Client aus + WebSocket-Spielserver
+packages/client   Vite + Three.js: Menü, Editor, 3D-Kahvehane, Tisch-UI
+```
+
+```bash
+npm test                                   # Regel-Tests
+npm run simulate -- perisan 42             # 4 Bots spielen ein Spiel
+npx tsx packages/server/scripts/e2e.ts     # Multiplayer-Test gegen laufenden Server
+```
 
 Das vollständige Konzept steht im Dokument „Okey Kahvehane – Spielkonzept“.

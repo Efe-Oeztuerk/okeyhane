@@ -3,6 +3,9 @@
   "private": true,
   "workspaces": ["packages/*"],
   "scripts": {
+    "build": "npm run build -w @okeyhane/client",
+    "start": "npm start -w @okeyhane/server",
+    "dev": "npm run dev -w @okeyhane/server & npm run dev -w @okeyhane/client",
     "test": "npm test -w @okeyhane/engine",
     "simulate": "npm run simulate -w @okeyhane/engine"
   }
