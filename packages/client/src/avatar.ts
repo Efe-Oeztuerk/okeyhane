@@ -61,6 +61,85 @@ function stubbleTexture(color: string) {
   });
 }
 
+function star(g: CanvasRenderingContext2D, x: number, y: number, r: number) {
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const rr = i % 2 === 0 ? r : r * 0.42;
+    const ang = (i * Math.PI) / 5 - Math.PI / 2;
+    g.lineTo(x + Math.cos(ang) * rr, y + Math.sin(ang) * rr);
+  }
+  g.closePath();
+  g.fill();
+}
+
+/** Retro-Trikots in klassischen Farben (ohne Vereinswappen/Logos) */
+export const KITS: Record<
+  string,
+  {
+    label: string;
+    pattern: 'plain' | 'split' | 'stripes';
+    colors: (own: string) => [string, string];
+    sleeves: (own: string) => [string, string];
+    trim: string;
+    accent: string;
+    number: string;
+    numberStroke: string;
+    crescent?: boolean;
+  }
+> = {
+  aYildiz: {
+    label: 'Ay-Yıldız · Rot mit Halbmond',
+    pattern: 'plain',
+    colors: () => ['#c8102e', '#c8102e'],
+    sleeves: () => ['#c8102e', '#c8102e'],
+    trim: '#ffffff',
+    accent: '#ffffff',
+    number: '#ffffff',
+    numberStroke: '#7a0a1c',
+    crescent: true,
+  },
+  sariKirmizi: {
+    label: 'Sarı-Kırmızı · Gelb-Rot geteilt',
+    pattern: 'split',
+    colors: () => ['#f2b705', '#a6192e'],
+    sleeves: () => ['#f2b705', '#a6192e'],
+    trim: '#a6192e',
+    accent: '#f2b705',
+    number: '#ffffff',
+    numberStroke: '#6a0f1c',
+  },
+  sariLacivert: {
+    label: 'Sarı-Lacivert · Gelb-Blau gestreift',
+    pattern: 'stripes',
+    colors: () => ['#002d72', '#f4d000'],
+    sleeves: () => ['#002d72', '#002d72'],
+    trim: '#f4d000',
+    accent: '#f4d000',
+    number: '#f4d000',
+    numberStroke: '#001a44',
+  },
+  siyahBeyaz: {
+    label: 'Siyah-Beyaz · Schwarz-Weiß gestreift',
+    pattern: 'stripes',
+    colors: () => ['#111111', '#f4f4f4'],
+    sleeves: () => ['#111111', '#111111'],
+    trim: '#f4f4f4',
+    accent: '#f4f4f4',
+    number: '#f4f4f4',
+    numberStroke: '#000000',
+  },
+  duz: {
+    label: 'Düz · Eigene Farbe',
+    pattern: 'plain',
+    colors: (own) => [own, own],
+    sleeves: (own) => [own, own],
+    trim: '#ffffff',
+    accent: '#ffffff',
+    number: '#ffffff',
+    numberStroke: '#00000088',
+  },
+};
+
 /**
  * Kleidung als Textur für den Oberkörper (Capsule). Durch offset.x = 0.5 liegt die
  * Vorderseite in der Bildmitte (x = 256), die Rückseite am Rand.
@@ -164,32 +243,81 @@ function clothTexture(a: Avatar): THREE.Texture {
         break;
       }
       case 'trikot': {
-        // V-Kragen, Brustlogo (Halbmond+Stern), Nummer hinten
-        g.fillStyle = '#ffffff';
+        const kit = KITS[a.kit ?? 'duz'] ?? KITS.duz;
+        const [c1, c2] = kit.colors(col);
+        // Grundmuster
+        if (kit.pattern === 'split') {
+          // parçalı: eine Körperhälfte je Farbe (Vorne-Mitte = x 256, Rücken = Rand)
+          g.fillStyle = c1;
+          g.fillRect(0, 0, 256, 512);
+          g.fillStyle = c2;
+          g.fillRect(256, 0, 256, 512);
+        } else if (kit.pattern === 'stripes') {
+          g.fillStyle = c1;
+          g.fillRect(0, 0, 512, 512);
+          g.fillStyle = c2;
+          for (let x = 0; x < 512; x += 64) g.fillRect(x + 16, 0, 32, 512);
+        } else {
+          g.fillStyle = c1;
+          g.fillRect(0, 0, 512, 512);
+        }
+        // Stoffstruktur
+        for (let i = 0; i < 2500; i++) {
+          g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.05)';
+          g.fillRect(Math.random() * 512, Math.random() * 512, 2, 2);
+        }
+        // Retro-Polokragen + Knopfleiste
+        g.fillStyle = kit.trim;
+        g.fillRect(0, 40, 512, 22);
         g.beginPath();
-        g.moveTo(cx - 50, 55);
-        g.lineTo(cx, 120);
-        g.lineTo(cx + 50, 55);
-        g.lineTo(cx + 36, 55);
-        g.lineTo(cx, 100);
-        g.lineTo(cx - 36, 55);
+        g.moveTo(cx - 60, 50);
+        g.lineTo(cx - 8, 64);
+        g.lineTo(cx - 40, 112);
+        g.closePath();
+        g.moveTo(cx + 60, 50);
+        g.lineTo(cx + 8, 64);
+        g.lineTo(cx + 40, 112);
         g.closePath();
         g.fill();
-        g.fillRect(0, 380, 512, 18);
-        g.fillStyle = '#ffffff';
-        g.beginPath();
-        g.arc(cx + 60, 160, 16, 0, Math.PI * 2);
-        g.fill();
-        g.fillStyle = col;
-        g.beginPath();
-        g.arc(cx + 65, 160, 13, 0, Math.PI * 2);
-        g.fill();
-        g.fillStyle = '#ffffff';
-        g.font = 'bold 150px Inter, sans-serif';
+        g.fillRect(cx - 7, 60, 14, 80);
+        g.fillStyle = kit.accent;
+        for (let i = 0; i < 2; i++) {
+          g.beginPath();
+          g.arc(cx, 88 + i * 30, 4, 0, Math.PI * 2);
+          g.fill();
+        }
+        // Bündchen unten
+        g.fillStyle = kit.trim;
+        g.fillRect(0, 440, 512, 14);
+        // Brust: Halbmond+Stern (Ay-Yıldız) oder schlichter Stern
+        const bx = cx + 62;
+        const by = 165;
+        if (kit.crescent) {
+          g.fillStyle = kit.accent;
+          g.beginPath();
+          g.arc(bx, by, 22, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = c1;
+          g.beginPath();
+          g.arc(bx + 6, by, 18, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = kit.accent;
+          star(g, bx + 26, by, 9);
+        } else {
+          g.fillStyle = kit.accent;
+          star(g, bx, by, 16);
+        }
+        // Rückennummer (Retro-Schrift mit Rand)
+        g.font = 'bold 150px Georgia, serif';
         g.textAlign = 'center';
         g.textBaseline = 'middle';
-        g.fillText('10', 0, 240);
-        g.fillText('10', 512, 240);
+        g.lineWidth = 8;
+        g.strokeStyle = kit.numberStroke;
+        g.fillStyle = kit.number;
+        for (const x of [0, 512]) {
+          g.strokeText('10', x, 250);
+          g.fillText('10', x, 250);
+        }
         break;
       }
       case 'hirka': {
@@ -393,7 +521,9 @@ export class Avatar3D {
     const a = spec;
     const skin = mat(a.skin, 0.65);
     const cloth = mat('#ffffff', 0.85, { map: clothTexture(a) });
-    const sleeve = mat(a.shirt === 'takim' ? a.shirtColor : a.shirtColor, 0.85);
+    const sleeve = mat(a.shirtColor, 0.85);
+    const kitDef = a.shirt === 'trikot' ? KITS[a.kit ?? 'duz'] ?? KITS.duz : null;
+    const sleeveFor = (side: number) => (kitDef ? mat(kitDef.sleeves(a.shirtColor)[side === 1 ? 1 : 0], 0.85) : sleeve);
     const hairM = mat(a.hairColor, a.hair === 'slick' ? 0.3 : 0.75, { map: hairTexture(a.hairColor) });
     this.root.add(this.body);
 
@@ -405,7 +535,7 @@ export class Avatar3D {
     this.body.add(torso);
     // Schultern weich
     for (const s of [-1, 1]) {
-      const sh = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), sleeve);
+      const sh = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), sleeveFor(s));
       sh.position.set(SHOULDER_X * s, SHOULDER_Y - 0.01, 0);
       this.body.add(sh);
     }
@@ -702,15 +832,15 @@ export class Avatar3D {
     for (const side of [-1, 1]) {
       const g = new THREE.Group();
       g.position.set(SHOULDER_X * side, SHOULDER_Y, 0);
-      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, UPPER - 0.08, 6, 14), sleeve);
+      const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, UPPER - 0.08, 6, 14), sleeveFor(side));
       upper.position.y = -UPPER / 2;
       upper.castShadow = true;
       g.add(upper);
       const fore = new THREE.Group();
       fore.position.y = -UPPER;
-      const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), sleeve);
+      const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.058, 12, 10), sleeveFor(side));
       fore.add(elbow);
-      const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.054, FORE - 0.09, 6, 14), sleeve);
+      const lower = new THREE.Mesh(new THREE.CapsuleGeometry(0.054, FORE - 0.09, 6, 14), sleeveFor(side));
       lower.rotation.x = Math.PI / 2;
       lower.position.z = FORE / 2 - 0.02;
       fore.add(lower);
@@ -718,6 +848,12 @@ export class Avatar3D {
       cuff.rotation.x = Math.PI / 2;
       cuff.position.z = FORE - 0.04;
       if (a.shirt === 'takim' || a.shirt === 'gomlek') fore.add(cuff);
+      if (kitDef) {
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(0.057, 0.057, 0.025, 14), mat(kitDef.trim, 0.8));
+        band.rotation.x = Math.PI / 2;
+        band.position.z = FORE - 0.06;
+        fore.add(band);
+      }
       // Hand mit Daumen
       const hand = new THREE.Group();
       hand.position.z = FORE;

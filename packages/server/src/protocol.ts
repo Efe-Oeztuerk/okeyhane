@@ -14,6 +14,8 @@ export interface Avatar {
   glasses: 'none' | 'reading' | 'sun';
   accessory: 'none' | 'tespih' | 'cigar' | 'toothpick';
   jewelry: 'none' | 'chain' | 'ring' | 'watch';
+  /** Retro-Trikot-Variante (nur bei shirt = trikot) */
+  kit?: 'aYildiz' | 'sariKirmizi' | 'sariLacivert' | 'siyahBeyaz' | 'duz';
   /** eigene Nargile neben dem Stuhl */
   shisha?: 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black' | 'saray' | 'usta' | 'sultan';
 }

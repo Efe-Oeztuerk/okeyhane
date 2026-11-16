@@ -15,7 +15,13 @@ const dl = new THREE.DirectionalLight('#fff', 1.4);
 dl.position.set(1, 2, 3);
 scene.add(dl);
 const base: Avatar = { skin: '#d9a77c', face: 'round', hair: 'short', hairColor: '#2b1d14', eyebrows: 'thick', beard: 'none', mustache: 'classic', shirt: 'gomlek', shirtColor: '#7a3b2e', hat: 'none', glasses: 'none', accessory: 'tespih', jewelry: 'chain' };
-const specs: Partial<Avatar>[] = [
+const specs: Partial<Avatar>[] = new URLSearchParams(location.hash.slice(1)).get('kits') ? [
+  { shirt: 'trikot', kit: 'aYildiz' },
+  { shirt: 'trikot', kit: 'sariKirmizi', hair: 'curly' },
+  { shirt: 'trikot', kit: 'sariLacivert', hair: 'slick' },
+  { shirt: 'trikot', kit: 'siyahBeyaz', hat: 'kasket' },
+  { shirt: 'trikot', kit: 'duz', shirtColor: '#2d5a3a' },
+] : [
   {},
   { hair: 'curly', beard: 'full', mustache: 'thick', shirt: 'takim', shirtColor: '#333', hat: 'kasket', glasses: 'reading', accessory: 'cigar' },
   { hair: 'slick', face: 'long', beard: 'stubble', shirt: 'trikot', shirtColor: '#c0392b', glasses: 'sun', accessory: 'toothpick', jewelry: 'ring' },
@@ -33,6 +39,7 @@ const cam = new THREE.PerspectiveCamera(35, innerWidth / innerHeight, 0.1, 20);
 const view = q.get('view') ?? 'front';
 if (view === 'front') cam.position.set(0, 1.0, 3.3);
 else if (view === 'side') cam.position.set(3.4, 1.0, 1.2);
+else if (view === 'back') cam.position.set(0, 1.0, -3.3);
 else if (view === 'close') cam.position.set(Number(q.get('x') ?? 0), 0.95, 1.1);
 cam.lookAt(view === 'close' ? Number(q.get('x') ?? 0) : 0, 0.8, 0);
 if (q.get('emote')) for (const a of avatars) a.update(0, true);

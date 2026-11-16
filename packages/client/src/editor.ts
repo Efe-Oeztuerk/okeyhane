@@ -4,6 +4,7 @@ import type { Avatar } from '../../server/src/protocol.ts';
 import { h } from './dom.ts';
 import { t } from './i18n.ts';
 import { World } from './scene.ts';
+import { KITS } from './avatar.ts';
 import type { Profile } from './settings.ts';
 
 const OPTIONS: { key: keyof Avatar; values: string[]; labels: Record<string, string> }[] = [
@@ -121,6 +122,28 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
         ),
       );
       if (o.key === 'hair') swatchRow(t('char_hairColor'), 'hairColor', HAIR);
+      if (o.key === 'shirt' && p.avatar.shirt === 'trikot') {
+        opts.append(
+          h('label', {}, 'Retro Forma · Retro-Trikot'),
+          h(
+            'div',
+            { class: 'chips' },
+            Object.entries(KITS).map(([k, kit]) =>
+              h(
+                'div',
+                {
+                  class: 'chip' + ((p.avatar.kit ?? 'duz') === k ? ' on' : ''),
+                  onclick: () => {
+                    p.avatar.kit = k as any;
+                    refresh();
+                  },
+                },
+                kit.label,
+              ),
+            ),
+          ),
+        );
+      }
       if (o.key === 'shirt') swatchRow(t('char_shirtColor'), 'shirtColor', CLOTH);
     }
     opts.append(
