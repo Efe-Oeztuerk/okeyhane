@@ -46,6 +46,7 @@ let table: TableSummary | null = null;
 let you: { id: string; seat: number | null; watching: number | null } = { id: '', seat: null, watching: null };
 let st: any = null; // letzter Spielzustand
 let inCafe = false;
+  document.body.classList.remove('incafe');
 let sheetOpen = false;
 let seenRows = 0;
 let lastHandNo = -1;
@@ -400,6 +401,42 @@ function installButton() {
     },
     '📲 ' + (de ? 'Als App installieren' : 'Uygulama olarak yükle'),
   );
+}
+
+// Vollbild-Knopf (Handy/Tablet): Android & iPad können echtes Vollbild, iPhone nur als installierte App
+{
+  const de0 = () => getLang() === 'de';
+  const fsEl = document.documentElement as any;
+  const canFs = !!(fsEl.requestFullscreen || fsEl.webkitRequestFullscreen);
+  const fsBtn = h('button', {
+    class: 'fsbtn',
+    title: 'Vollbild',
+    onclick: async () => {
+      const d = document as any;
+      if (d.fullscreenElement || d.webkitFullscreenElement) {
+        (d.exitFullscreen || d.webkitExitFullscreen)?.call(d);
+        return;
+      }
+      if (canFs) {
+        try {
+          await (fsEl.requestFullscreen || fsEl.webkitRequestFullscreen).call(fsEl, { navigationUI: 'hide' });
+          (screen.orientation as any)?.lock?.('landscape').catch(() => {});
+          return;
+        } catch {}
+      }
+      modal(
+        h('h2', {}, '⛶ ' + (de0() ? 'Vollbild' : 'Tam ekran')),
+        h(
+          'p',
+          {},
+          de0()
+            ? 'Auf dem iPhone geht Vollbild nur, wenn Okeyhane als App installiert ist: in Safari unten auf Teilen ⬆️ → „Zum Home-Bildschirm“. Danach von dort starten – ohne Safari-Leisten.'
+            : "iPhone'da tam ekran sadece uygulama olarak yüklenince olur: Safari'de Paylaş ⬆️ → “Ana Ekrana Ekle”. Sonra oradan aç.",
+        ),
+      );
+    },
+  }, '⛶');
+  if (!isApp()) document.body.append(fsBtn);
 }
 
 // ------------------------------------------------------------------ Menü
@@ -842,6 +879,7 @@ function controllerSection() {
 function enterCafe() {
   bgm.set('cafe');
   inCafe = true;
+  document.body.classList.add('incafe');
   const menu = ui.querySelector('.menu') as any;
   menu?._pv?.dispose();
   ui.innerHTML = '';
@@ -931,6 +969,7 @@ function watchAt(seat: number) {
 
 function leaveCafe() {
   inCafe = false;
+  document.body.classList.remove('incafe');
   table = null;
   st = null;
   sessionStorage.removeItem('tableCode');
