@@ -358,6 +358,24 @@ spotify.onClosed = () => {
   applyMedia();
 };
 
+// ------------------------------------------------------------------ Handy: UI-Größe an den Bildschirm anpassen
+
+function fitUi() {
+  const vv = window.visualViewport;
+  const W = vv?.width ?? innerWidth;
+  const H = vv?.height ?? innerHeight;
+  // Menüs sind für ~1050×640 gebaut → so weit verkleinern, dass sie passen
+  const z = Math.max(0.5, Math.min(1, H / 640, W / 1050));
+  const root = document.documentElement.style;
+  root.setProperty('--uiz', z.toFixed(3));
+  root.setProperty('--uih', Math.floor(H / z - 16) + 'px');
+  root.setProperty('--uiw', Math.floor(Math.min(1000, W / z - 24)) + 'px');
+}
+fitUi();
+addEventListener('resize', fitUi);
+window.visualViewport?.addEventListener('resize', fitUi);
+addEventListener('orientationchange', () => [100, 400, 1000].forEach((ms) => setTimeout(fitUi, ms)));
+
 // ------------------------------------------------------------------ App (PWA)
 
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('/sw.js').catch(() => {});

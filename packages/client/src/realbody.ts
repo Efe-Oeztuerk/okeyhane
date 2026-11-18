@@ -217,7 +217,11 @@ export class RealBody {
     });
     const mat = bm.material as THREE.MeshStandardMaterial;
     bm.material = mat;
-    if (a.realSkin === 'light') mat.map = tex(`/models/people/${fem ? 'qfemale' : 'qmale'}_light.webp`);
+    // immer die helle Haut-Textur nehmen und auf die gewählte Hautfarbe tönen
+    mat.map = tex(`/models/people/${fem ? 'qfemale' : 'qmale'}_light.webp`);
+    const skinRef = new THREE.Color('#e6b896');
+    const skinWant = new THREE.Color(a.realSkin === 'dark' ? '#7a4f32' : a.realSkin === 'light' || !a.realSkin ? '#e6b896' : a.realSkin);
+    const tint = new THREE.Color(Math.min(1.3, skinWant.r / skinRef.r), Math.min(1.3, skinWant.g / skinRef.g), Math.min(1.3, skinWant.b / skinRef.b));
 
     // Grenzen für Hemd/Hose/Schuhe aus den Knochen (in Mesh-Koordinaten)
     bm.updateMatrixWorld(true);
@@ -241,6 +245,7 @@ export class RealBody {
       uShirt: { value: new THREE.Color(a.shirtColor || '#2f4f6f') },
       uPants: { value: new THREE.Color(a.pantsColor || '#3a342e') },
       uShoes: { value: new THREE.Color('#1d1712') },
+      uTint: { value: tint },
       uLim: { value: new THREE.Vector4(sole + (ankle - sole) * 1.35, waist, neck, wristX) },
       uMisc: { value: new THREE.Vector4(ax, sgn, shoulderX, 0) },
     };
@@ -271,7 +276,7 @@ uniform vec4 uLim; uniform vec4 uMisc; varying vec3 vCloth;`,
         .replace(
           '#include <common>',
           `#include <common>
-uniform vec3 uShirt; uniform vec3 uPants; uniform vec3 uShoes; varying vec3 vCloth;`,
+uniform vec3 uShirt; uniform vec3 uPants; uniform vec3 uShoes; uniform vec3 uTint; varying vec3 vCloth;`,
         )
         .replace(
           '#include <map_fragment>',
@@ -280,7 +285,7 @@ uniform vec3 uShirt; uniform vec3 uPants; uniform vec3 uShoes; varying vec3 vClo
   float lum = dot(diffuseColor.rgb, vec3(0.3, 0.59, 0.11));
   float w = clamp(vCloth.x + vCloth.y + vCloth.z, 0.0, 1.0);
   vec3 cloth = uShirt * vCloth.x + uPants * vCloth.y + uShoes * vCloth.z;
-  diffuseColor.rgb = mix(diffuseColor.rgb, cloth * (0.9 + lum * 0.12), w);
+  diffuseColor.rgb = mix(diffuseColor.rgb * uTint, cloth * (0.9 + lum * 0.12), w);
 }`,
         )
         .replace(
@@ -323,6 +328,23 @@ roughnessFactor = mix(roughnessFactor, 0.85, clamp(vCloth.x + vCloth.y, 0.0, 1.0
           m.castShadow = true;
         }
       });
+      // Frisuren sind für Mann bzw. Frau modelliert → um den Unterschied der Kopfhöhe verschieben
+      const refFile = ['long', 'buns', 'buzzedfemale'].includes(hName) ? 'qfemale' : 'qmale';
+      if (refFile !== (fem ? 'qfemale' : 'qmale')) {
+        const ref = await load(refFile);
+        if (this.disposed) return;
+        ref.updateMatrixWorld(true);
+        let refHead: THREE.Object3D | undefined;
+        ref.traverse((o) => {
+          if ((o as THREE.Bone).isBone && norm(o.name) === 'head') refHead = o;
+        });
+        if (refHead) {
+          model.updateMatrixWorld(true);
+          const mine = model.worldToLocal(B.head!.getWorldPosition(new THREE.Vector3()));
+          const theirs = refHead.getWorldPosition(new THREE.Vector3());
+          hair.position.add(mine.sub(theirs));
+        }
+      }
       // Frisur liegt in Modell-Koordinaten (Ruhelage) → an den Kopfknochen hängen
       model.add(hair);
       model.updateMatrixWorld(true);

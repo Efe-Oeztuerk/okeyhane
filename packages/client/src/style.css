@@ -371,21 +371,13 @@ body.phone .joystick { left: max(16px, env(safe-area-inset-left)); bottom: max(1
 body.phone .hint { bottom: auto; top: 46px; font-size: 12px; padding: 6px 12px; }
 body.phone .dropzones { bottom: auto; top: 70px; right: 64px; }
 /* Menü quer: Figur links klein, Knöpfe rechts, scrollbar */
-body.phone .menu .card { grid-template-columns: minmax(150px, 30vw) 1fr; max-height: calc(100vh - 12px); overflow: auto; gap: 10px; padding: 10px; }
-body.phone .menu .card { grid-template-columns: minmax(150px, 30vw) 1fr; max-height: calc(100dvh - 12px); overflow: auto; gap: 10px; padding: 10px; }
-body.phone .menu .preview { height: calc(100vh - 90px); max-height: 300px; }
-body.phone .menu .preview { height: calc(100dvh - 90px); max-height: 300px; }
 body.phone .menu .logo { font-size: 34px; }
 body.phone .menu .tagline { display: none; }
 body.phone .menu button, body.phone .menu input { padding-top: 7px; padding-bottom: 7px; }
-body.phone .modal .panel { max-height: calc(100vh - 16px); overflow: auto; padding: 12px; }
-body.phone .modal .panel { max-height: calc(100dvh - 16px); overflow: auto; padding: 12px; }
 body.phone .modal h2 { font-size: 18px; margin: 0 0 6px; }
 body.phone .friendlist, body.phone .lobbylist { max-height: 55vh; }
 body.phone .wheel { transform: translate(-50%, -50%) scale(0.72); }
 body.phone .chat.open { width: min(320px, 60vw); }
-body.phone .lobby { max-height: calc(100vh - 12px); }
-body.phone .lobby { max-height: calc(100dvh - 12px); }
 body.phone .hud-top .turn, body.phone .hud-top .score { white-space: nowrap; }
 body.phone .hud-top .score { min-width: 0; max-width: 170px; overflow: hidden; text-overflow: ellipsis; padding: 6px 10px; }
 body.phone .hud-top .turn { padding: 6px 12px; }
@@ -403,3 +395,21 @@ body.phone .tbtns { gap: 5px; top: 50px; }
 .fsbtn { position: fixed; z-index: 45; left: max(8px, env(safe-area-inset-left)); bottom: max(8px, env(safe-area-inset-bottom)); width: 40px; height: 40px; padding: 0; border-radius: 10px; font-size: 18px; background: rgba(32,20,12,0.8); }
 body:not(.touch) .fsbtn { display: none; }
 body.incafe .fsbtn { left: auto; bottom: auto; top: max(48px, env(safe-area-inset-top)); left: max(6px, env(safe-area-inset-left)); width: 34px; height: 34px; font-size: 15px; opacity: 0.85; }
+
+/* Handy: Menüs, Editor und Fenster als Ganzes verkleinern, damit alles in die sichtbare Höhe passt.
+   --uiz (Zoom) und --uih (verfügbare Höhe in ungezoomten px) setzt main.ts */
+body.phone .menu > .card,
+body.phone .editor > .card,
+body.phone .modal > .panel,
+body.phone .lobby { zoom: var(--uiz, 1); }
+body.phone .menu > .card { max-height: var(--uih); overflow: auto; grid-template-columns: 0.8fr 1.2fr; gap: 14px; padding: 12px; }
+body.phone .menu .preview { height: calc(var(--uih) - 110px); max-height: 340px; }
+body.phone .editor > .card { height: var(--uih); max-height: 760px; }
+body.phone .modal > .panel { max-height: var(--uih); overflow: auto; }
+body.phone .lobby { max-height: var(--uih); }
+body.phone .menu, body.phone .editor { place-items: center; padding: 0; }
+/* Touch: Chat nur über den 💬-Knopf (sonst liegt er unter dem Joystick) */
+body.touch .chat:not(.open) { display: none !important; }
+body.phone .chat.open { bottom: auto; top: 50px; left: max(8px, env(safe-area-inset-left)); max-height: calc(100dvh - 60px); z-index: 36; }
+body.phone .menu > .card { width: var(--uiw); }
+body.phone.incafe .fsbtn { top: 44px; left: max(8px, env(safe-area-inset-left)); width: 30px; height: 30px; font-size: 14px; }

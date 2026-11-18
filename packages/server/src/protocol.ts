@@ -30,7 +30,8 @@ export interface Avatar {
   style?: 'cartoon' | 'real';
   /** realistische Figur: Basis (qm/qf oder Berufsfigur) */
   realBase?: string;
-  realSkin?: 'light' | 'dark';
+  /** Hautton: Farbe (#rrggbb) oder alt 'light'/'dark' */
+  realSkin?: string;
   realHair?: string;
   realBeard?: boolean;
   pantsColor?: string;

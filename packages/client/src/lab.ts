@@ -20,8 +20,8 @@ const R = (x: Partial<Avatar>): Partial<Avatar> => ({ style: 'real', ...x });
 const specs: Partial<Avatar>[] = q.get('real') ? [
   R({ realBase: 'qm', realSkin: 'light', realHair: 'simpleparted', realBeard: true, shirtColor: '#e8e2d4', pantsColor: '#3a342e', hairColor: '#2b1d14' }),
   R({ realBase: 'qf', realSkin: 'dark', realHair: 'long', shirtColor: '#8e1b1b', pantsColor: '#1a1a1a', hairColor: '#1a1a1a' }),
-  R({ realBase: 'TeacherM' }),
-  R({ realBase: 'Businessman' }),
+  R({ realBase: 'qm', realSkin: '#7a4f32', realHair: 'long', realBeard: true, shirtColor: '#8e1b1b', pantsColor: '#3a342e', hairColor: '#1a1a1a' }),
+  R({ realBase: 'qm', realSkin: '#5a3a24', realHair: 'buzzed', shirtColor: '#2f4f6f', pantsColor: '#3a342e', hairColor: '#1a1a1a' }),
   R({ realBase: 'TeacherF' }),
 ] : q.get('fem') ? [
   { ...F, scarf: 'basortu', scarfColor: '#2f4f6f', shirt: 'hirka', shirtColor: '#7a5a3a', makeup: 'light' },

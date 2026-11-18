@@ -124,7 +124,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
       real ? 'real' : 'cartoon',
       (v) => {
         p.avatar.style = v as any;
-        if (v === 'real' && !p.avatar.realBase) Object.assign(p.avatar, { realBase: p.avatar.body === 'f' ? 'qf' : 'qm', realSkin: 'light', realHair: p.avatar.body === 'f' ? 'long' : 'simpleparted', realBeard: p.avatar.beard !== 'none', pantsColor: '#3a342e' });
+        if (v === 'real' && !p.avatar.realBase) Object.assign(p.avatar, { realBase: p.avatar.body === 'f' ? 'qf' : 'qm', realSkin: '#e6b896', realHair: p.avatar.body === 'f' ? 'long' : 'simpleparted', realBeard: p.avatar.beard !== 'none', pantsColor: '#3a342e' });
       },
     );
     if (real) {
@@ -139,15 +139,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
         },
       );
       if (base.kind === 'q') {
-        chipRow(
-          'Hautton · Ten',
-          [
-            ['light', 'Hell · Açık'],
-            ['dark', 'Dunkel · Koyu'],
-          ],
-          p.avatar.realSkin ?? 'light',
-          (v) => (p.avatar.realSkin = v as any),
-        );
+        swatchRow('Hautton · Ten', 'realSkin', ['#f1cfb0', '#e6b896', '#d4a07a', '#b98058', '#9a6a45', '#7a4f32', '#5a3a24']);
         const hairs = base.fem ? ['long', 'buns', 'buzzedfemale', 'simpleparted', 'none'] : ['simpleparted', 'buzzed', 'long', 'none'];
         chipRow('Frisur · Saç', hairs.map((k) => [k, REAL_HAIR[k]]), p.avatar.realHair ?? hairs[0], (v) => (p.avatar.realHair = v));
         if (!base.fem)

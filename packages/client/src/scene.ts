@@ -146,6 +146,11 @@ export class World {
     });
 
     addEventListener('resize', () => this.resize());
+    // iOS/App: nach Drehen oder Start im Vollbild stimmt die erste Größe oft nicht → mehrfach nachmessen
+    window.visualViewport?.addEventListener('resize', () => this.resize());
+    addEventListener('orientationchange', () => [100, 400, 1000].forEach((ms) => setTimeout(() => this.resize(), ms)));
+    new ResizeObserver(() => this.resize()).observe(this.container);
+    [300, 1500].forEach((ms) => setTimeout(() => this.resize(), ms));
     this.resize();
     this.bindInput();
     this.renderer.setAnimationLoop(() => this.frame());
@@ -2464,6 +2469,7 @@ export class World {
       cam.updateProjectionMatrix();
     };
     resize();
+    new ResizeObserver(() => resize()).observe(container);
     const clock = new THREE.Clock();
     r.setAnimationLoop(() => {
       if (!running) return;
