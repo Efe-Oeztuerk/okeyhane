@@ -31,6 +31,8 @@ export interface Settings {
   showKeyHints: boolean;
   /** Arabesk-Melodie im Menü */
   menuMusic: boolean;
+  /** Spielerliste links eingeklappt */
+  hudCompact: boolean;
   /** Kahvehane-Radio: Sender-ID oder 'off' */
   radioStation: string;
   /** Menümusik + Radio stumm */
@@ -142,14 +144,18 @@ const defaults: Settings = {
   sensitivity: 100,
   invertY: false,
   touchUi: 'auto',
-  showKeyHints: true,
+  showKeyHints: false,
   menuMusic: true,
+  hudCompact: false,
   radioStation: 'okeyhane',
   musicMuted: false,
 };
 /** Touchgerät (Handy/Tablet) */
 export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
-if (isTouch) defaults.quality = 'low';
+if (isTouch) {
+  defaults.quality = 'low';
+  defaults.hudCompact = true;
+}
 
 const stored = JSON.parse(localStorage.getItem('settings') || '{}');
 export const settings: Settings = { ...defaults, ...stored, keys: { ...defaultKeys, ...(stored.keys ?? {}) } };
@@ -158,7 +164,9 @@ if ((stored.v ?? 1) < 2) {
   settings.fovTable = 62;
   settings.camTilt = 0;
 }
-(settings as any).v = 2;
+// v3: Tasten-/Bedienhinweise standardmäßig aus (über ❔ einblendbar)
+if ((stored.v ?? 1) < 3) settings.showKeyHints = false;
+(settings as any).v = 3;
 const listeners = new Set<() => void>();
 
 export function saveSettings() {

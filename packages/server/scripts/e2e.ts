@@ -68,7 +68,11 @@ function autoplay(c: typeof a, seatHint: { seat: number }) {
     if (m.type === 'table') seatHint.seat = m.you.seat;
     if (m.type !== 'state') return;
     const v = m.view;
-    if (v.gameOver || v.phase === 'handOver' || v.current !== seatHint.seat) return;
+    if (!v.gameOver && v.phase === 'handOver') {
+      c.ws.send(JSON.stringify({ type: 'ready', ready: true }));
+      return;
+    }
+    if (v.gameOver || v.current !== seatHint.seat) return;
     setTimeout(() => {
       if (v.phase === 'draw') c.ws.send(JSON.stringify({ type: 'action', action: 'drawPile' }));
       else c.ws.send(JSON.stringify({ type: 'action', action: 'discard', tileId: v.myHand[v.myHand.length - 1].id }));

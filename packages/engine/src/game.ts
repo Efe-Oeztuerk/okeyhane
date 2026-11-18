@@ -267,6 +267,9 @@ export class OkeyGame {
     }
     this.takeFromHand(seat, tileId);
     pl.discards.push(tile);
+    result.finisher = seat;
+    result.withOkey = withOkey;
+    result.withPairs = this.rules.mode === 'okey101' ? pl.opened === 'pairs' : !isCompleteMelds(rest, h.okey);
     this.endHand(result);
     return result;
   }

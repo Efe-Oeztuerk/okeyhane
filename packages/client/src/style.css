@@ -262,3 +262,37 @@ body.touch .crosshair { display: none; }
 .radiochip.playing { border-color: #6fbf6f; }
 .radiochip.blocked { border-color: var(--gold); background: rgba(227,176,75,0.25); animation: pulse 1.4s infinite; }
 @media (max-width: 980px), (max-height: 620px) { .radiochip { max-width: 170px; } }
+
+/* einklappbare Spielerliste */
+.hud-left { position: fixed; }
+.hud-left .fold { position: absolute; top: 6px; right: 6px; padding: 2px 7px; }
+.hud-left.compact { width: auto; padding: 6px 10px; }
+.hud-left.compact .fold { position: static; }
+.hud-left .small-code { font-size: 16px; letter-spacing: 2px; }
+@media (max-height: 430px), (max-width: 720px) { .hud-left.compact { display: block; } }
+
+/* Ziehen aus der Mitte/Seite */
+.tile.back { background: linear-gradient(#f5ecd6, #e6d8b8); }
+.dragghost.pull .tile { box-shadow: 0 10px 22px rgba(0,0,0,0.55); transform: rotate(4deg); }
+.result .finisher { font-size: 22px; font-weight: 800; color: var(--gold); margin: 4px 0 8px; }
+
+/* Ende der Hand: Hände aller Spieler + Bereit */
+.result { max-height: 86vh; overflow: auto; }
+.handsbox { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; text-align: left; }
+.handsbox > button { align-self: center; }
+.handrow { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 8px; background: rgba(255,255,255,0.04); border-left: 4px solid transparent; }
+.handrow.tA { border-left-color: #4a8ad4; }
+.handrow.tB { border-left-color: #d4644a; }
+.handrow.winner { background: rgba(227,176,75,0.18); }
+.handrow .hn { width: 120px; font-weight: 700; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.handrow .hl { display: flex; flex-wrap: wrap; gap: 2px; }
+.tile.mini { width: 26px; height: 36px; cursor: default; border-radius: 4px; }
+.tile.mini .num { font-size: 16px; }
+.tile.mini .heart { font-size: 8px; margin-top: 0; }
+.tile.mini.okey::after { font-size: 5px; }
+.readyrow { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin: 8px 0; font-size: 14px; }
+.readyrow .rd.ok { color: #9be39b; }
+.dragghost.finishing { transform: rotate(0deg) scale(0.9); filter: drop-shadow(0 0 16px rgba(255,210,122,1)); }
+
+/* Unterschrift: kleiner Stift als Mauszeiger (Spitze unten links) */
+.sigpad { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'><path d='M3 23 L5 16 L18 3 L23 8 L10 21 Z' fill='%23f2c14e' stroke='%231d2a6b' stroke-width='1.6' stroke-linejoin='round'/><path d='M3 23 L5 16 L10 21 Z' fill='%231d2a6b'/><path d='M16 5 L21 10' stroke='%231d2a6b' stroke-width='1.6'/></svg>") 3 23, crosshair; touch-action: none; }

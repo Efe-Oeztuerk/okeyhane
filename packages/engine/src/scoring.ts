@@ -21,6 +21,10 @@ export interface HandResult {
   /** 101: Punkte pro Spieler (für Details) */
   playerDelta?: number[];
   caught?: number[];
+  /** wer beendet hat (Platz) und wie */
+  finisher?: number;
+  withOkey?: boolean;
+  withPairs?: boolean;
 }
 
 // ---------- Standard ----------

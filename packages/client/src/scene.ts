@@ -54,6 +54,8 @@ export interface GameVisual {
   discards: Tile[][];
   tableMelds: { owner: number; tiles: Tile[] }[];
   revealed: Tile[][] | null;
+  /** wer die Hand beendet hat (sein letzter Stein liegt in der Mitte) */
+  finisher?: number | null;
 }
 
 export class World {
@@ -137,6 +139,7 @@ export class World {
     this.scene.add(this.tableRoot);
     this.tableRoot.add(this.gameGroup, this.itemsGroup);
     for (let s = 0; s < 4; s++) this.buildSehpa(s);
+    this.buildZones();
     this.applyTimeOfDay();
     onSettings(() => {
       this.applyTimeOfDay();
@@ -1160,6 +1163,14 @@ export class World {
     let drag: { id: number; x: number; y: number } | null = null;
     el.addEventListener('pointerdown', (e) => {
       this.pointerType = e.pointerType || 'mouse';
+      if (this.seated !== null && this.focus && !this.isLooking() && e.button === 0) {
+        const hit = this.pick(e, this.clickables);
+        const kind = hit?.userData.pile ? 'pile' : hit?.userData.side ? 'side' : null;
+        if (kind && this.onDrawDragStart?.(kind, e)) {
+          e.preventDefault();
+          return;
+        }
+      }
       if (e.pointerType === 'mouse') return;
       drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
     });
@@ -1187,7 +1198,106 @@ export class World {
     return this.isLooking() ? new THREE.Vector2(0, 0) : this.mouseNdc;
   }
 
+  private pileObj: THREE.Object3D | null = null;
+  private sideObj: THREE.Object3D | null = null;
+  /** Ziehen aus der Mitte / von der Seite starten (main entscheidet, ob erlaubt) */
+  onDrawDragStart: ((kind: 'pile' | 'side', e: PointerEvent) => boolean) | null = null;
+  suppressClick = false;
+
+  // ---------------------------------------------------------- Wurfzonen beim Ziehen eines Steins
+  private zoneFinish!: THREE.Group;
+  private zoneDiscard!: THREE.Group;
+  private zoneLabel(text: string, color: string) {
+    const c = document.createElement('canvas');
+    c.width = 512;
+    c.height = 128;
+    const g = c.getContext('2d')!;
+    g.fillStyle = 'rgba(20,12,8,0.75)';
+    g.beginPath();
+    g.roundRect(6, 14, 500, 100, 46);
+    g.fill();
+    g.fillStyle = color;
+    g.font = 'bold 54px Inter, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.fillText(text, 256, 66);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false, transparent: true }));
+    sp.scale.set(0.2, 0.05, 1);
+    sp.renderOrder = 12;
+    return sp;
+  }
+  private buildZones() {
+    const mk = (r: number, color: string, text: string) => {
+      const g = new THREE.Group();
+      const ring = new THREE.Mesh(new THREE.RingGeometry(r - 0.012, r, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.5, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2;
+      const fill = new THREE.Mesh(new THREE.CircleGeometry(r - 0.012, 48), new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.08, depthWrite: false }));
+      fill.rotation.x = -Math.PI / 2;
+      fill.userData.fill = true;
+      const label = this.zoneLabel(text, color);
+      label.position.y = 0.11;
+      g.add(ring, fill, label);
+      g.visible = false;
+      this.tableRoot.add(g);
+      return g;
+    };
+    this.zoneFinish = mk(0.2, '#ffd27a', '🏁 BİTİR · Mitte');
+    this.zoneDiscard = mk(0.13, '#7fe07f', '➜ AT · Abwerfen');
+    this.zoneFinish.position.set(0, TABLE_Y + 0.004, 0);
+  }
+  private myCorner() {
+    const me = this.mySeat ?? 0;
+    return seatPos(me).add(seatPos((me + 1) % 4)).multiplyScalar(0.27);
+  }
+  /** Welche Wurfzone liegt unter diesem Bildschirmpunkt? */
+  dropZoneAt(x: number, y: number): 'finish' | 'discard' | null {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -TABLE_Y);
+    const p = this.raycaster.ray.intersectPlane(plane, new THREE.Vector3());
+    if (!p) return null;
+    p.sub(this.tableRoot.position);
+    if (Math.abs(p.x) > 0.6 || Math.abs(p.z) > 0.6) return null;
+    const c = this.myCorner();
+    if (Math.hypot(p.x - c.x, p.z - c.z) < 0.15) return 'discard';
+    if (Math.hypot(p.x, p.z) < 0.2) return 'finish';
+    return null;
+  }
+  /** Zonen beim Ziehen zeigen; hover hebt die aktuelle hervor; false = ausblenden */
+  showZones(hover: 'finish' | 'discard' | null | false) {
+    const on = hover !== false;
+    const c = this.myCorner();
+    this.zoneDiscard.position.set(c.x, TABLE_Y + 0.004, c.z);
+    for (const [g, k] of [
+      [this.zoneFinish, 'finish'],
+      [this.zoneDiscard, 'discard'],
+    ] as const) {
+      g.visible = on;
+      g.children.forEach((ch) => {
+        const m = (ch as THREE.Mesh).material as THREE.MeshBasicMaterial;
+        if (ch.userData.fill) m.opacity = hover === k ? 0.35 : 0.08;
+      });
+      g.scale.setScalar(hover === k ? 1.08 : 1);
+    }
+  }
+
+  /** Bildschirmposition von Stapel bzw. Seitenstein (für die Flug-Animation) */
+  screenOf(kind: 'pile' | 'side'): { x: number; y: number } | null {
+    const o = kind === 'pile' ? this.pileObj : this.sideObj;
+    if (!o) return null;
+    const p = o.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.03, 0)).project(this.camera);
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+  }
+
   private handleClick(e: MouseEvent) {
+    if (this.suppressClick) {
+      this.suppressClick = false;
+      return;
+    }
     const touch = this.pointerType !== 'mouse';
     const at = touch ? this.ndcOf(e) : new THREE.Vector2(0, 0);
     if (this.seated === null) {
@@ -1349,6 +1459,7 @@ export class World {
     if (!v) this.prevDiscards = [];
     this.gameGroup.clear();
     this.clickables = [];
+    this.sideObj = null;
     if (!v) return;
     const viewer = v.mySeat ?? v.viewSeat;
     const viewDir = seatPos(viewer);
@@ -1392,40 +1503,61 @@ export class World {
       }
     }
 
-    // Mitte: Stapel + Gösterge
+    // Mitte: Steine in 5er-Stapeln (wie am echten Tisch) + Rest
     if (v.pileCount > 0) {
       const pile = new THREE.Group();
-      const h = Math.max(0.012, v.pileCount * 0.0012);
-      const stack = new THREE.Mesh(new THREE.BoxGeometry(0.05, h, 0.07), [
-        new THREE.MeshStandardMaterial({ color: '#e6d8b8' }),
-        new THREE.MeshStandardMaterial({ color: '#e6d8b8' }),
-        new THREE.MeshStandardMaterial({ color: '#efe3c8' }),
-        new THREE.MeshStandardMaterial({ color: '#e6d8b8' }),
-        new THREE.MeshStandardMaterial({ color: '#e6d8b8' }),
-        new THREE.MeshStandardMaterial({ color: '#e6d8b8' }),
-      ]);
-      stack.position.y = h / 2;
-      stack.castShadow = true;
-      pile.add(stack);
-      pile.position.set(-0.07, TABLE_Y, 0);
+      const full = Math.floor(v.pileCount / 5);
+      const rest = v.pileCount % 5;
+      const stacks = [...Array(full).fill(5), ...(rest ? [rest] : [])];
+      const cols = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(stacks.length))));
+      const rows = Math.ceil(stacks.length / cols);
+      const tileMat = [
+        new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
+        new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
+        new THREE.MeshStandardMaterial({ color: '#f5ecd6', roughness: 0.45 }),
+        new THREE.MeshStandardMaterial({ color: '#e6d8b8', roughness: 0.5 }),
+        new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
+        new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
+      ];
+      const lineMat = new THREE.MeshBasicMaterial({ color: '#b9a57c' });
+      stacks.forEach((n, i) => {
+        const col = i % cols;
+        const row = Math.floor(i / cols);
+        const x = (col - (cols - 1) / 2) * 0.044;
+        const z = (row - (rows - 1) / 2) * 0.058;
+        const hgt = n * 0.012;
+        const st = new THREE.Mesh(new THREE.BoxGeometry(0.036, hgt, 0.05), tileMat);
+        st.position.set(x, hgt / 2, z);
+        st.castShadow = true;
+        st.userData.pile = true;
+        pile.add(st);
+        // Fugen zwischen den Steinen im Stapel
+        for (let k = 1; k < n; k++) {
+          const ln = new THREE.Mesh(new THREE.BoxGeometry(0.0365, 0.0015, 0.0505), lineMat);
+          ln.position.set(x, k * 0.012, z);
+          ln.userData.pile = true;
+          pile.add(ln);
+        }
+      });
+      pile.position.set(-0.075, TABLE_Y, 0);
       pile.userData.pile = true;
-      stack.userData.pile = true;
+      this.pileObj = pile;
       this.gameGroup.add(pile);
       this.clickables.push(pile);
-    }
+    } else this.pileObj = null;
     if (v.indicator) {
       const m = tileMesh(v.indicator, true);
       m.scale.setScalar(FLAT);
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = readRot;
-      m.position.set(0.06, TABLE_Y + 0.01, 0);
+      m.position.set(0.1, TABLE_Y + 0.01, 0);
       this.gameGroup.add(m);
       if (v.okeyBirTile) {
         const o = tileMesh(v.okeyBirTile, true);
         o.scale.setScalar(FLAT);
         o.rotation.x = -Math.PI / 2;
         o.rotation.z = readRot + 0.3;
-        o.position.set(0.07, TABLE_Y + 0.03, 0.01);
+        o.position.set(0.11, TABLE_Y + 0.03, 0.01);
         this.gameGroup.add(o);
       }
     }
@@ -1435,7 +1567,7 @@ export class World {
       const a = seatPos(s);
       const b = seatPos((s + 1) % 4);
       const corner = a.clone().add(b).multiplyScalar(0.27);
-      const pile = v.discards[s];
+      const pile = v.finisher === s ? v.discards[s].slice(0, -1) : v.discards[s];
       const shown = pile.slice(-4);
       shown.forEach((tile, i) => {
         const m = tileMesh(tile, true);
@@ -1450,6 +1582,7 @@ export class World {
           m.position.copy(this.flyers[this.flyers.length - 1].from);
         }
         if (isTop && v.mySeat !== null && (s + 1) % 4 === v.mySeat) {
+          this.sideObj = m;
           m.userData.side = true;
           this.clickables.push(m);
         }
@@ -1457,6 +1590,26 @@ export class World {
       });
     }
 
+    // Beendet: letzter Stein liegt offen in der Mitte (wie am echten Tisch)
+    if (v.finisher !== null && v.finisher !== undefined) {
+      const last = v.discards[v.finisher][v.discards[v.finisher].length - 1];
+      if (last) {
+        const m = tileMesh(last, true);
+        m.scale.setScalar(FLAT * 1.15);
+        m.rotation.x = -Math.PI / 2;
+        m.rotation.z = readRot + 0.25;
+        m.position.set(0.015, TABLE_Y + 0.075, 0.03);
+        const glow = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.075, 32), new THREE.MeshBasicMaterial({ color: '#ffd27a', transparent: true, opacity: 0.85 }));
+        glow.rotation.x = -Math.PI / 2;
+        glow.position.set(0.015, TABLE_Y + 0.003, 0.03);
+        this.gameGroup.add(m, glow);
+        if (this.prevDiscards[v.finisher] !== undefined && v.discards[v.finisher].length === this.prevDiscards[v.finisher] + 1) {
+          const from = seatPos(v.finisher).multiplyScalar(0.47);
+          this.flyers.push({ m, from: new THREE.Vector3(from.x, TABLE_Y + 0.12, from.z), to: m.position.clone(), t: 0, spin: 2 });
+          m.position.copy(this.flyers[this.flyers.length - 1].from);
+        }
+      }
+    }
     this.prevDiscards = v.discards.map((d) => d.length);
     // Köpfe schauen zum Spieler am Zug
     this.avatars.forEach((a, s) => {
@@ -1702,7 +1855,7 @@ export class World {
     frame.position.set(dir.x * 1.04, 0.45, dir.z * 1.04);
     facing(frame, dir.x, dir.z);
     const g = new THREE.Group();
-    g.position.set(-0.56, -0.45, 0.08);
+    g.position.set(-0.58, -0.45, -0.12);
     const wood = new THREE.MeshStandardMaterial({ color: '#6b4226', roughness: 0.6 });
     const brass = new THREE.MeshStandardMaterial({ color: '#c9a04a', metalness: 0.8, roughness: 0.3 });
     const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.5, 10), wood);
@@ -1806,14 +1959,11 @@ export class World {
       return new THREE.Vector3(p.x, 0, p.z).addScaledVector(out, 0.42);
     };
     if (st.phase === 'idle' && st.t <= 0) {
-      // nächste Bestellung oder Runde Tee für alle
-      if (!this.cayciQueue.length) {
-        for (let s = 0; s < 4; s++) if (this.avatars[s] || this.seated === s) this.cayciQueue.push({ seat: s, item: 'cay' });
-      }
+      // kommt nur, wenn jemand bestellt hat
       if (this.cayciQueue.length) {
         st.phase = 'go';
         this.routeTo(tableP(this.cayciQueue[0].seat));
-      } else st.t = 30;
+      } else st.t = 0.5;
     } else if (st.phase === 'go' && step()) {
       st.phase = 'serve';
       st.t = 1.4;
@@ -1830,7 +1980,7 @@ export class World {
       this.routeTo(this.cayciHome.clone());
     } else if (st.phase === 'back' && step()) {
       st.phase = 'idle';
-      st.t = this.cayciQueue.length ? 0 : 80 + Math.random() * 60;
+      st.t = 0;
       facing(this.cayci.root, 0, 1);
     }
     this.cayci.setWalking(walking ? 1.25 : 0);

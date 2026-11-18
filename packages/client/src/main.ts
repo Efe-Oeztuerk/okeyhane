@@ -14,6 +14,7 @@ import { Voice } from './voice.ts';
 import { sfx, unlockAudio } from './sound.ts';
 import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
+import { isCompleteMelds, isCompletePairs } from '@okeyhane/engine';
 import { CREDITS } from './models.ts';
 import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
@@ -34,6 +35,7 @@ interface TableSummary {
   music: MediaState;
   signatures: Record<number, string>;
   spot?: number;
+  ready?: number[];
 }
 
 let profile: Profile = loadProfile() ?? { name: '', avatar: { ...defaultAvatar }, signature: null };
@@ -121,6 +123,7 @@ on('state', (m) => {
     discards: v.players.map((p: any) => p.discards),
     tableMelds: v.tableMelds,
     revealed: v.revealedHands,
+    finisher: v.phase === 'handOver' || v.gameOver ? m.lastResult?.finisher ?? null : null,
   };
   world.setGame(visual);
   const ended = v.phase === 'handOver' || v.phase === 'gameOver';
@@ -493,7 +496,7 @@ function openSettings() {
         ['on', getLang() === 'de' ? 'An' : 'Açık'],
         ['off', getLang() === 'de' ? 'Aus' : 'Kapalı'],
       ]),
-      check('showKeyHints', getLang() === 'de' ? 'Tastenhilfe am Tisch zeigen' : 'Masada tuş ipuçlarını göster'),
+      check('showKeyHints', getLang() === 'de' ? '❔ Bedienhinweise einblenden' : '❔ Kullanım ipuçlarını göster'),
       keybindSection(),
       controllerSection(),
       h(
@@ -510,6 +513,26 @@ function openSettings() {
     ),
   );
 }
+
+/** kleiner Punkt: Sprachverbindung zu diesem Spieler */
+function voiceDot(id: string, isMe: boolean) {
+  if (isMe || id.startsWith('bot-')) return '';
+  const st = voice.state(id);
+  const de = getLang() === 'de';
+  const map: Record<string, [string, string]> = {
+    connected: ['🟢', de ? 'Sprachverbindung steht' : 'Ses bağlantısı var'],
+    connecting: ['🟡', de ? 'Sprachverbindung wird aufgebaut…' : 'Ses bağlanıyor…'],
+    failed: ['🔴', de ? 'Keine Sprachverbindung (Netzwerk blockiert)' : 'Ses bağlantısı yok (ağ engelliyor)'],
+  };
+  const [dot, title] = map[st ?? 'connecting'];
+  return h('span', { class: 'vdot', title }, dot + ' ');
+}
+voice.onChange = () => inCafe && table && renderLeft();
+// eigener Mikro-Pegel: grüner Rand am Mikro-Knopf
+setInterval(() => {
+  const b = document.querySelector('.mic-btn') as HTMLElement | null;
+  if (b) b.style.boxShadow = voice.level > 0.08 ? `0 0 0 ${2 + Math.round(voice.level * 4)}px #6fdc6f` : '';
+}, 120);
 
 /** Radio-Anzeige: Sender · Titel; Klick = abspielen erlauben bzw. Musikfenster */
 let radioEl: HTMLElement | null = null;
@@ -669,7 +692,7 @@ function enterCafe() {
   menu?._pv?.dispose();
   ui.innerHTML = '';
   chatLog = [];
-  addLog(h('div', { class: 'sys' }, touchActive() ? (getLang() === 'de' ? 'Links: Joystick zum Laufen · rechts wischen: umschauen · Stuhl antippen: hinsetzen' : 'Sol: yürü · sağda kaydır: etrafa bak · sandalyeye dokun: otur') : t('walkHint')));
+  if (settings.showKeyHints) addLog(h('div', { class: 'sys' }, touchActive() ? (getLang() === 'de' ? 'Links: Joystick zum Laufen · rechts wischen: umschauen · Stuhl antippen: hinsetzen' : 'Sol: yürü · sağda kaydır: etrafa bak · sandalyeye dokun: otur') : t('walkHint')));
   world.setSelf(profile.avatar, profile.name || 'Oyuncu');
   world.onChair = (seat, spot) => {
     if (!table) return;
@@ -705,6 +728,22 @@ function enterCafe() {
       renderAll();
     }
   };
+  world.onDrawDragStart = (kind, e) => {
+    if (!myTurn('draw') || !st) return false;
+    const left = st.topDiscards[(you.seat! + 3) % 4];
+    if (kind === 'side' && (!left || st.view.okeyBirTile)) return false;
+    const ghost = kind === 'side' ? tileElement(left, st.okey) : h('div', { class: 'tile back' });
+    istaka.externalDrag(ghost, e, (slot, moved, x, y) => {
+      if (!moved) return; // war nur ein Klick → normales Ziehen per Klick
+      world.suppressClick = true;
+      setTimeout(() => (world.suppressClick = false), 60);
+      if (slot === null) return;
+      istaka.pendingSlot = slot;
+      istaka.flyFrom = { x, y };
+      act({ action: kind === 'pile' ? 'drawPile' : 'drawDiscard' });
+    });
+    return true;
+  };
   world.onPile = () => act({ action: 'drawPile' });
   world.onSide = () => act({ action: 'drawDiscard' });
   world.onMeld = (index) => {
@@ -712,13 +751,14 @@ function enterCafe() {
     if (!ids.length) return toast(t('selectMeld'));
     act({ action: 'layoff', meldIndex: index, tileIds: ids });
   };
-  istaka.isOverTable = (x, y) => world.isOverTable(x, y);
+  istaka.zoneAt = (x, y) => world.dropZoneAt(x, y);
+  istaka.onZoneHover = (z) => world.showZones(z);
   istaka.canDiscard = () => myTurn('discard');
   world.onFocusChange = () => renderFocusBadge();
   world.onLookChange = () => renderHint();
   istaka.onDropZone = (zone, id) => {
     if (zone === 'discard') act({ action: 'discard', tileId: id });
-    else if (zone === 'finish') act({ action: 'finish', tileId: id });
+    else if (zone === 'finish') tryFinish(id);
   };
   istaka.onChange = () => renderActions();
   renderAll();
@@ -744,8 +784,32 @@ function leaveCafe() {
 }
 
 function act(m: any) {
+  if (m.action === 'drawPile' && !istaka.flyFrom) istaka.flyFrom = world.screenOf('pile');
+  if (m.action === 'drawDiscard' && !istaka.flyFrom) istaka.flyFrom = world.screenOf('side');
   send({ type: 'action', ...m });
   if (m.action === 'discard' || m.action === 'finish' || m.action === 'okeyBir') istaka.selected.clear();
+}
+
+/** Beenden nur mit fertiger Hand und nach Bestätigung (nie aus Versehen) */
+function tryFinish(id: number) {
+  if (!st || !myTurn('discard')) return;
+  const de = getLang() === 'de';
+  const v = st.view;
+  const rest = v.myHand.filter((x: any) => x.id !== id);
+  const r = table!.rules;
+  let ok = true;
+  if (r.mode !== 'okey101') ok = rest.length === 14 && (isCompleteMelds(rest, st.okey) || isCompletePairs(rest, st.okey, v.indicator, r.indicatorPairsAnything));
+  else ok = rest.length === 0;
+  if (!ok) {
+    toast(de ? '✋ Deine Hand ist noch nicht fertig – der Stein bleibt bei dir.' : '✋ Elin henüz bitmedi – taş sende kalıyor.');
+    return;
+  }
+  const tile = v.myHand.find((x: any) => x.id === id);
+  const label = tile ? (tile.fake ? '★' : `${tile.value}`) : '';
+  popupMenu(de ? `🏁 Mit diesem Stein (${label}) beenden?` : `🏁 Bu taşla (${label}) bitiriyor musun?`, [
+    { label: de ? '✓ Ja, beenden!' : '✓ Evet, bitir!', fn: () => act({ action: 'finish', tileId: id }) },
+    { label: de ? '✗ Nein, weiterspielen' : '✗ Hayır, devam', fn: () => {} },
+  ]);
 }
 
 function myTurn(phase?: 'draw' | 'discard') {
@@ -778,7 +842,7 @@ function renderAll() {
 
 function renderFocusBadge() {
   const el = slot('focus', 'focusbadge');
-  const show = inCafe && world.seated !== null;
+  const show = inCafe && world.seated !== null && settings.showKeyHints;
   el.classList.toggle('hidden', !show);
   const L = keyLabel(settings.keys.look);
   const Z = keyLabel(settings.keys.zoom);
@@ -800,7 +864,7 @@ function renderHint() {
   const walking = world.seated === null;
   const looking = world.isLooking();
   cross.classList.toggle('hidden', !looking);
-  el.classList.toggle('hidden', !walking);
+  el.classList.toggle('hidden', !walking || !settings.showKeyHints);
   const K = settings.keys;
   const mv = [K.forward, K.left, K.back, K.right].map(keyLabel).join('');
   if (touchActive()) {
@@ -819,8 +883,34 @@ function renderHint() {
 function renderLeft() {
   const el = slot('left', 'hud-left panel');
   el.innerHTML = '';
+  el.classList.toggle('compact', settings.hudCompact);
   const isOwner = table!.ownerId === myId;
+  const fold = h(
+    'button',
+    {
+      class: 'small ghost fold',
+      title: getLang() === 'de' ? 'ein-/ausklappen' : 'aç/kapa',
+      onclick: () => {
+        settings.hudCompact = !settings.hudCompact;
+        saveSettings();
+        renderLeft();
+      },
+    },
+    settings.hudCompact ? '▸' : '▾',
+  );
+  if (settings.hudCompact) {
+    el.append(
+      h(
+        'div',
+        { class: 'row', style: { flexWrap: 'nowrap', gap: '6px' } },
+        fold,
+        h('div', { class: 'code small-code', title: 'Copy', onclick: () => (navigator.clipboard?.writeText(table!.code), toast(t('copied'), '#2d5a3a')) }, table!.code + ' 📋'),
+      ),
+    );
+    return;
+  }
   el.append(
+    fold,
     h('div', { class: 'muted' }, t('invite')),
     h(
       'div',
@@ -843,7 +933,7 @@ function renderLeft() {
       h(
         'div',
         { class: 'p' },
-        h('span', {}, `${s % 2 === 0 ? '🔵' : '🔴'} ${p.name}${p.bot ? ' 🤖' : ''}${p.id === table!.ownerId ? ' 👑' : ''}${isMe ? ' (sen)' : ''}`),
+        h('span', {}, voiceDot(p.id, isMe), `${s % 2 === 0 ? '🔵' : '🔴'} ${p.name}${p.bot ? ' 🤖' : ''}${p.id === table!.ownerId ? ' 👑' : ''}${isMe ? (getLang() === 'de' ? ' (du)' : ' (sen)') : ''}`),
         h(
           'span',
           { class: 'row', style: { gap: '4px' } },
@@ -886,7 +976,21 @@ function renderRight() {
     h(
       'button',
       {
-        class: 'small ' + (voice.micOn ? 'primary' : ''),
+        class: 'small ' + (settings.showKeyHints ? 'primary' : 'ghost'),
+        title: getLang() === 'de' ? 'Bedienhinweise ein/aus' : 'İpuçları aç/kapa',
+        onclick: () => {
+          settings.showKeyHints = !settings.showKeyHints;
+          saveSettings();
+          renderRight();
+          renderHint();
+        },
+      },
+      '❔',
+    ),
+    h(
+      'button',
+      {
+        class: 'small mic-btn ' + (voice.micOn ? 'primary' : ''),
         onclick: async () => {
           try {
             await voice.enableMic(!voice.micOn);
@@ -962,7 +1066,7 @@ setupControls(world, istaka, {
   finish: () => {
     if (!myTurn('discard')) return;
     const id = needTile();
-    if (id !== null) act({ action: 'finish', tileId: id });
+    if (id !== null) tryFinish(id);
   },
   indicator: () => act({ action: 'showIndicator' }),
   okeyBir: () => {
@@ -1134,8 +1238,21 @@ function renderGame() {
     h('div', { class: 'score' + (mine === 0 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(0)), String(v.teamScores[0])),
     v.phase === 'handOver' || v.phase === 'gameOver'
       ? h('div', { class: 'turn' }, v.gameOver ? t('gameOver') : t('handOver'))
-      : h('div', { class: 'turn' + (isMe ? ' me' : '') }, isMe ? t('yourTurn') : `${t('waitingFor')}: ${turnName}`, timer),
-    h('div', { class: 'okeyinfo' }, 'Okey', okeyTile ? tileElement(okeyTile) : '', h('span', { class: 'muted' }, `${t('pileLeft')}: ${v.pileCount} · ${t(table!.rules.mode)} · El ${v.handNo + (v.phase === 'handOver' || v.gameOver ? 0 : 1)}`)),
+      : h(
+          'div',
+          { class: 'turn' + (isMe ? ' me' : '') },
+          isMe
+            ? v.phase === 'draw'
+              ? getLang() === 'de'
+                ? '① Ziehen: Mitte oder links'
+                : '① Çek: ortadan ya da soldan'
+              : getLang() === 'de'
+                ? '② Abwerfen ➜ rechts · oder 🏁 Mitte'
+                : '② At ➜ sağa · ya da 🏁 ortaya'
+            : `${t('waitingFor')}: ${turnName}`,
+          timer,
+        ),
+    h('div', { class: 'okeyinfo' }, 'Okey', okeyTile ? tileElement(okeyTile) : '', h('span', { class: 'muted' }, `${t('pileLeft')}: ${v.pileCount} (${Math.floor(v.pileCount / 5)}×5${v.pileCount % 5 ? ' + ' + (v.pileCount % 5) : ''}) · ${t(table!.rules.mode)} · El ${v.handNo + (v.phase === 'handOver' || v.gameOver ? 0 : 1)}`)),
     h('div', { class: 'score' + (mine === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(1)), String(v.teamScores[1])),
   );
 
@@ -1156,7 +1273,7 @@ function renderGame() {
   istaka.render();
   renderActions();
 
-  zones.classList.toggle('hidden', !myTurn('discard'));
+  zones.classList.toggle('hidden', true);
   zones.innerHTML = '';
   zones.append(h('div', { class: 'zone', 'data-zone': 'discard' }, '⬇ ' + t('discard')), h('div', { class: 'zone finish', 'data-zone': 'finish' }, '✔ ' + t('finish')));
   zones.querySelectorAll('.zone').forEach((z) => ((z as HTMLElement).dataset.zone = (z as HTMLElement).getAttribute('data-zone')!));
@@ -1166,6 +1283,7 @@ function renderGame() {
   result.classList.toggle('hidden', !over);
   if (over) {
     result.innerHTML = '';
+    result.append(handsPanel(v));
     const isOwner = table!.ownerId === myId;
     if (v.gameOver) {
       const w = v.winnerTeam;
@@ -1182,9 +1300,66 @@ function renderGame() {
         ),
       );
     } else {
-      result.append(h('h2', {}, t('handOver')), h('div', {}, st.lastResult?.note ?? ''));
+      const lr = st.lastResult ?? {};
+      const de = getLang() === 'de';
+      const who =
+        lr.finisher !== undefined && lr.finisher !== null
+          ? `🏁 ${nameOf(lr.finisher)} ${de ? 'hat beendet' : 'bitirdi'}${lr.withOkey ? (de ? ' – mit Okey!' : ' – okeyle!') : ''}${lr.withPairs ? (de ? ' – mit Paaren (Çift)' : ' – çiftten') : ''}`
+          : lr.note === 'Ortaya bitti'
+            ? de
+              ? '🀫 Ortaya bitti – die Mitte ist leer, niemand hat beendet'
+              : '🀫 Ortaya bitti – kimse bitiremedi'
+            : '';
+      appendAll(result, h('h2', {}, t('handOver')), who ? h('div', { class: 'finisher' }, who) : null, h('div', { class: 'muted' }, lr.note ?? ''));
+      // bereit für die nächste Hand
+      const ready = new Set(table!.ready ?? []);
+      const humans = table!.seats.map((p, i) => [p, i] as const).filter(([p]) => p && !p.bot);
+      const iAmReady = you.seat !== null && ready.has(you.seat);
+      appendAll(
+        result,
+        h(
+          'div',
+          { class: 'readyrow' },
+          humans.map(([p, i]) => h('span', { class: 'rd ' + (ready.has(i) ? 'ok' : '') }, (ready.has(i) ? '✅ ' : '⏳ ') + p!.name)),
+        ),
+        h(
+          'div',
+          { class: 'row', style: { justifyContent: 'center' } },
+          you.seat !== null
+            ? h('button', { class: iAmReady ? 'ghost' : 'primary', onclick: () => send({ type: 'ready', ready: !iAmReady }) }, iAmReady ? (de ? '↩ Doch nicht bereit' : '↩ Hazır değilim') : de ? '✓ Bereit für die nächste Runde' : '✓ Sonraki ele hazırım')
+            : null,
+          isOwner ? h('button', { onclick: () => send({ type: 'nextHand' }) }, de ? '▶ Jetzt starten (Tischbesitzer)' : '▶ Hemen başlat (masa sahibi)') : null,
+        ),
+      );
     }
   }
+}
+
+let showHands = true;
+/** Am Ende der Hand: Steine aller Spieler gut lesbar als Reihen */
+function handsPanel(v: any): HTMLElement {
+  const de = getLang() === 'de';
+  const box = h('div', { class: 'handsbox' });
+  const toggle = h('button', { class: 'small ghost', onclick: () => ((showHands = !showHands), renderGame()) }, showHands ? (de ? '▾ Hände ausblenden' : '▾ Elleri gizle') : de ? '▸ Hände aller Spieler ansehen' : '▸ Herkesin elini gör');
+  box.append(toggle);
+  if (!showHands) return box;
+  const revealed: any[][] | null = v.revealedHands;
+  const finisher = st?.lastResult?.finisher;
+  for (let s = 0; s < 4; s++) {
+    const tiles: any[] = (s === you.seat ? v.myHand : revealed?.[s]) ?? [];
+    const row = h('div', { class: 'handrow' + (s === finisher ? ' winner' : '') + (s % 2 === 0 ? ' tA' : ' tB') });
+    row.append(h('div', { class: 'hn' }, (s === finisher ? '🏁 ' : '') + nameOf(s)));
+    const line = h('div', { class: 'hl' });
+    for (const tl of tiles) {
+      const el = tileElement(tl, st?.okey);
+      el.classList.add('mini');
+      line.append(el);
+    }
+    if (!tiles.length) line.append(h('span', { class: 'muted' }, s === finisher ? (de ? 'fertig' : 'bitti') : '—'));
+    row.append(line);
+    box.append(row);
+  }
+  return box;
 }
 
 function renderActions() {
@@ -1207,7 +1382,7 @@ function renderActions() {
     btn('🀫 ' + t('drawPile'), draw, () => act({ action: 'drawPile' })),
     btn('↘ ' + t('drawSide'), draw && !!st.topDiscards[(you.seat + 3) % 4] && !v.okeyBirTile, () => act({ action: 'drawDiscard' })),
     btn('⬇ ' + t('discard'), disc && one !== null, () => act({ action: 'discard', tileId: one })),
-    btn('✔ ' + t('finish'), disc && one !== null, () => act({ action: 'finish', tileId: one }), 'primary'),
+    btn('✔ ' + t('finish'), disc && one !== null, () => tryFinish(one!), 'primary'),
     btn('👁 ' + t('showIndicator'), v.current === you.seat, () => act({ action: 'showIndicator' })),
   );
   if (r.mode === 'perisan') bar.append(btn('🀄 ' + t('okeyBir'), disc && one !== null && !v.okeyBirTile, () => act({ action: 'okeyBir', tileId: one }), 'danger'));

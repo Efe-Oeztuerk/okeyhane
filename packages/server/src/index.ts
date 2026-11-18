@@ -50,6 +50,8 @@ interface Table {
   recorded: boolean;
   /** an welchem Tisch im Kahvehane gespielt wird (0 = Mitte, 1 = Fenster, 2/3 = Garten) */
   spot: number;
+  /** nach einer Hand: wer ist bereit für die nächste (Plätze) */
+  ready: Set<number>;
 }
 
 const tables = new Map<string, Table>();
@@ -142,6 +144,7 @@ function tableSummary(t: Table) {
     music: t.music,
     signatures: t.signatures,
     spot: t.spot,
+    ready: [...t.ready],
   };
 }
 
@@ -209,13 +212,13 @@ function scheduleBots(t: Table) {
   const g = t.game;
   if (!g || g.gameOver) return;
   if (g.hand.phase === 'handOver') {
-    // nächste Hand automatisch nach kurzer Pause
-    t.botTimer = setTimeout(() => {
-      if (t.game === g && g.hand.phase === 'handOver') {
-        g.nextHand();
-        afterAction(t);
-      }
-    }, 9000);
+    // nächste Hand erst, wenn alle Menschen bereit sind (Bots sind es sofort) oder der Tischbesitzer startet
+    t.seats.forEach((s, i) => s.bot && t.ready.add(i));
+    if (!t.seats.some((s) => s.client)) {
+      // nur Bots/Zuschauer: kurz warten, dann weiter
+      t.botTimer = setTimeout(() => maybeNextHand(t, true), 6000);
+    } else maybeNextHand(t);
+    pushTable(t);
     return;
   }
   const seat = g.hand.current;
@@ -230,6 +233,16 @@ function scheduleBots(t: Table) {
       afterAction(t);
     }, 900 + Math.random() * 700);
   }
+}
+
+function maybeNextHand(t: Table, force = false) {
+  const g = t.game;
+  if (!g || g.gameOver || g.hand.phase !== 'handOver') return;
+  const all = t.seats.every((s, i) => (!s.client && !s.bot) || t.ready.has(i));
+  if (!all && !force) return;
+  t.ready.clear();
+  g.nextHand();
+  afterAction(t);
 }
 
 function scheduleTurnTimer(t: Table) {
@@ -302,6 +315,7 @@ function handle(c: Client, m: Msg) {
         signatures: {},
         recorded: false,
         spot: Math.max(0, Math.min(3, Number(m.spot) || 0)),
+        ready: new Set(),
       };
       tables.set(table.code, table);
       table.seats[0].client = c;
@@ -428,6 +442,7 @@ function handle(c: Client, m: Msg) {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
         if (!t.game?.gameOver) throw new GameError('Spiel läuft noch');
         t.game = new OkeyGame(t.rules, Date.now() & 0x7fffffff);
+        t.ready.clear();
         t.signatures = {};
         t.recorded = false;
         pushTable(t);
@@ -474,6 +489,20 @@ function handle(c: Client, m: Msg) {
       case 'eye':
         if (c.seat !== null) broadcast(t, { type: 'eye', seat: c.seat, key: m.key });
         return;
+      case 'ready': {
+        // bereit für die nächste Hand
+        if (c.seat === null || !t.game || t.game.hand.phase !== 'handOver') return;
+        if (m.ready === false) t.ready.delete(c.seat);
+        else t.ready.add(c.seat);
+        pushTable(t);
+        maybeNextHand(t);
+        return;
+      }
+      case 'nextHand': {
+        if (!isOwner) throw new GameError('Nur der Tischbesitzer');
+        maybeNextHand(t, true);
+        return;
+      }
       case 'order': {
         // Çaycı-Bestellung (rein kosmetisch)
         const items = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep'];

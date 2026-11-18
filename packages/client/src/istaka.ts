@@ -45,6 +45,13 @@ export class Istaka {
       fresh.forEach((t, i) => (this.slots[i] = t.id));
     } else {
       for (const t of fresh) {
+        // per Ziehen auf einen Platz gelegt → genau dorthin
+        if (this.pendingSlot !== null && this.slots[this.pendingSlot] === null) {
+          this.slots[this.pendingSlot] = t.id;
+          this.justAdded.add(t.id);
+          this.pendingSlot = null;
+          continue;
+        }
         // neuer Stein: hinten in der unteren Reihe, sonst erster freier Platz
         let i = -1;
         for (let k = SLOTS - 1; k >= COLS; k--) if (this.slots[k] === null) { i = k; break; }
@@ -53,7 +60,91 @@ export class Istaka {
         this.justAdded.add(t.id);
       }
     }
+    this.pendingSlot = null;
     this.render();
+    this.flyIn();
+  }
+
+  /** Platz, auf den der nächste gezogene Stein soll (Drag aus der Mitte/Seite) */
+  pendingSlot: number | null = null;
+  /** Bildschirmpunkt, von dem der nächste neue Stein einfliegt */
+  flyFrom: { x: number; y: number } | null = null;
+
+  /** neuer Stein fliegt von der Tischmitte/Seite in seinen Platz */
+  private flyIn() {
+    const from = this.flyFrom;
+    this.flyFrom = null;
+    if (!from) return;
+    for (const id of this.justAdded) {
+      const el = this.el.querySelector(`.tile[data-id="${id}"]`) as HTMLElement | null;
+      if (!el) continue;
+      el.classList.remove('new');
+      const r = el.getBoundingClientRect();
+      const dx = from.x - (r.left + r.width / 2);
+      const dy = from.y - (r.top + r.height / 2);
+      el.style.transition = 'none';
+      el.style.transform = `translate(${dx}px, ${dy}px) scale(0.45) rotate(-8deg)`;
+      el.style.zIndex = '20';
+      requestAnimationFrame(() =>
+        requestAnimationFrame(() => {
+          el.style.transition = 'transform 0.42s cubic-bezier(.2,.8,.25,1)';
+          el.style.transform = '';
+          setTimeout(() => {
+            el.style.transition = '';
+            el.style.zIndex = '';
+          }, 450);
+        }),
+      );
+    }
+  }
+
+  /** Stein von außen (Mitte/Seite) auf die Istaka ziehen. onDrop: Platz-Index oder null */
+  externalDrag(ghostTile: HTMLElement, e: PointerEvent, onDrop: (slot: number | null, moved: boolean, x: number, y: number) => void) {
+    const ghost = h('div', { class: 'dragghost pull' });
+    ghost.append(ghostTile);
+    document.body.append(ghost);
+    const sx = e.clientX;
+    const sy = e.clientY;
+    let moved = false;
+    const place = (x: number, y: number) => {
+      ghost.style.left = x - 23 + 'px';
+      ghost.style.top = y - 32 + 'px';
+    };
+    place(sx, sy);
+    const move = (ev: PointerEvent) => {
+      if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) moved = true;
+      place(ev.clientX, ev.clientY);
+      document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
+      const t = this.targetAt(ev.clientX, ev.clientY);
+      if (t?.dataset.slot !== undefined) t.classList.add('over');
+    };
+    const up = (ev: PointerEvent) => {
+      removeEventListener('pointermove', move);
+      removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', up);
+      document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
+      ghost.remove();
+      const t = this.targetAt(ev.clientX, ev.clientY);
+      const slot = t?.dataset.slot !== undefined ? Number(t.dataset.slot) : null;
+      onDrop(moved && slot !== null && this.slots[slot] === null ? slot : moved && slot !== null ? this.nearestFree(slot) : null, moved, ev.clientX, ev.clientY);
+    };
+    addEventListener('pointermove', move);
+    addEventListener('pointerup', up);
+    addEventListener('pointercancel', up);
+  }
+
+  private nearestFree(slot: number) {
+    let best = -1;
+    let bd = Infinity;
+    for (let i = 0; i < SLOTS; i++) {
+      if (this.slots[i] !== null) continue;
+      const d = Math.abs(i - slot) + (Math.floor(i / COLS) === Math.floor(slot / COLS) ? 0 : 40);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    }
+    return best >= 0 ? best : null;
   }
 
   clear() {
@@ -70,8 +161,10 @@ export class Istaka {
 
   /** Umgedrehte Steine (z. B. um den Okey zu verstecken) – nur lokal */
   flipped = new Set<number>(JSON.parse(sessionStorage.getItem('flipped') || '[]'));
-  /** Liegt der Punkt über dem Tisch? (wird von außen gesetzt) */
-  isOverTable: ((x: number, y: number) => boolean) | null = null;
+  /** Wurfzone unter dem Punkt (Mitte = beenden, rechts = abwerfen) */
+  zoneAt: ((x: number, y: number) => 'finish' | 'discard' | null) | null = null;
+  /** Zonen auf dem Tisch anzeigen (false = aus) */
+  onZoneHover: ((z: 'finish' | 'discard' | null | false) => void) | null = null;
   /** Darf gerade abgeworfen werden? */
   canDiscard: (() => boolean) | null = null;
   private lastClick = { id: -1, t: 0 };
@@ -234,8 +327,11 @@ export class Istaka {
         document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
         const target = this.targetAt(ev.clientX, ev.clientY);
         target?.classList.add('over');
-        const overTable = !target && group.length === 1 && this.canDiscard?.() && this.isOverTable?.(ev.clientX, ev.clientY);
-        this.ghost.classList.toggle('throw', !!overTable);
+        const canThrow = group.length === 1 && !!this.canDiscard?.();
+        const zone = canThrow && !target ? this.zoneAt?.(ev.clientX, ev.clientY) ?? null : null;
+        if (canThrow) this.onZoneHover?.(zone);
+        this.ghost.classList.toggle('throw', zone === 'discard');
+        this.ghost.classList.toggle('finishing', zone === 'finish');
       }
     };
     const up = (ev: PointerEvent) => {
@@ -274,15 +370,21 @@ export class Istaka {
       this.dragId = null;
       const target = this.targetAt(ev.clientX, ev.clientY);
       if (target?.dataset.slot !== undefined) {
-        if (group.length > 1) this.moveGroup(group, Number(target.dataset.slot));
-        else this.moveTo(id, Number(target.dataset.slot));
+        if (group.length > 1) {
+          this.moveGroup(group, Number(target.dataset.slot));
+          // Aktion erledigt → Auswahl aufheben
+          this.selected.clear();
+          this.onChange?.();
+        } else this.moveTo(id, Number(target.dataset.slot));
         sfx.tile();
       } else if (target?.dataset.zone) {
         this.onDropZone?.(target.dataset.zone, id);
-      } else if (group.length === 1 && this.canDiscard?.() && this.isOverTable?.(ev.clientX, ev.clientY)) {
-        // auf den Tisch geworfen = abwerfen
-        this.onDropZone?.('discard', id);
+      } else if (group.length === 1 && this.canDiscard?.()) {
+        // rechts auf den eigenen Stapel = abwerfen, in die Mitte = beenden; sonst zurück
+        const zone = this.zoneAt?.(ev.clientX, ev.clientY) ?? null;
+        if (zone) this.onDropZone?.(zone, id);
       }
+      this.onZoneHover?.(false);
       this.render();
     };
     addEventListener('pointermove', move);
