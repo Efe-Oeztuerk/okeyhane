@@ -21,7 +21,9 @@ export interface Station {
 
 /** Feste Radiosender – weitere Playlists hier eintragen */
 export const STATIONS: Station[] = [
-  { id: 'okeyhane', name: '🫖 Okeyhane Arabesk', tracks: ['/music/okeyhane_1.mp3', '/music/okeyhane_2.mp3'] },
+  { id: 'okeyhane', name: '🫖 Okeyhane Melodileri', tracks: ['/music/okeyhane_1.mp3', '/music/okeyhane_2.mp3'] },
+  { id: 'arabesk', name: '🌙 Arabesk', youtubeList: 'PL7HMkQQh_K4GSJTxlk4Lr4nzOLSvnxbMT' },
+  { id: 'pop', name: '🎤 Türkçe Pop', youtubeList: 'PLDIoUOhQQPlVr3qepMVRsDe4T8vNQsvno' },
 ];
 
 // ------------------------------------------------------------------ Lokale Titel mit Überblendung

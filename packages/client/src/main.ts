@@ -18,6 +18,7 @@ import { CREDITS } from './models.ts';
 import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
 import { music as bgm, STATIONS } from './menuMusic.ts';
+import { spotify, parseSpotify } from './spotify.ts';
 
 // ------------------------------------------------------------------ Zustand
 
@@ -249,6 +250,7 @@ function applyMedia() {
     tv.stopAll();
     music.stopAll();
     world.setTvVisible(false);
+    spotify.close();
     bgm.setBusy(false);
     return;
   }
@@ -257,18 +259,27 @@ function applyMedia() {
   world.setTvVisible(tv.enabled && !!table.tv.source);
   music.enabled = settings.musicMode === 'table';
   music.apply(table.music);
-  const ownOn = settings.musicMode === 'own' && !!settings.ownMusicUrl;
+  const spUri = parseSpotify(settings.ownMusicUrl);
+  const ownOn = settings.musicMode === 'own' && !!settings.ownMusicUrl && !spUri;
   if (ownOn) ownMusic.playLocal(settings.ownMusicUrl);
   else ownMusic.stopAll();
+  if (settings.musicMode === 'own' && spUri) spotify.open(spUri);
+  else if (spotify.isOpen() && settings.musicMode !== 'own') spotify.pause();
   // Radio macht automatisch Platz, sobald andere Musik oder der Fernseher läuft
   const tableMusic = music.enabled && !!table.music.source && table.music.playing;
   const tableTv = tv.enabled && !!table.tv.source && table.tv.playing;
-  bgm.setBusy(ownOn || tableMusic || tableTv);
+  bgm.setBusy(ownOn || tableMusic || tableTv || spotify.playing);
 }
 setInterval(() => {
   tv.tick();
   music.tick();
 }, 4000);
+spotify.onPlaying = () => applyMedia();
+spotify.onClosed = () => {
+  settings.musicMode = 'table';
+  saveSettings();
+  applyMedia();
+};
 
 // ------------------------------------------------------------------ Menü
 
@@ -1231,7 +1242,7 @@ function openMedia() {
   const isOwner = table!.ownerId === myId;
   const tvInput = h('input', { placeholder: t('linkPlaceholder'), style: { flex: '1' } });
   const musicInput = h('input', { placeholder: t('linkPlaceholder') + ' / ' + t('streamPlaceholder'), style: { flex: '1' } });
-  const ownInput = h('input', { placeholder: t('linkPlaceholder') + ' / ' + t('streamPlaceholder'), value: settings.ownMusicUrl, style: { flex: '1' } });
+  const ownInput = h('input', { placeholder: 'YouTube / Spotify / Radio-Stream', value: settings.ownMusicUrl, style: { flex: '1' } });
   const loadSrc = (kind: 'tv' | 'music', url: string) => {
     const id = parseYouTube(url);
     if (id) send({ type: kind, action: 'load', source: { kind: 'youtube', id } });
@@ -1271,7 +1282,25 @@ function openMedia() {
     h('h2', { style: { marginTop: '14px' } }, '🎵 ' + t('music')),
     h('label', { class: 'row' }, t('music') + ':', modeSel('musicMode', [['table', t('forAll')], ['off', t('off')], ['own', t('ownMusic')]])),
     isOwner ? h('div', { class: 'col', style: { margin: '8px 0' } }, h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, musicInput, h('button', { class: 'primary small', onclick: () => loadSrc('music', musicInput.value) }, t('load'))), controls('music')) : h('div', { class: 'muted' }, t('onlyOwner')),
-    h('div', { class: 'col', style: { marginTop: '10px' } }, h('label', {}, t('ownMusic')), h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, ownInput, h('button', { class: 'small', onclick: () => ((settings.ownMusicUrl = ownInput.value), (settings.musicMode = 'own'), saveSettings(), applyMedia()) }, t('load')))),
+    h(
+      'div',
+      { class: 'col', style: { marginTop: '10px' } },
+      h('label', {}, t('ownMusic') + ' · YouTube / 🟢 Spotify'),
+      h(
+        'div',
+        { class: 'row', style: { flexWrap: 'nowrap' } },
+        ownInput,
+        h('button', { class: 'small primary', onclick: () => ((settings.ownMusicUrl = ownInput.value.trim()), (settings.musicMode = 'own'), saveSettings(), applyMedia()) }, t('load')),
+        h('button', { class: 'small ghost', title: 'aus', onclick: () => ((settings.musicMode = 'table'), saveSettings(), spotify.close(), applyMedia()) }, '⏹'),
+      ),
+      h(
+        'div',
+        { class: 'muted' },
+        getLang() === 'de'
+          ? 'Nur du hörst sie. Spotify: Playlist-Link einfügen, im Player ▶ drücken – mit Spotify-Login ganze Songs, sonst 30-s-Vorschau. Das Radio geht dabei automatisch aus.'
+          : 'Sadece sen duyarsın. Spotify: liste linkini yapıştır, oynatıcıda ▶ bas – Spotify girişiyle tam şarkı, yoksa 30 sn önizleme. Radyo otomatik susar.',
+      ),
+    ),
   );
 }
 
