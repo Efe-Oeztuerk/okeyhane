@@ -117,7 +117,7 @@ export class Istaka {
       place(ev.clientX, ev.clientY);
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
       // Ziel = dort, wo der schwebende Stein ist, nicht unter dem Finger
-      const t = this.targetAt(ev.clientX, ev.clientY - lift);
+      const t = this.targetAt(ev.clientX, ev.clientY - lift * AIM);
       if (t?.dataset.slot !== undefined) t.classList.add('over');
     };
     const up = (ev: PointerEvent) => {
@@ -126,9 +126,9 @@ export class Istaka {
       removeEventListener('pointercancel', up);
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
       ghost.remove();
-      const t = this.targetAt(ev.clientX, ev.clientY - lift);
+      const t = this.targetAt(ev.clientX, ev.clientY - lift * AIM);
       const slot = t?.dataset.slot !== undefined ? Number(t.dataset.slot) : null;
-      onDrop(moved && slot !== null && this.slots[slot] === null ? slot : moved && slot !== null ? this.nearestFree(slot) : null, moved, ev.clientX, ev.clientY - lift);
+      onDrop(moved && slot !== null && this.slots[slot] === null ? slot : moved && slot !== null ? this.nearestFree(slot) : null, moved, ev.clientX, ev.clientY - lift * AIM);
     };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
@@ -338,10 +338,10 @@ export class Istaka {
         this.ghost.style.top = ev.clientY - 32 - lift + 'px';
         document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
         // Ziel = dort, wo der schwebende Stein ist, nicht unter dem Finger
-        const target = this.targetAt(ev.clientX, ev.clientY - lift);
+        const target = this.targetAt(ev.clientX, ev.clientY - lift * AIM);
         target?.classList.add('over');
         const canThrow = group.length === 1 && !!this.canDiscard?.();
-        const zone = canThrow && !target ? this.zoneAt?.(ev.clientX, ev.clientY - lift) ?? null : null;
+        const zone = canThrow && !target ? this.zoneAt?.(ev.clientX, ev.clientY - lift * AIM) ?? null : null;
         if (canThrow) this.onZoneHover?.(zone);
         this.ghost.classList.toggle('throw', zone === 'discard');
         this.ghost.classList.toggle('finishing', zone === 'finish');
@@ -382,7 +382,7 @@ export class Istaka {
       this.ghost = null;
       buzz(8);
       this.dragId = null;
-      const target = this.targetAt(ev.clientX, ev.clientY - lift);
+      const target = this.targetAt(ev.clientX, ev.clientY - lift * AIM);
       if (target?.dataset.slot !== undefined) {
         if (group.length > 1) {
           this.moveGroup(group, Number(target.dataset.slot));
@@ -395,7 +395,7 @@ export class Istaka {
         this.onDropZone?.(target.dataset.zone, id);
       } else if (group.length === 1 && this.canDiscard?.()) {
         // rechts auf den eigenen Stapel = abwerfen, in die Mitte = beenden; sonst zurück
-        const zone = this.zoneAt?.(ev.clientX, ev.clientY - lift) ?? null;
+        const zone = this.zoneAt?.(ev.clientX, ev.clientY - lift * AIM) ?? null;
         if (zone) this.onDropZone?.(zone, id);
       }
       this.onZoneHover?.(false);
@@ -572,6 +572,8 @@ export class Istaka {
   }
 }
 
+/** Ziel liegt zwischen Finger und schwebendem Stein (0 = Finger, 1 = Stein) */
+const AIM = 0.5;
 /** Am Handy schwebt der gezogene Stein über dem Finger, damit man sieht, wo er landet */
 function fingerLift(e?: PointerEvent) {
   if (e && e.pointerType === 'mouse') return 0;
