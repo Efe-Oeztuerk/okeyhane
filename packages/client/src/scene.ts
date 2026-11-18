@@ -981,7 +981,8 @@ export class World {
     });
     // Çaycı
     this.cayci = new Avatar3D(
-      { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none' },
+      // Ahmet: eigene Avaturn-Figur (bei „niedrig“ der Cartoon-Çaycı)
+      { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none', ...(settings.quality !== 'low' ? { style: 'real' as const, realBase: 'ahmet' } : {}) },
       'Ahmet',
       { showName: true, standing: true },
     );
@@ -991,13 +992,13 @@ export class World {
     this.cayci.root.position.copy(this.cayciState.pos);
     this.scene.add(this.cayci.root);
     // Tablett
+    const trayG = new THREE.Group();
+    trayG.position.set(0.25, 0.85, 0.3);
     const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.01, 20), new THREE.MeshStandardMaterial({ color: '#c0c0c0', metalness: 0.8, roughness: 0.3 }));
-    tray.position.set(0.25, 0.85, 0.3);
-    this.cayci.root.add(tray);
-    for (let i = 0; i < 3; i++) {
-      const tg = this.teaGlassMesh(new THREE.Vector3(0.2 + i * 0.05, 0.86, 0.3));
-      this.cayci.root.add(tg);
-    }
+    trayG.add(tray);
+    for (let i = 0; i < 3; i++) trayG.add(this.teaGlassMesh(new THREE.Vector3(-0.05 + i * 0.05, 0.01, 0)));
+    this.cayci.root.add(trayG);
+    this.cayciTray = trayG;
   }
 
   // ------------------------------------------------------------ Tageszeit
@@ -2228,6 +2229,7 @@ export class World {
 
   // ------------------------------------------------------------ Çaycı + Bestellungen
 
+  private cayciTray: THREE.Group | null = null;
   private cayciQueue: { seat: number; item: OrderItem; variant: number }[] = [];
   private cayciPath: THREE.Vector3[] = [];
   private cayciHome = new THREE.Vector3(3.6, 0, -3.6);
@@ -2393,6 +2395,13 @@ export class World {
     this.cayci.setWalking(walking ? 1.25 : 0);
     this.cayci.root.position.set(st.pos.x, 0.72, st.pos.z);
     this.cayci.update(dt);
+    // Tablett in Ahmets rechter Hand (Avaturn-Figur), sonst feste Stelle
+    const hand = this.cayci.real?.handWorld('R') ?? this.cayci.real?.handWorld('L');
+    if (this.cayciTray && hand) {
+      this.cayci.root.updateMatrixWorld(true);
+      const local = this.cayci.root.worldToLocal(hand.clone());
+      this.cayciTray.position.set(local.x, local.y + 0.06, local.z + 0.04);
+    }
   }
 
   /** Platz, an dem etwas schon länger steht (zum Abräumen) */

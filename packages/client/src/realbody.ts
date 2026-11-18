@@ -69,23 +69,24 @@ function tex(url: string) {
 
 const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 const NAMES: Record<string, string[]> = {
+  // Quaternius/Vocations-Namen + Mixamo/Avaturn-Namen (LeftArm, LeftUpLeg …)
   spine: ['spine01', 'spine1', 'spine'],
   head: ['head'],
-  upL: ['upperarml'],
-  foreL: ['lowerarml', 'forearml'],
-  handL: ['handl'],
-  upR: ['upperarmr'],
-  foreR: ['lowerarmr', 'forearmr'],
-  handR: ['handr'],
-  thighL: ['thighl'],
-  shinL: ['calfl', 'shinl'],
-  footL: ['footl'],
-  thighR: ['thighr'],
-  shinR: ['calfr', 'shinr'],
-  footR: ['footr'],
-  toeL: ['balll', 'toel'],
+  upL: ['upperarml', 'leftarm'],
+  foreL: ['lowerarml', 'forearml', 'leftforearm'],
+  handL: ['handl', 'lefthand'],
+  upR: ['upperarmr', 'rightarm'],
+  foreR: ['lowerarmr', 'forearmr', 'rightforearm'],
+  handR: ['handr', 'righthand'],
+  thighL: ['thighl', 'leftupleg'],
+  shinL: ['calfl', 'shinl', 'leftleg'],
+  footL: ['footl', 'leftfoot'],
+  thighR: ['thighr', 'rightupleg'],
+  shinR: ['calfr', 'shinr', 'rightleg'],
+  footR: ['footr', 'rightfoot'],
+  toeL: ['balll', 'toel', 'lefttoebase'],
   neck: ['neck01', 'neck', 'spine5', 'spine4', 'spine3'],
-  pelvis: ['pelvis'],
+  pelvis: ['pelvis', 'hips'],
 };
 
 /** was der Cartoon-Avatar an Richtungen liefert */
@@ -117,6 +118,12 @@ export class RealBody {
     void this.build();
   }
 
+  /** Weltposition einer Hand (für Tablett usw.), null solange nicht geladen */
+  handWorld(side: 'L' | 'R'): THREE.Vector3 | null {
+    const b = this.bones[side === 'L' ? 'handL' : 'handR'];
+    return this.ready && b ? b.getWorldPosition(new THREE.Vector3()) : null;
+  }
+
   dispose() {
     this.disposed = true;
     this.group.removeFromParent();
@@ -124,9 +131,20 @@ export class RealBody {
 
   private async build() {
     const a = this.spec;
-    const base = REAL_BASES.find((b) => b.id === a.realBase) ?? REAL_BASES[0];
+    // Sonderfigur Ahmet (Çaycı, Avaturn) – nicht im Editor wählbar
+    const npc = a.realBase === 'ahmet';
+    const base = npc ? { id: 'ahmet', label: 'Ahmet', fem: false, kind: 'v' as const } : (REAL_BASES.find((b) => b.id === a.realBase) ?? REAL_BASES[0]);
     let model: THREE.Object3D;
-    if (base.kind === 'q') {
+    if (npc) {
+      model = skClone(await load('ahmet'));
+      model.traverse((o) => {
+        const m = o as THREE.Mesh;
+        if (m.isMesh && (m.material as THREE.MeshStandardMaterial).metalnessMap) {
+          (m.material as THREE.MeshStandardMaterial).metalness = 0;
+          (m.material as THREE.MeshStandardMaterial).metalnessMap = null;
+        }
+      });
+    } else if (base.kind === 'q') {
       const src = await load(base.id === 'qf' ? 'qfemale' : 'qmale');
       model = skClone(src);
     } else {
