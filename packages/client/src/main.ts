@@ -2123,4 +2123,37 @@ function sendEmote(k: string) {
   lastEmoteAt = now;
   send({ type: 'emote', key: k });
 }
+// ------------------------------------------------------------------ nur Querformat
+// Android: beim ersten Tippen Vollbild + Querformat sperren. iPhone (kann nicht sperren): im Hochformat Hinweis „Handy drehen“.
+{
+  const isPortrait = () => innerHeight > innerWidth;
+  const touchDev = matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1;
+  const cover = h('div', { class: 'rotate-cover hidden' }, h('div', { class: 'rc-icon' }, '📱'), h('div', { class: 'rc-text' }));
+  document.body.append(cover);
+  const sync = () => {
+    const show = touchDev && isPortrait();
+    cover.classList.toggle('hidden', !show);
+    (cover.querySelector('.rc-text') as HTMLElement).textContent =
+      getLang() === 'de' ? 'Bitte dreh dein Handy ins Querformat' : 'Lütfen telefonunu yan çevir';
+  };
+  const lock = async () => {
+    const o: any = (screen as any).orientation;
+    if (!touchDev || !o?.lock) return;
+    try {
+      await o.lock('landscape');
+    } catch {
+      // meist nur im Vollbild erlaubt → Vollbild versuchen, dann nochmal
+      try {
+        const el: any = document.documentElement;
+        if (!document.fullscreenElement && el.requestFullscreen) await el.requestFullscreen({ navigationUI: 'hide' });
+        await o.lock('landscape');
+      } catch {}
+    }
+  };
+  void lock(); // installierte App: klappt oft sofort
+  addEventListener('pointerdown', () => void lock(), { once: true, capture: true });
+  addEventListener('resize', sync);
+  addEventListener('orientationchange', () => setTimeout(sync, 200));
+  sync();
+}
 (window as any).__okey = { world, send, istaka, bgm, get state() { return st; }, get table() { return table; } };
