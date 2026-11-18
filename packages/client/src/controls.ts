@@ -82,6 +82,89 @@ function menuPick(i = openMenu?.idx ?? 0) {
   it?.fn();
 }
 
+// ------------------------------------------------------------------ Emote-Rad
+
+interface WheelItem {
+  icon: string;
+  label: string;
+  fn: () => void;
+}
+let wheel: { el: HTMLElement; items: WheelItem[]; idx: number; openedAt: number; vx: number; vy: number } | null = null;
+export function wheelIsOpen() {
+  return !!wheel;
+}
+
+export function openWheel(items: WheelItem[]) {
+  closeWheel();
+  closeMenu();
+  const el = h('div', { class: 'wheel' });
+  const ring = h('div', { class: 'wheel-ring' });
+  const center = h('div', { class: 'wheel-center' });
+  const R = 150;
+  items.forEach((it, i) => {
+    const a = (i / items.length) * Math.PI * 2 - Math.PI / 2;
+    const b = h(
+      'div',
+      {
+        class: 'wheel-item',
+        style: { left: `calc(50% + ${Math.cos(a) * R}px)`, top: `calc(50% + ${Math.sin(a) * R}px)` },
+        onclick: () => pickWheel(i),
+        onmouseenter: () => selWheel(i),
+      },
+      h('span', { class: 'wi-icon' }, it.icon),
+      h('span', { class: 'wi-num' }, String((i + 1) % 10)),
+    );
+    ring.append(b);
+  });
+  el.append(
+    h('div', { class: 'wheel-title' }, de() ? 'EMOTES' : 'HAREKETLER'),
+    ring,
+    center,
+    h('div', { class: 'wheel-foot' }, de() ? '← → wählen · Enter/E auslösen · Esc schließen' : '← → seç · Enter/E yap · Esc kapat'),
+  );
+  document.getElementById('ui')!.append(el);
+  wheel = { el, items, idx: 0, openedAt: performance.now(), vx: 0, vy: 0 };
+  (window as any).__wheelOpen = true;
+  selWheel(0);
+}
+function selWheel(i: number) {
+  if (!wheel) return;
+  const n = wheel.items.length;
+  wheel.idx = ((i % n) + n) % n;
+  wheel.el.querySelectorAll('.wheel-item').forEach((b, k) => b.classList.toggle('hl', k === wheel!.idx));
+  (wheel.el.querySelector('.wheel-center') as HTMLElement).textContent = wheel.items[wheel.idx].icon + ' ' + wheel.items[wheel.idx].label;
+}
+function pickWheel(i = wheel?.idx ?? 0) {
+  if (!wheel) return;
+  const it = wheel.items[i];
+  closeWheel();
+  it?.fn();
+}
+export function closeWheel() {
+  wheel?.el.remove();
+  wheel = null;
+  (window as any).__wheelOpen = false;
+}
+/** Richtung (Maus/Stick) → Eintrag */
+function aimWheel(x: number, y: number) {
+  if (!wheel || Math.hypot(x, y) < 0.35) return;
+  const a = Math.atan2(y, x) + Math.PI / 2;
+  const n = wheel.items.length;
+  selWheel(Math.round(((a + Math.PI * 2) % (Math.PI * 2)) / ((Math.PI * 2) / n)) % n);
+}
+addEventListener('mousemove', (e) => {
+  if (!wheel) return;
+  if (document.pointerLockElement) {
+    // beim Umschauen: Mausbewegung lenkt das Rad
+    wheel.vx = Math.max(-120, Math.min(120, wheel.vx + e.movementX));
+    wheel.vy = Math.max(-120, Math.min(120, wheel.vy + e.movementY));
+    aimWheel(wheel.vx / 120, wheel.vy / 120);
+  } else {
+    const r = wheel.el.getBoundingClientRect();
+    aimWheel((e.clientX - (r.left + r.width / 2)) / 100, (e.clientY - (r.top + r.height / 2)) / 100);
+  }
+});
+
 // ------------------------------------------------------------------ Tastatur
 
 export function setupControls(world: World, istaka: Istaka, api: ControlApi) {
@@ -95,6 +178,21 @@ export function setupControls(world: World, istaka: Istaka, api: ControlApi) {
     if (document.querySelector('.modal')) return;
     const K = settings.keys;
     const c = e.code;
+    // Emote-Rad
+    if (wheel) {
+      e.preventDefault();
+      if (c === 'Escape') return closeWheel();
+      if (c === 'ArrowRight' || c === 'ArrowDown') return selWheel(wheel.idx + 1);
+      if (c === 'ArrowLeft' || c === 'ArrowUp') return selWheel(wheel.idx - 1);
+      if (c === 'Enter' || c === 'Space' || c === K.emoteWheel) return pickWheel();
+      const n = /^(Digit|Numpad)([0-9])$/.exec(c);
+      if (n) return pickWheel((Number(n[2]) + 9) % 10);
+      return;
+    }
+    if (c === K.emoteWheel && api.seated()) {
+      e.preventDefault();
+      return api.openEmotes();
+    }
     // offenes Menü zuerst
     if (openMenu) {
       if (c === 'Escape') return closeMenu();
@@ -161,6 +259,10 @@ export function setupControls(world: World, istaka: Istaka, api: ControlApi) {
     }
   });
 
+  // E gedrückt halten, zielen, loslassen = auslösen (wie bei Fortnite)
+  addEventListener('keyup', (e) => {
+    if (wheel && e.code === settings.keys.emoteWheel && performance.now() - wheel.openedAt > 350) pickWheel();
+  });
   setupGamepad(world, istaka, api);
   setupTouch(world, api);
 }
@@ -186,7 +288,8 @@ export const PAD_HELP = () =>
         ['RT halten', 'Zoom'],
         ['Select / Share', 'Çaycı rufen'],
         ['LB + Select', 'Punktezettel'],
-        ['L3 / R3', 'Çay trinken / Nargile'],
+        ['L3', 'Çay trinken'],
+        ['R3', 'Emote-Rad (Stick zielen, A auslösen)'],
       ]
     : [
         ['Sol çubuk', 'Yürü'],
@@ -204,7 +307,8 @@ export const PAD_HELP = () =>
         ['RT basılı', 'Yakınlaştır'],
         ['Select / Share', 'Çaycıyı çağır'],
         ['LB + Select', 'Puan kağıdı'],
-        ['L3 / R3', 'Çay iç / Nargile'],
+        ['L3', 'Çay iç'],
+        ['R3', 'Hareket çarkı (çubukla seç, A)'],
       ];
 
 function setupGamepad(world: World, istaka: Istaka, api: ControlApi) {
@@ -223,6 +327,17 @@ function setupGamepad(world: World, istaka: Istaka, api: ControlApi) {
     world.setZoom(!!b[7]);
     world.setThird(b[6] ? (LB ? 'front' : 'back') : null);
 
+    if (wheel) {
+      const ax = p.axes;
+      if (Math.hypot(ax[0], ax[1]) > 0.5) aimWheel(ax[0], ax[1]);
+      else if (Math.hypot(ax[2] ?? 0, ax[3] ?? 0) > 0.5) aimWheel(ax[2], ax[3]);
+      if (down(14) || down(12)) selWheel(wheel.idx - 1);
+      if (down(15) || down(13)) selWheel(wheel.idx + 1);
+      if (down(0)) pickWheel();
+      if (down(1) || down(11)) closeWheel();
+      for (let i = 0; i < b.length; i++) prev[i] = b[i];
+      return;
+    }
     if (openMenu) {
       if (down(12) || down(14)) menuMove(-1);
       if (down(13) || down(15)) menuMove(1);
@@ -255,7 +370,7 @@ function setupGamepad(world: World, istaka: Istaka, api: ControlApi) {
       }
       if (down(8)) LB ? api.toggleSheet() : api.openCayci();
       if (seated && down(10)) api.emote('tea');
-      if (seated && down(11)) api.emote('nargile');
+      if (seated && down(11)) api.openEmotes();
     }
     if (up(7)) world.setZoom(false);
     for (let i = 0; i < b.length; i++) prev[i] = b[i];
@@ -347,6 +462,6 @@ export function keyHintLine() {
   const K = settings.keys;
   const L = keyLabel;
   return de()
-    ? `${L(K.drawPile)} Mitte · ${L(K.drawSide)} Seite · ${L(K.discard)} Abwerfen · ${L(K.finish)} Fertig · ←→↑↓ Cursor · ${L(K.select)} Markieren (Shift+Pfeil = schieben) · ${L(K.cayci)} Çaycı · ${L(K.thirdBack)}/${L(K.thirdFront)} halten = 3rd Person`
-    : `${L(K.drawPile)} orta · ${L(K.drawSide)} yan · ${L(K.discard)} at · ${L(K.finish)} bitir · ←→↑↓ imleç · ${L(K.select)} seç (Shift+ok = kaydır) · ${L(K.cayci)} çaycı · ${L(K.thirdBack)}/${L(K.thirdFront)} basılı = 3. şahıs`;
+    ? `${L(K.drawPile)} Mitte · ${L(K.drawSide)} Seite · ${L(K.discard)} Abwerfen · ${L(K.finish)} Fertig · ←→↑↓ Cursor · ${L(K.select)} Markieren (Shift+Pfeil = schieben) · ${L(K.emoteWheel)} Emotes · ${L(K.cayci)} Çaycı · ${L(K.thirdBack)}/${L(K.thirdFront)} halten = 3rd Person`
+    : `${L(K.drawPile)} orta · ${L(K.drawSide)} yan · ${L(K.discard)} at · ${L(K.finish)} bitir · ←→↑↓ imleç · ${L(K.select)} seç (Shift+ok = kaydır) · ${L(K.emoteWheel)} hareketler · ${L(K.cayci)} çaycı · ${L(K.thirdBack)}/${L(K.thirdFront)} basılı = 3. şahıs`;
 }

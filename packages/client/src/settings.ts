@@ -65,6 +65,7 @@ export interface KeyBinds {
   sortRuns: string;
   sortPairs: string;
   // Emotes & Kahvehane
+  emoteWheel: string;
   emoteTea: string;
   emoteNargile: string;
   emoteSlam: string;
@@ -92,7 +93,7 @@ export const defaultKeys: KeyBinds = {
   thirdBack: 'KeyB',
   thirdFront: 'KeyN',
   drawPile: 'KeyQ',
-  drawSide: 'KeyE',
+  drawSide: 'KeyW',
   discard: 'KeyF',
   finish: 'KeyG',
   indicator: 'KeyI',
@@ -101,6 +102,7 @@ export const defaultKeys: KeyBinds = {
   flip: 'KeyX',
   sortRuns: 'KeyH',
   sortPairs: 'KeyJ',
+  emoteWheel: 'KeyE',
   emoteTea: 'Digit4',
   emoteNargile: 'Digit5',
   emoteSlam: 'Digit6',
@@ -173,7 +175,12 @@ if ((stored.v ?? 1) < 2) {
 }
 // v3: Tasten-/Bedienhinweise standardmäßig aus (über ❔ einblendbar)
 if ((stored.v ?? 1) < 3) settings.showKeyHints = false;
-(settings as any).v = 3;
+// v4: E öffnet das Emote-Rad, „von der Seite“ wandert auf W
+if ((stored.v ?? 1) < 4) {
+  if (settings.keys.drawSide === 'KeyE') settings.keys.drawSide = 'KeyW';
+  settings.keys.emoteWheel = 'KeyE';
+}
+(settings as any).v = 4;
 const listeners = new Set<() => void>();
 
 export function saveSettings() {

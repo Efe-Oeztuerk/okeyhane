@@ -78,4 +78,5 @@ export const CREDITS = [
   { what: 'Turkish Delight Scene', author: 'nur_ay', url: 'https://sketchfab.com/3d-models/turkish-delight-scene-0fb7741c63a442a19b6932a4f8f9fecc' },
   { what: 'Atatürk Büste', author: 'metdiu3dprint', url: 'https://www.printables.com/' },
   { what: 'Antique Turkish Runner Carpet', author: 'mfb64', url: 'https://sketchfab.com/3d-models/antique-turkish-runner-carpet-8509133148294571a5ac062a6bdf6d98' },
+  { what: 'Straßen-Panorama (Illustration)', author: 'Freepik', url: 'https://www.freepik.com' },
 ];

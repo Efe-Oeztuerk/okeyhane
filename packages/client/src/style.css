@@ -312,3 +312,15 @@ body.touch .crosshair { display: none; }
 .chat.collapsed > .chat-open { display: inline-block !important; }
 body.touch .chat.collapsed { display: flex; }
 body.touch .chat { display: flex; }
+
+/* Emote-Rad */
+.wheel { position: fixed; left: 50%; top: 50%; width: 420px; height: 420px; transform: translate(-50%, -50%); z-index: 46; pointer-events: auto; }
+.wheel-ring { position: absolute; inset: 0; border-radius: 50%; background: radial-gradient(circle, rgba(20,12,8,0) 34%, rgba(20,12,8,0.82) 35%, rgba(20,12,8,0.82) 62%, rgba(20,12,8,0) 63%); }
+.wheel-item { position: absolute; width: 74px; height: 74px; margin: -37px 0 0 -37px; border-radius: 50%; display: grid; place-items: center; background: rgba(255,255,255,0.08); border: 2px solid rgba(227,176,75,0.35); cursor: pointer; transition: transform 0.12s, background 0.12s; }
+.wheel-item .wi-icon { font-size: 34px; line-height: 1; }
+.wheel-item .wi-num { position: absolute; bottom: 4px; right: 10px; font-size: 11px; opacity: 0.7; }
+.wheel-item.hl { background: rgba(31,120,255,0.75); border-color: #9ec5ff; transform: scale(1.15); }
+.wheel-center { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 150px; text-align: center; font-weight: 800; font-size: 15px; color: var(--cream); }
+.wheel-title { position: absolute; top: -36px; left: 0; right: 0; text-align: center; font-family: Rye, Georgia, serif; font-size: 26px; color: var(--gold); text-shadow: 0 2px 0 #3a1408; }
+.wheel-foot { position: absolute; bottom: -30px; left: 0; right: 0; text-align: center; font-size: 12px; opacity: 0.8; }
+@media (max-height: 520px) { .wheel { transform: translate(-50%, -50%) scale(0.75); } }

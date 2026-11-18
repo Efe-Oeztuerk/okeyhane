@@ -453,6 +453,27 @@ export class World {
   private houses: THREE.Mesh[] = [];
   private gardenLamps: THREE.PointLight[] = [];
   private cat: THREE.Group | null = null;
+  private backdrop!: THREE.Mesh;
+  private backdropSides: THREE.Mesh[] = [];
+  private streetGlows: THREE.Sprite[] = [];
+  private streetBulbs: THREE.Mesh[] = [];
+  private pigeons: THREE.Group[] = [];
+  private streetTex = new Map<string, THREE.Texture>();
+  /** Stadt-Illustration für eine Tageszeit (lazy geladen) */
+  private street(kind: 'morning' | 'day' | 'evening' | 'night', mirror = false) {
+    const key = kind + (mirror ? '-m' : '');
+    let t = this.streetTex.get(key);
+    if (!t) {
+      t = new THREE.TextureLoader().load(`/textures/street_${kind}.jpg`);
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.wrapS = THREE.RepeatWrapping;
+      // Innenseite des Zylinders: Bild spiegeln, damit Schrift/Richtung stimmen
+      t.repeat.x = mirror ? 1 : -1;
+      t.offset.x = mirror ? 0 : 1;
+      this.streetTex.set(key, t);
+    }
+    return t;
+  }
 
   /** Garten vor dem Kahvehane: Pflaster, Platane, Markise, Lichterkette, Blumenkästen, Gasse */
   private buildGarden() {
@@ -488,6 +509,117 @@ export class World {
       roof.position.set(-18 + i * hw, hh + 0.7, z1 + 12);
       this.scene.add(roof);
     }
+    // Stadt-Panorama (Illustration, je Tageszeit) als Hintergrund hinter den Häusern
+    {
+      const R = 46;
+      const theta = 2.6;
+      const H = ((R * theta) * 679) / 2048;
+      const geo = new THREE.CylinderGeometry(R, R, H, 64, 1, true, -theta / 2, theta);
+      this.backdrop = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, transparent: false }));
+      this.backdrop.position.set(0, H / 2 - 9.5, z0 - 4);
+      this.scene.add(this.backdrop);
+      // Seiten (links/rechts vom Kahvehane) – gespiegelt, damit es nicht gleich aussieht
+      for (const side of [-1, 1]) {
+        const g2 = new THREE.CylinderGeometry(R, R, H, 32, 1, true, side === 1 ? theta / 2 : -theta / 2 - 1.4, 1.4);
+        const m2 = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false }));
+        m2.position.copy(this.backdrop.position);
+        m2.userData.side = side;
+        this.scene.add(m2);
+        this.backdropSides.push(m2);
+      }
+    }
+    // Straßenlaternen (leuchten abends) + geparkte Autos + Tauben
+    const lampPost = new THREE.MeshStandardMaterial({ color: '#2b2f3a', roughness: 0.5, metalness: 0.4 });
+    for (const [lx, lz] of [
+      [-5.6, z1 + 0.7],
+      [5.6, z1 + 0.7],
+      [-2.5, z1 + 8.4],
+      [3.5, z1 + 8.4],
+      [-9.5, z1 + 0.7],
+      [9.5, z1 + 0.7],
+    ]) {
+      const g3 = new THREE.Group();
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 4.2, 10), lampPost);
+      post.position.y = 2.1;
+      const arm = new THREE.Mesh(new THREE.TorusGeometry(0.45, 0.04, 6, 16, Math.PI / 2), lampPost);
+      arm.position.set(0.45, 4.2, 0);
+      arm.rotation.z = Math.PI / 2;
+      const head = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.28, 0.18, 12), lampPost);
+      head.position.set(0.9, 4.18, 0);
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.13, 12, 8), new THREE.MeshBasicMaterial({ color: '#ffe3a3' }));
+      bulb.position.set(0.9, 4.06, 0);
+      const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, color: '#ffcf6a', transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending }));
+      glow.scale.setScalar(2.2);
+      glow.position.set(0.9, 4.0, 0);
+      g3.add(post, arm, head, bulb, glow);
+      g3.position.set(lx, 0, lz);
+      g3.rotation.y = lz > z1 + 4 ? -Math.PI / 2 : Math.PI / 2;
+      this.scene.add(g3);
+      this.streetGlows.push(glow);
+      this.streetBulbs.push(bulb);
+    }
+    const car = (color: string, x: number, zz: number, rot: number, taxi = false) => {
+      const g4 = new THREE.Group();
+      const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.3 });
+      const body = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 1.7), paint);
+      body.position.y = 0.6;
+      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.65, 1.55), paint);
+      cabin.position.set(-0.15, 1.25, 0);
+      const glassM = new THREE.MeshStandardMaterial({ color: '#9fc3d8', roughness: 0.1, metalness: 0.2 });
+      const win = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.5, 1.58), glassM);
+      win.position.set(-0.15, 1.27, 0);
+      const tyre = new THREE.MeshStandardMaterial({ color: '#1b1b1b', roughness: 0.9 });
+      g4.add(body, cabin, win);
+      for (const [wx, wz] of [
+        [1.15, 0.8],
+        [-1.15, 0.8],
+        [1.15, -0.8],
+        [-1.15, -0.8],
+      ]) {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.25, 16), tyre);
+        w.rotation.x = Math.PI / 2;
+        w.position.set(wx, 0.34, wz);
+        g4.add(w);
+      }
+      for (const lz2 of [-0.55, 0.55]) {
+        const hl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff4c8' }));
+        hl.position.set(1.8, 0.7, lz2);
+        g4.add(hl);
+      }
+      if (taxi) {
+        const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.25), new THREE.MeshBasicMaterial({ color: '#ffef9a' }));
+        sign.position.set(-0.15, 1.67, 0);
+        g4.add(sign);
+      }
+      g4.position.set(x, 0, zz);
+      g4.rotation.y = rot;
+      g4.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+      this.scene.add(g4);
+    };
+    car('#d23b2f', -7.5, z1 + 2.2, 0);
+    car('#f2c230', 6.2, z1 + 6.6, Math.PI, true);
+    car('#3b7bd2', 12.5, z1 + 2.2, 0);
+    // Tauben auf dem Pflaster
+    for (let i = 0; i < 5; i++) {
+      const pg = new THREE.Group();
+      const grey = new THREE.MeshStandardMaterial({ color: ['#8a8f99', '#6f747d', '#a2a6ae'][i % 3], roughness: 0.9 });
+      const b = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), grey);
+      b.scale.set(1, 0.8, 1.5);
+      b.position.y = 0.1;
+      const hd = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), grey);
+      hd.position.set(0, 0.18, 0.11);
+      const beak = new THREE.Mesh(new THREE.ConeGeometry(0.015, 0.04, 6), new THREE.MeshStandardMaterial({ color: '#d9a03a' }));
+      beak.rotation.x = Math.PI / 2;
+      beak.position.set(0, 0.18, 0.17);
+      pg.add(b, hd, beak);
+      pg.position.set(-1.5 + i * 0.7 + Math.sin(i) * 0.3, 0, z1 + 1.4 + Math.cos(i * 2) * 0.6);
+      pg.rotation.y = i * 1.3;
+      pg.userData.head = hd;
+      pg.userData.beak = beak;
+      this.scene.add(pg);
+      this.pigeons.push(pg);
+    }
+
     // Moschee-Silhouette in der Ferne
     const mosque = new THREE.Group();
     const stoneM = new THREE.MeshStandardMaterial({ color: '#cfc6b8', roughness: 1 });
@@ -937,6 +1069,16 @@ export class World {
       m.emissive.set(mode === 'night' ? '#221a10' : '#000000');
       m.needsUpdate = true;
     }
+    const hour = new Date().getHours();
+    const pano = mode === 'day' ? (settings.timeOfDay === 'auto' && hour < 10 ? 'morning' : 'day') : (mode as 'evening' | 'night');
+    (this.backdrop.material as THREE.MeshBasicMaterial).map = this.street(pano);
+    (this.backdrop.material as THREE.MeshBasicMaterial).needsUpdate = true;
+    for (const m of this.backdropSides) {
+      (m.material as THREE.MeshBasicMaterial).map = this.street(pano, true);
+      (m.material as THREE.MeshBasicMaterial).needsUpdate = true;
+    }
+    for (const g of this.streetGlows) g.material.opacity = mode === 'day' ? 0 : mode === 'evening' ? 0.45 : 0.8;
+    for (const b of this.streetBulbs) (b.material as THREE.MeshBasicMaterial).color.set(mode === 'day' ? '#d8d2bf' : '#ffe3a3');
     this.sun.intensity = mode === 'day' ? 1.1 : mode === 'evening' ? 0.55 : 0.12;
     this.sun.color.set(mode === 'day' ? '#fff2d8' : mode === 'evening' ? '#ffb27a' : '#8fa0ff');
     for (const b of this.bulbs) (b.material as THREE.MeshBasicMaterial).color.set(mode === 'day' ? '#d8c8a8' : '#ffd27a');
@@ -1271,7 +1413,7 @@ export class World {
     el.addEventListener('mousemove', (e) => {
       const r = el.getBoundingClientRect();
       this.mouseNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
-      if (!this.isLooking()) return;
+      if (!this.isLooking() || (window as any).__wheelOpen) return;
       this.lookDelta(e.movementX, e.movementY);
     });
     // Touch / Stift: Wischen = Umschauen, Tippen = Klick (siehe handleClick)
@@ -1617,7 +1759,7 @@ export class World {
       if (s === v.current) {
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.075, 24), new THREE.MeshBasicMaterial({ color: '#ffd27a' }));
         ring.rotation.x = -Math.PI / 2;
-        ring.position.set(dir.x * 0.32, TABLE_Y + 0.002, dir.z * 0.32);
+        ring.position.set(dir.x * 0.27, TABLE_Y + 0.002, dir.z * 0.27);
         this.gameGroup.add(ring);
       }
     }
@@ -1662,14 +1804,16 @@ export class World {
       const center = stack(centerN, true);
       center.position.set(0, TABLE_Y, 0);
       pile.add(center);
-      // Reserve-Stapel links (2 Reihen)
+      // Reserve-5er verdeckt vor den Brettern verteilt (wie am echten Tisch)
       const sidePos = (i: number) => {
-        const col = Math.floor(i / 2);
-        const row = i % 2;
-        return left.clone().multiplyScalar(0.095 + col * 0.046).add(fwd.clone().multiplyScalar(row ? -0.032 : 0.032)).setY(TABLE_Y);
+        const seat = i % 4;
+        const slot = Math.floor(i / 4);
+        return seatPos(seat).multiplyScalar(0.37).sub(seatPos((seat + 1) % 4).multiplyScalar(0.03 + slot * 0.045)).setY(TABLE_Y);
       };
       for (let i = 0; i < sideN; i++) {
         const sStack = stack(5, false);
+        const d = seatPos(i % 4);
+        sStack.rotation.y = Math.atan2(d.x, d.z);
         sStack.position.copy(sidePos(i));
         pile.add(sStack);
       }
@@ -1961,6 +2105,12 @@ export class World {
     }
     this.updateCaycı(dt);
     this.updateWalkers(dt);
+    for (const [i, pg] of this.pigeons.entries()) {
+      const peck = Math.max(0, Math.sin(t * 3 + i * 1.7)) ** 6;
+      (pg.userData.head as THREE.Object3D).position.y = 0.18 - peck * 0.09;
+      (pg.userData.beak as THREE.Object3D).position.y = 0.18 - peck * 0.09;
+      if (Math.random() < dt * 0.15) pg.rotation.y += (Math.random() - 0.5) * 1.5;
+    }
     if (Math.random() < dt * 0.05) sfx.murmur();
     // Rauch
     for (let i = this.smoke.length - 1; i >= 0; i--) {

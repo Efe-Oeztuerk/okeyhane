@@ -16,7 +16,7 @@ import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLab
 import { tileElement } from './tileArt.ts';
 import { isCompleteMelds, isCompletePairs } from '@okeyhane/engine';
 import { CREDITS } from './models.ts';
-import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP } from './controls.ts';
+import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP, openWheel } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
 import { music as bgm, STATIONS } from './menuMusic.ts';
 import { spotify, parseSpotify } from './spotify.ts';
@@ -669,6 +669,7 @@ function keybindSection() {
     [
       de ? '☕ Kahvehane & Emotes' : '☕ Kahvehane & hareketler',
       [
+        ['emoteWheel', 'Emote-Rad öffnen', 'Hareket çarkı'],
         ['emoteTea', 'Çay trinken', 'Çay iç'],
         ['emoteNargile', 'Nargile ziehen', 'Nargile çek'],
         ['emoteSlam', 'Auf den Tisch hauen', 'Masaya vur'],
@@ -692,7 +693,11 @@ function keybindSection() {
     box.innerHTML = '';
     box.append(h('b', {}, de ? '⌨️ Tastenbelegung' : '⌨️ Tuş ayarları'), h('div', { class: 'muted small' }, de ? 'Pfeiltasten bewegen den Cursor auf der Istaka · Shift + Pfeil schiebt markierte Steine' : 'Ok tuşları ıstakada imleci gezdirir · Shift + ok seçili taşları kaydırır'));
     const used = new Map<string, number>();
-    for (const k of Object.keys(settings.keys)) used.set(settings.keys[k as keyof KeyBinds], (used.get(settings.keys[k as keyof KeyBinds]) ?? 0) + 1);
+    const walkOnly = ['forward', 'back', 'left', 'right'];
+    for (const k of Object.keys(settings.keys)) {
+      if (walkOnly.includes(k)) continue;
+      used.set(settings.keys[k as keyof KeyBinds], (used.get(settings.keys[k as keyof KeyBinds]) ?? 0) + 1);
+    }
     for (const [title, list] of groups) {
       box.append(h('div', { class: 'kb-group' }, title));
       for (const [k, dl, tl] of list) {
@@ -1148,11 +1153,23 @@ setupControls(world, istaka, {
       '💬 ' + (getLang() === 'de' ? 'Sprüche' : 'Hazır sözler'),
       ['hadi', 'okeyBende', 'caylar', 'buElBizim', 'yazik', 'helal', 'tesekkur', 'gecmisOlsun'].map((k) => ({ label: t('q_' + k), fn: () => send({ type: 'quick', key: k }) })),
     ),
-  openEmotes: () =>
-    popupMenu('😊 Emotes', [
-      ...['tea', 'nargile', 'slam', 'tespih', 'headshake', 'rubhands'].map((k) => ({ label: t('e_' + k), fn: () => send({ type: 'emote', key: k }) })),
-      ...['wink', 'blink', 'wide'].map((k) => ({ label: '👁 ' + t('eye_' + k).replace(/ \(\d\)/, ''), fn: () => send({ type: 'eye', key: k }) })),
-    ]),
+  openEmotes: () => {
+    const de = getLang() === 'de';
+    const e = (icon: string, k: string) => ({ icon, label: t('e_' + k), fn: () => send({ type: 'emote', key: k }) });
+    const y = (icon: string, k: string) => ({ icon, label: t('eye_' + k).replace(/ \(\d\)/, ''), fn: () => send({ type: 'eye', key: k }) });
+    openWheel([
+      e('🫖', 'tea'),
+      e('💨', 'nargile'),
+      e('✊', 'slam'),
+      e('📿', 'tespih'),
+      e('🙅', 'headshake'),
+      e('🤲', 'rubhands'),
+      y('😉', 'wink'),
+      y('😵', 'blink'),
+      y('😳', 'wide'),
+      { icon: '☕', label: de ? 'Çaycı rufen' : 'Çaycıyı çağır', fn: () => openCayci() },
+    ]);
+  },
   focusChat: () => {
     settings.hideChat = false;
     saveSettings();
