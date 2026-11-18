@@ -324,3 +324,14 @@ body.touch .chat { display: flex; }
 .wheel-title { position: absolute; top: -36px; left: 0; right: 0; text-align: center; font-family: Rye, Georgia, serif; font-size: 26px; color: var(--gold); text-shadow: 0 2px 0 #3a1408; }
 .wheel-foot { position: absolute; bottom: -30px; left: 0; right: 0; text-align: center; font-size: 12px; opacity: 0.8; }
 @media (max-height: 520px) { .wheel { transform: translate(-50%, -50%) scale(0.75); } }
+
+/* Account, Freunde, Lobby-Liste */
+.acct { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.07); }
+.auth-err { color: #ff9b8a; min-height: 1.2em; font-size: 13px; }
+button.badge { box-shadow: 0 0 0 2px #e3b04b inset; }
+.friendlist, .lobbylist { max-height: 52vh; overflow: auto; min-width: min(460px, 86vw); display: flex; flex-direction: column; gap: 6px; }
+.fl-head { margin-top: 8px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; color: var(--gold); }
+.fl-row, .lb-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 10px; background: rgba(255,255,255,0.06); }
+.fl-row.off { opacity: 0.6; }
+.lb-row.friend { background: rgba(227,176,75,0.18); box-shadow: 0 0 0 1px rgba(227,176,75,0.6) inset; }
+.lb-friends { color: var(--gold); font-weight: 700; }

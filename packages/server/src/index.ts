@@ -8,6 +8,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { OkeyGame, GameError, botTurn, defaultRules, type TableRules, type Mode } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from './protocol.ts';
 import { loadStats, recordResult, getStats } from './stats.ts';
+import { accounts, AccountError, type UserRow, type FriendRow } from './accounts.ts';
 
 const PORT = Number(process.env.PORT ?? 3000);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -24,6 +25,12 @@ interface Client {
   seat: number | null;
   /** Zuschauer: hinter welchem Platz */
   watching: number | null;
+  /** angemeldeter Account (null = Gast) */
+  user: UserRow | null;
+  token: string | null;
+  friends: FriendRow[];
+  /** zuletzt gesendete Freunde-/Lobby-Liste (nur bei Änderung neu senden) */
+  lastSocial: string;
 }
 
 interface Seat {
@@ -58,6 +65,8 @@ interface Table {
 
 const tables = new Map<string, Table>();
 const clients = new Map<string, Client>();
+/** Account-ID → offene Verbindungen */
+const online = new Map<string, Set<Client>>();
 
 // ------------------------------------------------------------------ Hilfen
 
@@ -289,12 +298,157 @@ function afterAction(t: Table) {
 
 type Msg = Record<string, any> & { type: string };
 
+// ------------------------------------------------------------------ Accounts, Freunde, Lobby-Liste
+
+function setOnline(c: Client, on: boolean) {
+  if (!c.user) return;
+  const set = online.get(c.user.id) ?? new Set();
+  if (on) set.add(c);
+  else set.delete(c);
+  if (set.size) online.set(c.user.id, set);
+  else online.delete(c.user.id);
+}
+
+async function refreshFriends(c: Client) {
+  if (!c.token) return;
+  try {
+    c.friends = await accounts.friends(c.token);
+  } catch {
+    c.friends = [];
+  }
+  c.lastSocial = '';
+  pushSocial(c);
+}
+
+/** alle offenen Verbindungen eines Accounts neu laden (z. B. nach Freundschaftsanfrage) */
+function refreshUser(id: string) {
+  for (const o of online.get(id) ?? []) void refreshFriends(o);
+}
+
+async function handleAccount(c: Client, m: Msg) {
+  try {
+    if (m.type === 'logout') {
+      if (c.token) accounts.logout(c.token).catch(() => {});
+      const old = c.user;
+      setOnline(c, false);
+      c.user = null;
+      c.token = null;
+      c.friends = [];
+      send(c, { type: 'loggedOut' });
+      if (old) for (const f of friendIdsOf(old.id)) notifyPresence(f);
+      return;
+    }
+    if (m.type === 'register' || m.type === 'login' || m.type === 'resume') {
+      let res: { token: string; user: UserRow };
+      if (m.type === 'register') res = await accounts.register(String(m.username ?? ''), String(m.password ?? ''), m.avatar ?? c.info.avatar);
+      else if (m.type === 'login') res = await accounts.login(String(m.username ?? ''), String(m.password ?? ''));
+      else res = { token: String(m.token ?? ''), user: await accounts.me(String(m.token ?? '')) };
+      setOnline(c, false);
+      c.user = res.user;
+      c.token = res.token;
+      c.info.name = res.user.username;
+      if (res.user.avatar) c.info.avatar = res.user.avatar;
+      setOnline(c, true);
+      send(c, { type: 'auth', token: res.token, user: res.user });
+      if (c.table) pushTable(c.table);
+      await refreshFriends(c);
+      for (const f of c.friends) if (f.status === 'accepted') notifyPresence(f.id);
+      return;
+    }
+    if (!c.token || !c.user) return send(c, { type: 'authError', key: 'needLogin' });
+    if (m.type === 'friendRequest') {
+      const r = await accounts.request(c.token, String(m.username ?? ''));
+      send(c, { type: 'friendOk', status: r.status, name: String(m.username ?? '') });
+      await refreshFriends(c);
+      refreshUser(r.id);
+      return;
+    }
+    if (m.type === 'friendRespond') {
+      await accounts.respond(c.token, String(m.id), !!m.accept);
+      await refreshFriends(c);
+      refreshUser(String(m.id));
+      return;
+    }
+    if (m.type === 'friendRemove') {
+      await accounts.remove(c.token, String(m.id));
+      await refreshFriends(c);
+      refreshUser(String(m.id));
+    }
+  } catch (e) {
+    send(c, { type: 'authError', key: e instanceof AccountError ? e.message : 'server', for: m.type });
+  }
+}
+
+/** wessen Freundesliste enthält diesen Account? (nur online, aus dem Cache) */
+function friendIdsOf(id: string): string[] {
+  const out = new Set<string>();
+  for (const [uid, set] of online) for (const o of set) if (o.friends.some((f) => f.id === id && f.status === 'accepted')) out.add(uid);
+  return [...out];
+}
+function notifyPresence(userId: string) {
+  for (const o of online.get(userId) ?? []) pushSocial(o);
+}
+
+function whereIs(userId: string) {
+  for (const o of online.get(userId) ?? []) {
+    const t = o.table;
+    if (!t) continue;
+    return {
+      code: t.isPublic ? t.code : null,
+      isPublic: t.isPublic,
+      started: t.started,
+      mode: t.rules.mode,
+      free: t.seats.filter((s) => !s.client && !s.bot).length,
+    };
+  }
+  return null;
+}
+
+function lobbyList(c: Client) {
+  const friendIds = new Set(c.friends.filter((f) => f.status === 'accepted').map((f) => f.id));
+  const list = [...tables.values()]
+    .filter((t) => t.isPublic && t !== c.table)
+    .map((t) => {
+      const people = [...members(t)];
+      return {
+        code: t.code,
+        mode: t.rules.mode,
+        started: t.started,
+        seats: t.seats.map((s) => (s.client ? { name: s.client.info.name, bot: false } : s.bot ? { name: s.bot.name, bot: true } : null)),
+        free: t.seats.filter((s) => !s.client && !s.bot).length,
+        spectators: t.spectators.size,
+        friends: people.filter((p) => p.user && friendIds.has(p.user.id)).map((p) => p.info.name),
+      };
+    });
+  list.sort((a, b) => b.friends.length - a.friends.length || (a.started ? 1 : 0) - (b.started ? 1 : 0) || a.free - b.free);
+  return list.slice(0, 40);
+}
+
+function pushSocial(c: Client) {
+  const friends = c.friends.map((f) => ({ ...f, online: online.has(f.id), where: f.status === 'accepted' ? whereIs(f.id) : null }));
+  const msg = { type: 'social', friends, lobbies: lobbyList(c), online: clients.size };
+  const json = JSON.stringify(msg);
+  if (json === c.lastSocial) return;
+  c.lastSocial = json;
+  send(c, msg);
+}
+// Präsenz & Lobby-Liste regelmäßig aktualisieren (nur bei Änderung wird gesendet)
+setInterval(() => {
+  for (const c of clients.values()) pushSocial(c);
+}, 3000);
+
 function handle(c: Client, m: Msg) {
   const t = c.table;
   switch (m.type) {
     case 'hello': {
-      c.info.name = String(m.name ?? 'Oyuncu').slice(0, 20) || 'Oyuncu';
-      if (m.avatar) c.info.avatar = m.avatar;
+      if (!c.user) c.info.name = String(m.name ?? 'Oyuncu').slice(0, 20) || 'Oyuncu';
+      if (m.avatar) {
+        c.info.avatar = m.avatar;
+        if (c.token && JSON.stringify(m.avatar) !== JSON.stringify(c.user?.avatar)) {
+          c.user!.avatar = m.avatar;
+          accounts.saveAvatar(c.token, m.avatar).catch(() => {});
+        }
+      }
       if (typeof m.signature === 'string' && m.signature.length < 200000) c.info.signature = m.signature;
       send(c, { type: 'welcome', id: c.id, stats: getStats(c.info.name) });
       if (t) pushTable(t);
@@ -361,6 +515,28 @@ function handle(c: Client, m: Msg) {
       removeFromTable(c);
       send(c, { type: 'left' });
       return;
+    case 'register':
+    case 'login':
+    case 'resume':
+    case 'logout':
+    case 'friendRequest':
+    case 'friendRespond':
+    case 'friendRemove':
+      void handleAccount(c, m);
+      return;
+    case 'lobbies':
+      c.lastSocial = '';
+      pushSocial(c);
+      return;
+    case 'invite': {
+      if (!t || !c.user) return;
+      const f = c.friends.find((x) => x.id === m.userId && x.status === 'accepted');
+      if (!f) return;
+      t.invited.add(f.id);
+      for (const o of online.get(f.id) ?? []) send(o, { type: 'invite', code: t.code, from: c.user.username, mode: t.rules.mode });
+      send(c, { type: 'invited', name: f.username });
+      return;
+    }
   }
 
   if (!t) return send(c, { type: 'error', key: 'noTable' });
@@ -645,6 +821,9 @@ const MIME: Record<string, string> = {
   '.svg': 'image/svg+xml',
   '.png': 'image/png',
   '.json': 'application/json',
+  '.webmanifest': 'application/manifest+json',
+  '.jpg': 'image/jpeg',
+  '.js.map': 'application/json',
   '.woff2': 'font/woff2',
   '.glb': 'model/gltf-binary',
   '.mp3': 'audio/mpeg',
@@ -704,6 +883,10 @@ wss.on('connection', (ws) => {
     table: null,
     seat: null,
     watching: null,
+    user: null,
+    token: null,
+    friends: [],
+    lastSocial: '',
   };
   c.info.id = c.id;
   clients.set(c.id, c);
@@ -719,6 +902,9 @@ wss.on('connection', (ws) => {
   ws.on('close', () => {
     removeFromTable(c);
     clients.delete(c.id);
+    const u = c.user;
+    setOnline(c, false);
+    if (u) for (const f of friendIdsOf(u.id)) notifyPresence(f);
   });
 });
 

@@ -20,6 +20,7 @@ import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
 import { music as bgm, STATIONS } from './menuMusic.ts';
 import { spotify, parseSpotify } from './spotify.ts';
+import { initSocial, resume, openAuth, openFriends, openLobbies, logout, account, subscribe as onSocial, pendingCount } from './social.ts';
 
 // ------------------------------------------------------------------ Zustand
 
@@ -92,9 +93,30 @@ function hello() {
 }
 connect(() => {
   hello();
+  resume();
   // nach Verbindungsabbruch: zurück zum Tisch
   const code = sessionStorage.getItem('tableCode');
   if (code && inCafe) send({ type: 'joinTable', code });
+});
+
+initSocial({
+  modal: (...c) => modal(...c),
+  join: (msg) => {
+    unlockAudio();
+    send(msg);
+  },
+  inTable: () => !!table,
+  modeName: (m) => t(m),
+  onAccount: (a) => {
+    if (a) {
+      profile.name = a.username;
+      if (a.avatar) profile.avatar = a.avatar;
+      saveProfile(profile);
+      hello();
+    }
+    if (!inCafe) showMenu();
+    else renderLeft();
+  },
 });
 
 on('welcome', (m) => {
@@ -335,6 +357,51 @@ spotify.onClosed = () => {
   applyMedia();
 };
 
+// ------------------------------------------------------------------ App (PWA)
+
+if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('/sw.js').catch(() => {});
+let installEvt: any = null;
+addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault();
+  installEvt = e;
+  // Knopf nachträglich einblenden, ohne offene Fenster zu schließen
+  const slot = document.getElementById('install-slot');
+  const b = installButton();
+  if (slot && b && !slot.firstChild) slot.append(b);
+});
+const isApp = () => matchMedia('(display-mode: standalone), (display-mode: fullscreen)').matches || (navigator as any).standalone === true;
+const isIOS = () => /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+function installButton() {
+  if (isApp() || (!installEvt && !isIOS())) return null;
+  const de = getLang() === 'de';
+  return h(
+    'button',
+    {
+      class: 'ghost small',
+      onclick: async () => {
+        if (installEvt) {
+          installEvt.prompt();
+          await installEvt.userChoice.catch(() => null);
+          installEvt = null;
+          showMenu();
+          return;
+        }
+        modal(
+          h('h2', {}, '📲 ' + (de ? 'Als App installieren' : 'Uygulama olarak yükle')),
+          h(
+            'ol',
+            { style: { lineHeight: '1.7' } },
+            h('li', {}, de ? 'In Safari unten auf Teilen ⬆️ tippen' : "Safari'de alttaki Paylaş ⬆️ simgesine dokun"),
+            h('li', {}, de ? '„Zum Home-Bildschirm“ wählen' : '“Ana Ekrana Ekle”yi seç'),
+            h('li', {}, de ? 'Okeyhane startet dann im Vollbild wie eine App' : 'Okeyhane tam ekran uygulama gibi açılır'),
+          ),
+        );
+      },
+    },
+    '📲 ' + (de ? 'Als App installieren' : 'Uygulama olarak yükle'),
+  );
+}
+
 // ------------------------------------------------------------------ Menü
 
 function showMenu() {
@@ -345,6 +412,14 @@ function showMenu() {
   const nameInput = h('input', { value: profile.name, placeholder: t('yourName'), maxLength: 20 });
   const codeInput = h('input', { placeholder: t('code'), maxLength: 5, style: { textTransform: 'uppercase', width: '120px' } });
   const specBox = h('input', { type: 'checkbox' });
+  const friendsBtn = h('button', { onclick: () => openFriends() });
+  const paintFriends = () => {
+    const n = pendingCount();
+    friendsBtn.textContent = '👥 ' + (getLang() === 'de' ? 'Freunde' : 'Arkadaşlar') + (n ? ` (${n})` : '');
+    friendsBtn.classList.toggle('badge', n > 0);
+  };
+  paintFriends();
+  const offSocial = onSocial(paintFriends);
   codeInput.addEventListener('keydown', (e) => {
     if ((e as KeyboardEvent).key === 'Enter') go({ type: 'joinTable', code: codeInput.value, spectate: specBox.checked });
   });
@@ -387,13 +462,30 @@ function showMenu() {
         { class: 'col panel actions' },
         h('div', { class: 'logo' }, 'Okeyhane'),
         h('div', { class: 'tagline' }, t('tagline')),
-        h('label', {}, t('yourName')),
-        nameInput,
+        account
+          ? h(
+              'div',
+              { class: 'acct' },
+              h('span', {}, '👤 ', h('b', {}, account.username)),
+              h('button', { class: 'small ghost', onclick: () => logout() }, getLang() === 'de' ? 'Abmelden' : 'Çıkış'),
+            )
+          : h(
+              'div',
+              { class: 'col', style: { gap: '6px' } },
+              h('button', { class: 'primary', onclick: () => openAuth() }, '👤 ' + (getLang() === 'de' ? 'Anmelden / Registrieren' : 'Giriş yap / Kayıt ol')),
+              h('label', {}, (getLang() === 'de' ? 'oder als Gast: ' : 'ya da misafir olarak: ') + t('yourName')),
+              nameInput,
+            ),
         h('button', { class: 'primary', onclick: () => go({ type: 'createTable', isPublic: false }) }, '🀄 ' + t('createTable')),
         h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, codeInput, h('label', { class: 'row', style: { gap: '4px' } }, specBox, t('spectate')), h('button', { onclick: () => go({ type: 'joinTable', code: codeInput.value, spectate: specBox.checked }) }, t('join'))),
-        h('button', { onclick: () => go({ type: 'findPublic' }) }, '🎲 ' + t('randomTable')),
+        h(
+          'div',
+          { class: 'row', style: { flexWrap: 'nowrap' } },
+          h('button', { onclick: () => (commitName(), unlockAudio(), openLobbies()) }, '🌐 ' + (getLang() === 'de' ? 'Offene Tische' : 'Açık masalar')),
+          friendsBtn,
+        ),
         h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, h('button', { class: 'ghost', onclick: () => openStats() }, '📊 ' + t('stats')), h('button', { class: 'ghost', onclick: () => openSettings() }, '⚙️ ' + t('settings'))),
-        h('button', { class: 'ghost small', onclick: () => openCredits() }, '© Credits'),
+        h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, h('span', { id: 'install-slot', style: { display: 'contents' } }, installButton()), h('button', { class: 'ghost small', onclick: () => openCredits() }, '© Credits')),
       ),
     ),
   );
@@ -402,6 +494,12 @@ function showMenu() {
   const pv = World.preview(previewBox, profile.avatar, profile.name || '...');
   nameInput.addEventListener('input', () => pv.update(profile.avatar, nameInput.value || '...'));
   menu.addEventListener('remove', () => pv.dispose());
+  new MutationObserver((_, o) => {
+    if (!menu.isConnected) {
+      offSocial();
+      o.disconnect();
+    }
+  }).observe(ui, { childList: true });
   (menu as any)._pv = pv;
 }
 
@@ -984,6 +1082,7 @@ function renderLeft() {
       isOwner
         ? h('button', { class: 'small ghost', onclick: () => send({ type: 'setPublic', isPublic: !table!.isPublic }) }, table!.isPublic ? '🌐 ' + t('publicTable') : '🔒 ' + t('privateTable'))
         : h('span', { class: 'muted' }, table!.isPublic ? '🌐 ' + t('publicTable') : '🔒 ' + t('privateTable')),
+      h('button', { class: 'small ghost', onclick: () => openFriends() }, '👥 ' + (getLang() === 'de' ? 'Einladen' : 'Davet et') + (pendingCount() ? ` (${pendingCount()})` : '')),
     ),
   );
   const people = h('div', { class: 'people' });
