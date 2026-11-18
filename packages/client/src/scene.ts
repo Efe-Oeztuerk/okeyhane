@@ -5,6 +5,7 @@ import { CSS3DRenderer, CSS3DObject } from 'three/examples/jsm/renderers/CSS3DRe
 import type { Tile } from '@okeyhane/engine';
 import type { Avatar, PlayerInfo } from '../../server/src/protocol.ts';
 import { Avatar3D } from './avatar.ts';
+import { City } from './city.ts';
 import { tileMesh } from './tileArt.ts';
 import * as D from './decor.ts';
 import { settings, onSettings } from './settings.ts';
@@ -458,28 +459,10 @@ export class World {
   private houses: THREE.Mesh[] = [];
   private gardenLamps: THREE.PointLight[] = [];
   private cat: THREE.Group | null = null;
-  private backdrop!: THREE.Mesh;
-  private backdropSides: THREE.Mesh[] = [];
+  private city!: City;
   private streetGlows: THREE.Sprite[] = [];
   private streetBulbs: THREE.Mesh[] = [];
   private pigeons: THREE.Group[] = [];
-  private streetTex = new Map<string, THREE.Texture>();
-  /** Stadt-Illustration für eine Tageszeit (lazy geladen) */
-  private street(kind: 'morning' | 'day' | 'evening' | 'night', mirror = false) {
-    const key = kind + (mirror ? '-m' : '');
-    let t = this.streetTex.get(key);
-    if (!t) {
-      t = new THREE.TextureLoader().load(`/textures/street_${kind}.jpg`);
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.wrapS = THREE.RepeatWrapping;
-      // Innenseite des Zylinders: Bild spiegeln, damit Schrift/Richtung stimmen
-      t.repeat.x = mirror ? 1 : -1;
-      t.offset.x = mirror ? 0 : 1;
-      this.streetTex.set(key, t);
-    }
-    return t;
-  }
-
   /** Garten vor dem Kahvehane: Pflaster, Platane, Markise, Lichterkette, Blumenkästen, Gasse */
   private buildGarden() {
     const { w } = ROOM;
@@ -490,49 +473,9 @@ export class World {
     floor.position.set(0, 0.002, z0 + gd / 2);
     floor.receiveShadow = true;
     this.scene.add(floor);
-    // Gasse + Gehweg gegenüber
-    const street = new THREE.Mesh(new THREE.PlaneGeometry(80, 9), new THREE.MeshStandardMaterial({ color: '#3d3a37', roughness: 1 }));
-    street.rotation.x = -Math.PI / 2;
-    street.position.set(0, -0.02, z1 + 4.5);
-    this.scene.add(street);
-    const around = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), new THREE.MeshStandardMaterial({ color: '#7d7468', roughness: 1 }));
-    around.rotation.x = -Math.PI / 2;
-    around.position.set(0, -0.03, 0);
-    this.scene.add(around);
-    // Häuser gegenüber und seitlich
-    for (let i = 0; i < 9; i++) {
-      const hw = 4.2;
-      const hh = 7 + ((i * 37) % 5);
-      const hm = new THREE.Mesh(new THREE.BoxGeometry(hw, hh, 6), new THREE.MeshStandardMaterial({ map: D.houseFacade(i, false), roughness: 1 }));
-      hm.position.set(-18 + i * hw, hh / 2, z1 + 12);
-      hm.userData.seed = i;
-      this.scene.add(hm);
-      this.houses.push(hm);
-      const roof = new THREE.Mesh(new THREE.ConeGeometry(3.2, 1.4, 4), new THREE.MeshStandardMaterial({ color: '#9a4a32', roughness: 0.9 }));
-      roof.rotation.y = Math.PI / 4;
-      roof.scale.set(1, 1, 1.4);
-      roof.position.set(-18 + i * hw, hh + 0.7, z1 + 12);
-      this.scene.add(roof);
-    }
-    // Stadt-Panorama (Illustration, je Tageszeit) als Hintergrund hinter den Häusern
-    {
-      const R = 46;
-      const theta = 2.6;
-      const H = ((R * theta) * 679) / 2048;
-      const geo = new THREE.CylinderGeometry(R, R, H, 64, 1, true, -theta / 2, theta);
-      this.backdrop = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false, transparent: false }));
-      this.backdrop.position.set(0, H / 2 - 9.5, z0 - 4);
-      this.scene.add(this.backdrop);
-      // Seiten (links/rechts vom Kahvehane) – gespiegelt, damit es nicht gleich aussieht
-      for (const side of [-1, 1]) {
-        const g2 = new THREE.CylinderGeometry(R, R, H, 32, 1, true, side === 1 ? theta / 2 : -theta / 2 - 1.4, 1.4);
-        const m2 = new THREE.Mesh(g2, new THREE.MeshBasicMaterial({ side: THREE.BackSide, fog: false }));
-        m2.position.copy(this.backdrop.position);
-        m2.userData.side = side;
-        this.scene.add(m2);
-        this.backdropSides.push(m2);
-      }
-    }
+    // echte 3D-Stadt: Straße, Gehwege, Häuserzeilen, Bäume, Ampeln, Autos, Sonne/Mond
+    this.city = new City(z1, w / 2, ROOM.d / 2);
+    this.scene.add(this.city.group);
     // Straßenlaternen (leuchten abends) + geparkte Autos + Tauben
     const lampPost = new THREE.MeshStandardMaterial({ color: '#2b2f3a', roughness: 0.5, metalness: 0.4 });
     for (const [lx, lz] of [
@@ -563,47 +506,6 @@ export class World {
       this.streetGlows.push(glow);
       this.streetBulbs.push(bulb);
     }
-    const car = (color: string, x: number, zz: number, rot: number, taxi = false) => {
-      const g4 = new THREE.Group();
-      const paint = new THREE.MeshStandardMaterial({ color, roughness: 0.35, metalness: 0.3 });
-      const body = new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 1.7), paint);
-      body.position.y = 0.6;
-      const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.65, 1.55), paint);
-      cabin.position.set(-0.15, 1.25, 0);
-      const glassM = new THREE.MeshStandardMaterial({ color: '#9fc3d8', roughness: 0.1, metalness: 0.2 });
-      const win = new THREE.Mesh(new THREE.BoxGeometry(1.85, 0.5, 1.58), glassM);
-      win.position.set(-0.15, 1.27, 0);
-      const tyre = new THREE.MeshStandardMaterial({ color: '#1b1b1b', roughness: 0.9 });
-      g4.add(body, cabin, win);
-      for (const [wx, wz] of [
-        [1.15, 0.8],
-        [-1.15, 0.8],
-        [1.15, -0.8],
-        [-1.15, -0.8],
-      ]) {
-        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.25, 16), tyre);
-        w.rotation.x = Math.PI / 2;
-        w.position.set(wx, 0.34, wz);
-        g4.add(w);
-      }
-      for (const lz2 of [-0.55, 0.55]) {
-        const hl = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), new THREE.MeshBasicMaterial({ color: '#fff4c8' }));
-        hl.position.set(1.8, 0.7, lz2);
-        g4.add(hl);
-      }
-      if (taxi) {
-        const sign = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.18, 0.25), new THREE.MeshBasicMaterial({ color: '#ffef9a' }));
-        sign.position.set(-0.15, 1.67, 0);
-        g4.add(sign);
-      }
-      g4.position.set(x, 0, zz);
-      g4.rotation.y = rot;
-      g4.traverse((o) => ((o as THREE.Mesh).castShadow = true));
-      this.scene.add(g4);
-    };
-    car('#d23b2f', -7.5, z1 + 2.2, 0);
-    car('#f2c230', 6.2, z1 + 6.6, Math.PI, true);
-    car('#3b7bd2', 12.5, z1 + 2.2, 0);
     // Tauben auf dem Pflaster
     for (let i = 0; i < 5; i++) {
       const pg = new THREE.Group();
@@ -640,7 +542,8 @@ export class World {
       cap.position.set(mx, 23.5, 0);
       mosque.add(min, cap);
     }
-    mosque.position.set(10, 0, z1 + 34);
+    mosque.position.set(-22, 0, z1 + 38);
+    mosque.scale.setScalar(1.3);
     this.scene.add(mosque);
     // Himmel
     this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(120, 32, 16), new THREE.MeshBasicMaterial({ map: D.sky('day'), side: THREE.BackSide, fog: false }));
@@ -1066,6 +969,15 @@ export class World {
       const h = new Date().getHours();
       mode = h >= 7 && h < 17 ? 'day' : h >= 17 && h < 20 ? 'evening' : 'night';
     }
+    // Sonne/Mond: bei „Auto“ echte Uhrzeit, sonst feste Zeit passend zur Stimmung
+    const now = new Date();
+    const hour = settings.timeOfDay === 'auto' ? now.getHours() + now.getMinutes() / 60 : mode === 'day' ? 13 : mode === 'evening' ? 18.6 : 23;
+    if (this.city) {
+      this.city.setMode(mode as any, hour);
+      const dir = mode === 'night' ? this.city.moonDir() : this.city.sunDir;
+      this.sun.position.copy(dir).multiplyScalar(30);
+      if (mode === this.dayMode) return;
+    }
     if (mode === this.dayMode) return;
     this.dayMode = mode;
     (this.windowMesh.material as THREE.MeshBasicMaterial).map = D.cityWindow(mode as any);
@@ -1078,14 +990,6 @@ export class World {
       m.map = D.houseFacade(hm.userData.seed, mode === 'night');
       m.emissive.set(mode === 'night' ? '#221a10' : '#000000');
       m.needsUpdate = true;
-    }
-    const hour = new Date().getHours();
-    const pano = mode === 'day' ? (settings.timeOfDay === 'auto' && hour < 10 ? 'morning' : 'day') : (mode as 'evening' | 'night');
-    (this.backdrop.material as THREE.MeshBasicMaterial).map = this.street(pano);
-    (this.backdrop.material as THREE.MeshBasicMaterial).needsUpdate = true;
-    for (const m of this.backdropSides) {
-      (m.material as THREE.MeshBasicMaterial).map = this.street(pano, true);
-      (m.material as THREE.MeshBasicMaterial).needsUpdate = true;
     }
     for (const g of this.streetGlows) g.material.opacity = mode === 'day' ? 0 : mode === 'evening' ? 0.45 : 0.8;
     for (const b of this.streetBulbs) (b.material as THREE.MeshBasicMaterial).color.set(mode === 'day' ? '#d8d2bf' : '#ffe3a3');
@@ -2178,6 +2082,7 @@ export class World {
     }
     this.updateCaycı(dt);
     this.updateWalkers(dt);
+    this.city?.update(dt);
     for (const [i, pg] of this.pigeons.entries()) {
       const peck = Math.max(0, Math.sin(t * 3 + i * 1.7)) ** 6;
       (pg.userData.head as THREE.Object3D).position.y = 0.18 - peck * 0.09;
