@@ -71,7 +71,8 @@ export class City {
   /**
    * z1 = Ende des Gartens (Gehweg beginnt), cafeHalfW = halbe Breite des Kahvehane, facadeZ = Vorderwand
    */
-  constructor(private z1: number, cafeHalfW: number, facadeZ: number) {
+  constructor(private z1: number, cafeHalfW: number, facadeZ: number, low = false) {
+    // low = Grafik „niedrig“: etwas weniger Häuser in der Ferne und weniger Autos
     const r = rng(7);
     const G = this.group;
     const winM: THREE.Matrix4[] = [];
@@ -208,8 +209,8 @@ export class City {
 
     // ---------- Häuserzeile gegenüber (Front zur Straße = -Z)
     {
-      let x = -44;
-      while (x < 44) {
+      let x = low ? -36 : -44;
+      while (x < (low ? 36 : 44)) {
         const w = 4 + Math.floor(r() * 4);
         const h = 7 + Math.floor(r() * 8);
         const xc = x + w / 2;
@@ -232,15 +233,15 @@ export class City {
       G.add(s);
     }
     // ---------- Hochhäuser dahinter (Skyline, pastell)
-    for (let i = 0; i < 9; i++) {
+    for (let i = 0; i < (low ? 5 : 9); i++) {
       const w = 8 + r() * 6;
       const h = 18 + r() * 22;
-      const x = -48 + i * 12 + r() * 3;
+      const x = (low ? -44 : -48) + i * (low ? 22 : 12) + r() * 3;
       if (Math.abs(x + 22) < 8) continue; // Platz für die Moschee
       building(x, z1 + 30 + r() * 10, w, h, 9, -1, TOWERS[Math.floor(r() * TOWERS.length)], false, 0, true);
     }
     // dahinter im Rücken des Kahvehane nur ein paar hohe, die übers Dach schauen
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < (low ? 2 : 4); i++) {
       const w = 9 + r() * 6;
       building(-30 + i * 20 + r() * 3, facadeZ - 28 - r() * 8, w, 24 + r() * 14, 9, 1, TOWERS[Math.floor(r() * TOWERS.length)], false, 0, true);
     }
@@ -317,7 +318,7 @@ export class City {
 
     // ---------- fahrende Autos
     const colors = ['#d23b2f', '#f2c230', '#3b7bd2', '#2e8b57', '#e8e8e8', '#6c3483', '#f39c12'];
-    for (let i = 0; i < 4; i++) {
+    for (let i = 0; i < (low ? 2 : 4); i++) {
       const dir = i % 2 ? -1 : 1;
       const lane = dir > 0 ? roadZ0 + 1.6 : roadZ1 - 1.6;
       const car = this.makeCar(colors[i % colors.length], i === 1 || i === 4);

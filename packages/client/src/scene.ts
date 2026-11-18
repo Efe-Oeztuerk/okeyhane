@@ -40,6 +40,8 @@ export const SPOTS = [
   { x: -2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sol', de: 'Garten links' },
   { x: 2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sağ', de: 'Garten rechts' },
 ];
+/** Grafik „niedrig“ beim Laden (Lichter, Gäste, Außenwelt werden dann sparsamer gebaut) */
+const LOW = settings.quality === 'low';
 /** Bestellbares beim Çaycı (rein kosmetisch) */
 export const ORDER_ITEMS = ['cay', 'kahve', 'kuruyemis', 'su', 'icecek', 'oralet', 'sahlep'] as const;
 /** Dosen in /models/items/drinks.glb (Reihenfolge = variant vom Server) */
@@ -369,7 +371,9 @@ export class World {
       const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.05), new THREE.MeshBasicMaterial({ color: '#ffe0a0' }));
       bulb.position.set(x + 0.6, ROOM.h - 1.22, z);
       this.scene.add(bulb);
-      const l = new THREE.PointLight('#ffcf8a', 2.2, 7, 1.6);
+      // Grafik „niedrig“: nur das Licht über dem Haupttisch ist echt (Rest = Grundhelligkeit)
+      if (LOW && !(x === 0 && z === 0)) continue;
+      const l = new THREE.PointLight('#ffcf8a', 2.2, LOW ? 9 : 7, 1.6);
       l.position.set(x + 0.6, ROOM.h - 1.3, z);
       l.castShadow = x === 0 && z === 0;
       if (l.castShadow) l.shadow.mapSize.set(1024, 1024);
@@ -510,7 +514,7 @@ export class World {
     floor.receiveShadow = true;
     this.scene.add(floor);
     // echte 3D-Stadt: Straße, Gehwege, Häuserzeilen, Bäume, Ampeln, Autos, Sonne/Mond
-    this.city = new City(z1, w / 2, ROOM.d / 2);
+    this.city = new City(z1, w / 2, ROOM.d / 2, LOW);
     this.scene.add(this.city.group);
     // Straßenlaternen (leuchten abends) + geparkte Autos + Tauben
     const lampPost = new THREE.MeshStandardMaterial({ color: '#2b2f3a', roughness: 0.5, metalness: 0.4 });
@@ -677,6 +681,7 @@ export class World {
       string(new THREE.Vector3(sx * (w / 2 - 0.5), 2.5, z0 + 2.0), new THREE.Vector3(sx * (w / 2 - 0.4), 2.2, z1 - 0.3), 0.3);
     }
     for (const sp of SPOTS.slice(2)) {
+      if (LOW) break;
       const l = new THREE.PointLight('#ffcf8a', 0, 6, 1.6);
       l.position.set(sp.x, 2.6, sp.z);
       this.scene.add(l);
@@ -965,6 +970,8 @@ export class World {
         chair.position.set(sp.x + side * 0.65, 0, sp.z);
         facing(chair, side, 0);
         this.scene.add(chair);
+        // Grafik „niedrig“: Nebentische ohne Gäste (spart viel Leistung)
+        if (LOW) continue;
         // jeder zweite Gast ist eine realistische Figur
         const gi = ti * 2 + k;
         const guests = ['TeacherM', 'Businessman', 'TeacherF', 'Worker', 'StudentM', 'Mechanic', 'StudentF', 'Engineer'];
@@ -1037,7 +1044,8 @@ export class World {
     this.sun.color.set(mode === 'day' ? '#fff2d8' : mode === 'evening' ? '#ffb27a' : '#8fa0ff');
     for (const b of this.bulbs) (b.material as THREE.MeshBasicMaterial).color.set(mode === 'day' ? '#d8c8a8' : '#ffd27a');
     for (const l of this.gardenLamps) l.intensity = mode === 'day' ? 0 : 2.2;
-    this.ambient.intensity = mode === 'day' ? 0.95 : mode === 'evening' ? 0.6 : 0.35;
+    // weniger echte Lampen bei „niedrig“ → Grundlicht etwas heller
+    this.ambient.intensity = (mode === 'day' ? 0.95 : mode === 'evening' ? 0.6 : 0.35) * (LOW ? 1.6 : 1);
     this.ambient.color.set(mode === 'day' ? '#fff6e6' : mode === 'evening' ? '#ffd9b0' : '#b8c0ff');
     for (const l of this.lamps) l.intensity = mode === 'day' ? 1.4 : 2.6;
   }

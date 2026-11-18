@@ -789,7 +789,7 @@ function openSettings() {
       select('quality', t('quality'), [
         ['high', 'High'],
         ['low', 'Low'],
-      ]),
+      ], () => toast(getLang() === 'de' ? 'Lichter, Gäste und Außenwelt ändern sich nach dem Neuladen der Seite' : 'Işıklar, misafirler ve dış dünya sayfa yenilenince değişir')),
       select('timeOfDay', t('timeOfDay'), [
         ['auto', t('auto')],
         ['day', '☀️'],
