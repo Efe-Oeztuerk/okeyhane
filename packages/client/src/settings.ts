@@ -31,6 +31,10 @@ export interface Settings {
   showKeyHints: boolean;
   /** Arabesk-Melodie im Menü */
   menuMusic: boolean;
+  /** Kahvehane-Radio: Sender-ID oder 'off' */
+  radioStation: string;
+  /** Menümusik + Radio stumm */
+  musicMuted: boolean;
 }
 
 export interface KeyBinds {
@@ -140,6 +144,8 @@ const defaults: Settings = {
   touchUi: 'auto',
   showKeyHints: true,
   menuMusic: true,
+  radioStation: 'okeyhane',
+  musicMuted: false,
 };
 /** Touchgerät (Handy/Tablet) */
 export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);

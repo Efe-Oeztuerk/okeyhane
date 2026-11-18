@@ -594,6 +594,8 @@ const MIME: Record<string, string> = {
   '.json': 'application/json',
   '.woff2': 'font/woff2',
   '.glb': 'model/gltf-binary',
+  '.mp3': 'audio/mpeg',
+  '.webp': 'image/webp',
 };
 
 const server = http.createServer((req, res) => {
@@ -615,6 +617,28 @@ const server = http.createServer((req, res) => {
     return;
   }
   res.setHeader('Content-Type', MIME[path.extname(file)] ?? 'application/octet-stream');
+  const ext = path.extname(file);
+  if (ext === '.mp3' || ext === '.glb') res.setHeader('Cache-Control', 'public, max-age=86400');
+  // Range-Anfragen (Audio-Streaming / Spulen)
+  const size = fs.statSync(file).size;
+  res.setHeader('Accept-Ranges', 'bytes');
+  const range = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? '');
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : size - Number(range[2]);
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), size - 1) : size - 1;
+    if (start >= size || start > end) {
+      res.statusCode = 416;
+      res.setHeader('Content-Range', `bytes */${size}`);
+      res.end();
+      return;
+    }
+    res.statusCode = 206;
+    res.setHeader('Content-Range', `bytes ${start}-${end}/${size}`);
+    res.setHeader('Content-Length', String(end - start + 1));
+    fs.createReadStream(file, { start, end }).pipe(res);
+    return;
+  }
+  res.setHeader('Content-Length', String(size));
   fs.createReadStream(file).pipe(res);
 });
 

@@ -17,7 +17,7 @@ import { tileElement } from './tileArt.ts';
 import { CREDITS } from './models.ts';
 import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
-import { menuMusic } from './menuMusic.ts';
+import { music as bgm, STATIONS } from './menuMusic.ts';
 
 // ------------------------------------------------------------------ Zustand
 
@@ -249,6 +249,7 @@ function applyMedia() {
     tv.stopAll();
     music.stopAll();
     world.setTvVisible(false);
+    bgm.setBusy(false);
     return;
   }
   tv.enabled = settings.tvMode === 'table';
@@ -256,8 +257,13 @@ function applyMedia() {
   world.setTvVisible(tv.enabled && !!table.tv.source);
   music.enabled = settings.musicMode === 'table';
   music.apply(table.music);
-  if (settings.musicMode === 'own' && settings.ownMusicUrl) ownMusic.playLocal(settings.ownMusicUrl);
+  const ownOn = settings.musicMode === 'own' && !!settings.ownMusicUrl;
+  if (ownOn) ownMusic.playLocal(settings.ownMusicUrl);
   else ownMusic.stopAll();
+  // Radio macht automatisch Platz, sobald andere Musik oder der Fernseher läuft
+  const tableMusic = music.enabled && !!table.music.source && table.music.playing;
+  const tableTv = tv.enabled && !!table.tv.source && table.tv.playing;
+  bgm.setBusy(ownOn || tableMusic || tableTv);
 }
 setInterval(() => {
   tv.tick();
@@ -267,7 +273,7 @@ setInterval(() => {
 // ------------------------------------------------------------------ Menü
 
 function showMenu() {
-  menuMusic.set(true);
+  bgm.set('menu');
   ui.innerHTML = '';
   world.sitAt(null);
   const previewBox = h('div', { class: 'preview' });
@@ -299,6 +305,8 @@ function showMenu() {
       h('button', { class: 'small ' + (getLang() === 'tr' ? 'primary' : 'ghost'), onclick: () => (setLang('tr'), showMenu()) }, 'TR'),
       ' ',
       h('button', { class: 'small ' + (getLang() === 'de' ? 'primary' : 'ghost'), onclick: () => (setLang('de'), showMenu()) }, 'DE'),
+      ' ',
+      muteButton(),
     ),
     h(
       'div',
@@ -451,6 +459,8 @@ function openSettings() {
       check('smoke', t('smoke')),
       check('pushToTalk', t('pushToTalk')),
       check('menuMusic', getLang() === 'de' ? '🎶 Musik im Menü' : '🎶 Menüde müzik'),
+      check('musicMuted', getLang() === 'de' ? '🔇 Menümusik & Radio stumm' : '🔇 Menü müziği & radyo sessiz'),
+      h('label', {}, '📻 Radio', radioSelect()),
       select('quality', t('quality'), [
         ['high', 'High'],
         ['low', 'Low'],
@@ -487,6 +497,30 @@ function openSettings() {
         ),
       ),
     ),
+  );
+}
+
+/** 🔊/🔇 für Menümusik und Radio */
+function muteButton() {
+  const b = h('button', { class: 'small ghost', title: getLang() === 'de' ? 'Musik an/aus' : 'Müzik aç/kapa' }, settings.musicMuted ? '🔇' : '🔊');
+  b.onclick = () => {
+    bgm.toggleMute();
+    b.textContent = settings.musicMuted ? '🔇' : '🔊';
+  };
+  return b;
+}
+
+function radioSelect() {
+  return h(
+    'select',
+    {
+      onchange: (e: Event) => {
+        settings.radioStation = (e.target as HTMLSelectElement).value;
+        saveSettings();
+      },
+    },
+    h('option', { value: 'off', selected: settings.radioStation === 'off' }, getLang() === 'de' ? 'Aus' : 'Kapalı'),
+    STATIONS.map((st) => h('option', { value: st.id, selected: settings.radioStation === st.id }, st.name)),
   );
 }
 
@@ -592,7 +626,7 @@ function controllerSection() {
 // ------------------------------------------------------------------ Kahvehane
 
 function enterCafe() {
-  menuMusic.set(false);
+  bgm.set('cafe');
   inCafe = true;
   const menu = ui.querySelector('.menu') as any;
   menu?._pv?.dispose();
@@ -810,6 +844,7 @@ function renderRight() {
   el.innerHTML = '';
   appendAll(el,
     h('button', { class: 'small', onclick: () => openMedia() }, '📺 ' + t('tv') + ' / 🎵 ' + t('music')),
+    muteButton(),
     h(
       'button',
       {
@@ -1224,7 +1259,16 @@ function openMedia() {
     h('h2', {}, '📺 ' + t('tv')),
     h('label', { class: 'row' }, t('tv') + ':', modeSel('tvMode', [['table', t('forAll')], ['off', t('off')]])),
     isOwner ? h('div', { class: 'col', style: { margin: '8px 0 16px' } }, h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, tvInput, h('button', { class: 'primary small', onclick: () => loadSrc('tv', tvInput.value) }, t('load'))), controls('tv')) : h('div', { class: 'muted', style: { marginBottom: '14px' } }, t('onlyOwner')),
-    h('h2', {}, '🎵 ' + t('music')),
+    h('h2', {}, '📻 Radio'),
+    h(
+      'div',
+      { class: 'muted', style: { marginBottom: '6px' } },
+      getLang() === 'de'
+        ? 'Läuft automatisch im Kahvehane. Sobald Tisch-Musik, der Fernseher oder deine eigene Musik läuft, macht das Radio Platz.'
+        : 'Kahvehanede kendiliğinden çalar. Masa müziği, TV ya da kendi müziğin açılınca radyo susar.',
+    ),
+    h('div', { class: 'row' }, radioSelect(), h('button', { class: 'small', onclick: () => bgm.nextTrack() }, '⏭'), muteButton()),
+    h('h2', { style: { marginTop: '14px' } }, '🎵 ' + t('music')),
     h('label', { class: 'row' }, t('music') + ':', modeSel('musicMode', [['table', t('forAll')], ['off', t('off')], ['own', t('ownMusic')]])),
     isOwner ? h('div', { class: 'col', style: { margin: '8px 0' } }, h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, musicInput, h('button', { class: 'primary small', onclick: () => loadSrc('music', musicInput.value) }, t('load'))), controls('music')) : h('div', { class: 'muted' }, t('onlyOwner')),
     h('div', { class: 'col', style: { marginTop: '10px' } }, h('label', {}, t('ownMusic')), h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, ownInput, h('button', { class: 'small', onclick: () => ((settings.ownMusicUrl = ownInput.value), (settings.musicMode = 'own'), saveSettings(), applyMedia()) }, t('load')))),
@@ -1241,4 +1285,4 @@ function curPos(kind: 'tv' | 'music') {
 showMenu();
 
 // Debug-Zugriff (Konsole / automatische Tests)
-(window as any).__okey = { world, send, istaka, get state() { return st; }, get table() { return table; } };
+(window as any).__okey = { world, send, istaka, bgm, get state() { return st; }, get table() { return table; } };

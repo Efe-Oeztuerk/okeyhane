@@ -11,7 +11,7 @@ declare global {
 }
 
 let ytReady: Promise<void> | null = null;
-function loadYT(): Promise<void> {
+export function loadYT(): Promise<void> {
   if (ytReady) return ytReady;
   ytReady = new Promise((res) => {
     if (window.YT?.Player) return res();
