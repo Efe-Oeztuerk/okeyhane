@@ -1260,6 +1260,8 @@ function renderLeft() {
         { class: 'row', style: { flexWrap: 'nowrap', gap: '6px' } },
         fold,
         h('div', { class: 'code small-code', title: 'Copy', onclick: () => (navigator.clipboard?.writeText(table!.code), toast(t('copied'), '#2d5a3a')) }, table!.code + ' 📋'),
+        // Handy: Einstellungen immer direkt erreichbar (nicht nur im Chat-Menü)
+        document.body.classList.contains('phone') ? h('button', { class: 'small ghost gear', title: getLang() === 'de' ? 'Einstellungen' : 'Ayarlar', onclick: () => openSettings() }, '⚙️') : null,
       ),
     );
     return;

@@ -504,3 +504,5 @@ body.phone .hud-top > .toptoggle { order: 5; }
 body.touch .hud-left:not(.compact) { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
 body.touch .hud-left:not(.compact) .people { max-height: none; }
 body.touch .hud-left:not(.compact) > .muted:first-of-type { padding-right: 44px; }
+body.phone .hud-left .gear { min-width: 40px; min-height: 36px; font-size: 20px; padding: 0 6px; }
+body.phone .hud-top { transform: translateX(calc(-50% + 46px)) scale(0.68) !important; }
