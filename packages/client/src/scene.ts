@@ -1517,6 +1517,20 @@ export class World {
     this.zoneDiscard = mk(0.13, '#7fe07f', '➜ AT · Abwerfen');
     this.zoneFinish.position.set(0, TABLE_Y + 0.004, 0);
   }
+  /** Stein schräg zum Betrachter aufstellen (wie an den Stapel gelehnt) und etwas vergrößern */
+  private tiltToViewer(m: THREE.Mesh, seat: number) {
+    const flat = m.quaternion.clone();
+    const local = seatPos(seat).multiplyScalar(1.15);
+    const eye = new THREE.Vector3(local.x, 1.45, local.z).add(this.tableRoot.position);
+    const world = m.position.clone().add(this.tableRoot.position);
+    const face = new THREE.Object3D();
+    face.position.copy(world);
+    face.lookAt(eye);
+    // Lesrichtung beibehalten: nur um die waagerechte Achse kippen (kein Verdrehen)
+    m.quaternion.copy(flat).slerp(face.quaternion, 0.72);
+    m.scale.multiplyScalar(1.3);
+    m.position.y += 0.018;
+  }
   /** Abwurfstapel eines Platzes: vor seinem Brett, nach rechts versetzt */
   private discardSpot(s: number) {
     return seatPos(s).multiplyScalar(0.33).add(seatPos((s + 1) % 4).multiplyScalar(0.19));
@@ -1892,6 +1906,8 @@ export class World {
         m.rotation.z = readRot + (i - shown.length + 1) * 0.08;
         m.position.set(corner.x, TABLE_Y + 0.01 + i * 0.021, corner.z);
         const isTop = i === shown.length - 1;
+        // oberster Stein: etwas größer und schräg zu mir aufgestellt → aus der normalen Sicht lesbar
+        if (isTop && s !== v.mySeat) this.tiltToViewer(m, v.mySeat ?? this.mySeat ?? 0);
         if (isTop && this.prevDiscards[s] !== undefined && pile.length === this.prevDiscards[s] + 1) {
           const from = seatPos(s).multiplyScalar(0.47);
           this.flyers.push({ m, from: new THREE.Vector3(from.x, TABLE_Y + 0.09, from.z), to: m.position.clone(), t: 0, spin: (Math.random() - 0.5) * 3 });
