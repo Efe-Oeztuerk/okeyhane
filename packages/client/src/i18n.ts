@@ -304,7 +304,7 @@ const dict = {
 } as const;
 
 export type Key = keyof (typeof dict)['tr'];
-let lang: Lang = (localStorage.getItem('lang') as Lang) || 'tr';
+let lang: Lang = (localStorage.getItem('lang') as Lang) || (navigator.language?.toLowerCase().startsWith('de') ? 'de' : 'tr');
 
 export function t(k: Key | string): string {
   return (dict[lang] as any)[k] ?? (dict.tr as any)[k] ?? k;
