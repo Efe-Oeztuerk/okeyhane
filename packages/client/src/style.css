@@ -413,3 +413,21 @@ body.touch .chat:not(.open) { display: none !important; }
 body.phone .chat.open { bottom: auto; top: 50px; left: max(8px, env(safe-area-inset-left)); max-height: calc(100dvh - 60px); z-index: 36; }
 body.phone .menu > .card { width: var(--uiw); }
 body.phone.incafe .fsbtn { top: 44px; left: max(8px, env(safe-area-inset-left)); width: 30px; height: 30px; font-size: 14px; }
+
+/* ---------- Handy: obere Leiste aufräumen ---------- */
+/* Funktionen (TV/Musik, Radio, Ton, Hilfe, Mikro, Zettel, Einstellungen) als Symbol-Spalte links */
+body.phone .hud-right { top: 52px; left: max(10px, env(safe-area-inset-left)); right: auto; transform: none; flex-direction: column; flex-wrap: nowrap; align-items: flex-start; gap: 5px; max-width: none; z-index: 31; }
+body.phone .hud-right > * { width: 34px; height: 34px; min-width: 0; padding: 0; display: grid; place-items: center; font-size: 16px; overflow: hidden; white-space: nowrap; border-radius: 10px; }
+body.phone .hud-right .radiochip { max-width: 34px; padding: 0; justify-content: center; }
+body.phone .hud-right .radiochip > *:not(:first-child) { display: none; }
+body.phone.incafe .fsbtn { display: none; }
+/* Tisch-Code oben links, nicht ganz am Rand (iOS schluckt Tipps am Rand) */
+body.phone .hud-left { display: block !important; top: max(10px, env(safe-area-inset-top)); left: max(10px, env(safe-area-inset-left)); }
+/* Punkte/Zug mittig, Okey-Info kompakt */
+body.phone .hud-top { top: max(10px, env(safe-area-inset-top)); }
+body.phone .okeyinfo .muted { display: none; }
+body.phone .chat.open { top: 52px; left: calc(max(10px, env(safe-area-inset-left)) + 44px); }
+.tbtn.on { background: var(--gold); }
+body.phone .hud-right .radiochip { font-size: 0; position: relative; }
+body.phone .hud-right .radiochip > * { display: none !important; }
+body.phone .hud-right .radiochip::before { content: '📻'; font-size: 16px; }

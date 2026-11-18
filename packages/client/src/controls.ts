@@ -446,7 +446,8 @@ function setupTouch(world: World, api: ControlApi) {
     return b;
   };
   const tap = (label: string, title: string, fn: () => void, cls = '') => h('button', { class: 'tbtn ' + cls, title, onclick: fn }, label);
-  const lookBtn = tap('👁', 'Umschauen / Brett', () => world.setFocus(!world.focus), 'seated-only');
+  // 👁: frei umschauen (bleibt so, bis man nochmal drückt) – normales Wischen federt zurück
+  const lookBtn = tap('👁', 'Umschauen / Brett', () => (world.focus || !world.freeLook ? world.setFocus(false, true) : world.setFocus(true)), 'seated-only');
   const btns = h(
     'div',
     { class: 'tbtns' },
@@ -467,6 +468,7 @@ function setupTouch(world: World, api: ControlApi) {
     document.body.classList.toggle('touch', touchActive());
     document.body.classList.toggle('phone', touchActive() && Math.min(innerWidth, innerHeight) <= 540);
     root.classList.toggle('seated', world.seated !== null);
+    lookBtn.classList.toggle('on', !world.focus && world.freeLook);
     sitBtn.classList.toggle('hidden', !on || !world.chairAhead());
   };
   setInterval(sync, 300);

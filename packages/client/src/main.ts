@@ -89,15 +89,25 @@ const istaka = new Istaka();
 
 // ------------------------------------------------------------------ Netzwerk
 
+// stabile Sitzungs-ID: damit man nach einem kurzen Verbindungsabbruch seinen Platz zurückbekommt
+const sid = (() => {
+  let v = localStorage.getItem('okeySid');
+  if (!v) localStorage.setItem('okeySid', (v = Math.random().toString(36).slice(2) + Date.now().toString(36)));
+  return v;
+})();
+let rejoining = false;
 function hello() {
-  send({ type: 'hello', name: profile.name || 'Oyuncu', avatar: profile.avatar, signature: profile.signature });
+  send({ type: 'hello', sid, name: profile.name || 'Oyuncu', avatar: profile.avatar, signature: profile.signature });
 }
 connect(() => {
   hello();
   resume();
   // nach Verbindungsabbruch: zurück zum Tisch
   const code = sessionStorage.getItem('tableCode');
-  if (code && inCafe) send({ type: 'joinTable', code });
+  if (code && inCafe) {
+    rejoining = true;
+    send({ type: 'joinTable', code });
+  }
 });
 
 initSocial({
@@ -126,6 +136,7 @@ on('welcome', (m) => {
   voice.setMe(myId);
 });
 on('table', (m) => {
+  rejoining = false;
   const prevStarted = table?.started;
   table = m.table;
   you = m.you;
@@ -293,7 +304,19 @@ on('music', (m) => {
   if (table) table.music = m.state;
   applyMedia();
 });
-on('error', (m) => toast(m.text ?? (m.key === 'noTable' ? 'Masa bulunamadı / Tisch nicht gefunden' : 'Hata')));
+on('error', (m) => {
+  // Wiederverbinden zu einem inzwischen geschlossenen Tisch: still zurück ins Menü
+  if (m.key === 'noTable' && rejoining) {
+    rejoining = false;
+    sessionStorage.removeItem('tableCode');
+    if (inCafe) {
+      toast(getLang() === 'de' ? 'Der Tisch wurde inzwischen geschlossen' : 'Masa kapandı');
+      leaveCafe();
+    }
+    return;
+  }
+  toast(m.text ?? (m.key === 'noTable' ? 'Masa bulunamadı / Tisch nicht gefunden' : 'Hata'));
+});
 on('kicked', () => leaveCafe());
 on('left', () => leaveCafe());
 on('lobby', () => {
@@ -371,6 +394,12 @@ function fitUi() {
   root.setProperty('--uih', Math.floor(H / z - 16) + 'px');
   root.setProperty('--uiw', Math.floor(Math.min(1000, W / z - 24)) + 'px');
 }
+let wasPhone = false;
+setInterval(() => {
+  const ph = document.body.classList.contains('phone');
+  if (ph !== wasPhone && inCafe && table) renderRight();
+  wasPhone = ph;
+}, 500);
 fitUi();
 addEventListener('resize', fitUi);
 window.visualViewport?.addEventListener('resize', fitUi);
@@ -695,6 +724,24 @@ function openSettings() {
       range('fovWalk', getLang() === 'de' ? 'Sichtfeld beim Laufen' : 'Yürürken görüş açısı', 50, 90, '°'),
       range('sensitivity', getLang() === 'de' ? 'Empfindlichkeit (Maus/Touch/Stick)' : 'Hassasiyet (fare/dokunma/kol)', 30, 250, '%'),
       check('invertY', getLang() === 'de' ? 'Y-Achse umkehren' : 'Y eksenini ters çevir'),
+      h(
+        'button',
+        {
+          class: 'small',
+          style: { alignSelf: 'flex-start', marginTop: '4px' },
+          onclick: (e: MouseEvent) => {
+            Object.assign(settings, { fovTable: 62, fovWalk: 66, camTilt: 0, sensitivity: 100, invertY: false });
+            saveSettings();
+            world.setThird(null);
+            world.setZoom(false);
+            if (world.seated !== null) world.sitAt(world.seated);
+            (e.target as HTMLElement).closest('.modal')?.remove();
+            openSettings();
+            toast(getLang() === 'de' ? 'Kamera zurückgesetzt' : 'Kamera sıfırlandı', '#2d5a3a');
+          },
+        },
+        '↺ ' + (getLang() === 'de' ? 'Kamera auf Standard zurücksetzen' : 'Kamerayı varsayılana sıfırla'),
+      ),
       select('touchUi', getLang() === 'de' ? 'Touch-Steuerung (Handy/iPad)' : 'Dokunmatik kontrol (telefon/iPad)', [
         ['auto', t('auto')],
         ['on', getLang() === 'de' ? 'An' : 'Açık'],
@@ -1186,8 +1233,11 @@ function renderLeft() {
 function renderRight() {
   const el = slot('right', 'hud-right');
   el.innerHTML = '';
+  // Handy: nur Symbole, als Spalte links (siehe CSS)
+  const ph = document.body.classList.contains('phone');
+  const L = (icon: string, text: string) => (ph ? icon : icon + ' ' + text);
   appendAll(el,
-    h('button', { class: 'small', onclick: () => openMedia() }, '📺 ' + t('tv') + ' / 🎵 ' + t('music')),
+    h('button', { class: 'small', onclick: () => openMedia() }, ph ? '📺' : '📺 ' + t('tv') + ' / 🎵 ' + t('music')),
     radioChip(),
     muteButton(),
     h(
@@ -1217,10 +1267,11 @@ function renderRight() {
           renderRight();
         },
       },
-      voice.micOn ? '🎙️ ' + t('voiceOn') : '🎙️ ' + t('voiceOff'),
+      L('🎙️', voice.micOn ? t('voiceOn') : t('voiceOff')),
     ),
-    table!.started ? h('button', { class: 'small', onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, '📝 ' + t('sheet')) : null,
+    table!.started ? h('button', { class: 'small', onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, L('📝', t('sheet'))) : null,
     h('button', { class: 'small ghost', onclick: () => openSettings() }, '⚙️'),
+    ph && !isApp() ? h('button', { class: 'small ghost', onclick: () => (document.querySelector('.fsbtn') as HTMLButtonElement | null)?.click() }, '⛶') : null,
   );
 }
 
@@ -1333,6 +1384,13 @@ setupControls(world, istaka, {
     (els.chat?.querySelector('input') as HTMLInputElement | null)?.focus();
   },
   toggleChat: () => {
+    // Touch: Chat als Fenster auf/zu (Knopf 💬)
+    if (document.body.classList.contains('touch')) {
+      const open = !els.chat?.classList.contains('open');
+      els.chat?.classList.toggle('open', open);
+      if (open) els.chat?.classList.remove('collapsed');
+      return;
+    }
     settings.hideChat = !settings.hideChat;
     saveSettings();
     els.chat?.classList.toggle('collapsed', settings.hideChat);

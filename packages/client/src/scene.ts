@@ -1112,11 +1112,14 @@ export class World {
 
   /** im Sitzen: true = auf das Brett fixiert, false = frei umschauen */
   focus = true;
+  /** per 👁-Knopf freies Umschauen: kein automatisches Zurückfedern */
+  freeLook = false;
   private seatYaw = 0;
   private seatPitch = 0;
   onFocusChange: ((focus: boolean) => void) | null = null;
 
-  setFocus(f: boolean) {
+  setFocus(f: boolean, free = false) {
+    this.freeLook = !f && free;
     if (this.focus === f) return;
     this.focus = f;
     if (f) {
@@ -1369,9 +1372,9 @@ export class World {
     const end = (e: PointerEvent) => {
       if (drag && e.pointerId === drag.id) drag = null;
       // nach dem Umschauen federt der Blick zurück aufs Brett
-      if (e.pointerType !== 'mouse' && this.seated !== null && !this.focus) {
+      if (e.pointerType !== 'mouse' && this.seated !== null && !this.focus && !this.freeLook) {
         if (springT) clearTimeout(springT);
-        springT = setTimeout(() => this.seated !== null && this.setFocus(true), 1100);
+        springT = setTimeout(() => this.seated !== null && !this.freeLook && this.setFocus(true), 1100);
       }
     };
     el.addEventListener('pointerup', end);

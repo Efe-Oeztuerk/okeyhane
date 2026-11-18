@@ -25,6 +25,8 @@ interface Client {
   seat: number | null;
   /** Zuschauer: hinter welchem Platz */
   watching: number | null;
+  /** stabile Sitzungs-ID des Browsers/der App (überlebt Verbindungsabbrüche) */
+  sid: string;
   /** angemeldeter Account (null = Gast) */
   user: UserRow | null;
   token: string | null;
@@ -36,6 +38,8 @@ interface Client {
 interface Seat {
   client: Client | null;
   bot: PlayerInfo | null;
+  /** Sitzungs-ID des Menschen, der hier saß (für Wiederverbinden nach kurzem Abbruch) */
+  sid?: string;
 }
 
 interface Table {
@@ -61,6 +65,7 @@ interface Table {
   ready: Set<number>;
   /** Anordnung der Steine auf den Brettern (32 Plätze, Stein-IDs) – wird am Handende gezeigt */
   layouts: Record<number, (number | null)[]>;
+  closeTimer?: NodeJS.Timeout | null;
 }
 
 const tables = new Map<string, Table>();
@@ -196,6 +201,7 @@ function removeFromTable(c: Client) {
   if (c.seat !== null) {
     const seat = t.seats[c.seat];
     seat.client = null;
+    seat.sid = c.sid || undefined;
     // Läuft ein Spiel, übernimmt ein Bot
     if (t.started) seat.bot = botInfo(c.seat, t.seats.map((x) => x.bot?.name ?? ''));
   }
@@ -204,9 +210,14 @@ function removeFromTable(c: Client) {
   c.seat = null;
   c.watching = null;
   if (humanCount(t) === 0 && t.spectators.size === 0) {
-    if (t.botTimer) clearTimeout(t.botTimer);
-    if (t.turnTimer) clearTimeout(t.turnTimer);
-    tables.delete(t.code);
+    // kurz warten: am Handy reißt die Verbindung oft kurz ab (App im Hintergrund, Funkloch)
+    if (t.closeTimer) clearTimeout(t.closeTimer);
+    t.closeTimer = setTimeout(() => {
+      if (humanCount(t) > 0 || t.spectators.size > 0) return;
+      if (t.botTimer) clearTimeout(t.botTimer);
+      if (t.turnTimer) clearTimeout(t.turnTimer);
+      tables.delete(t.code);
+    }, 3 * 60 * 1000);
     return;
   }
   if (t.ownerId === c.id) {
@@ -441,6 +452,7 @@ function handle(c: Client, m: Msg) {
   const t = c.table;
   switch (m.type) {
     case 'hello': {
+      if (typeof m.sid === 'string' && m.sid.length <= 64) c.sid = m.sid;
       if (!c.user) c.info.name = String(m.name ?? 'Oyuncu').slice(0, 20) || 'Oyuncu';
       if (m.avatar) {
         c.info.avatar = m.avatar;
@@ -490,6 +502,22 @@ function handle(c: Client, m: Msg) {
       if (!table) return send(c, { type: 'error', key: 'noTable' });
       removeFromTable(c);
       c.table = table;
+      if (table.closeTimer) {
+        clearTimeout(table.closeTimer);
+        table.closeTimer = null;
+      }
+      // Wiederverbinden: derselbe Browser bekommt seinen Platz zurück (Bot geht wieder)
+      const mine = c.sid ? table.seats.findIndex((s) => !s.client && s.sid === c.sid) : -1;
+      if (mine >= 0 && !m.spectate) {
+        table.seats[mine].client = c;
+        table.seats[mine].bot = null;
+        c.seat = mine;
+        if (!table.seats.some((s) => s.client && s.client.id === table.ownerId)) table.ownerId = c.id;
+        pushTable(table);
+        if (table.game) pushState(table);
+        scheduleBots(table);
+        return;
+      }
       const free = table.seats.findIndex((s) => !s.client && !s.bot);
       if (!m.spectate && free >= 0 && !table.started) {
         table.seats[free].client = c;
@@ -883,6 +911,7 @@ wss.on('connection', (ws) => {
     table: null,
     seat: null,
     watching: null,
+    sid: '',
     user: null,
     token: null,
     friends: [],
