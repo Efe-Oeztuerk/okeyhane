@@ -17,6 +17,7 @@ import { tileElement } from './tileArt.ts';
 import { CREDITS } from './models.ts';
 import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
+import { menuMusic } from './menuMusic.ts';
 
 // ------------------------------------------------------------------ Zustand
 
@@ -266,6 +267,7 @@ setInterval(() => {
 // ------------------------------------------------------------------ Menü
 
 function showMenu() {
+  menuMusic.set(true);
   ui.innerHTML = '';
   world.sitAt(null);
   const previewBox = h('div', { class: 'preview' });
@@ -448,6 +450,7 @@ function openSettings() {
       slider('volNpc', t('volumeNpc')),
       check('smoke', t('smoke')),
       check('pushToTalk', t('pushToTalk')),
+      check('menuMusic', getLang() === 'de' ? '🎶 Musik im Menü' : '🎶 Menüde müzik'),
       select('quality', t('quality'), [
         ['high', 'High'],
         ['low', 'Low'],
@@ -589,6 +592,7 @@ function controllerSection() {
 // ------------------------------------------------------------------ Kahvehane
 
 function enterCafe() {
+  menuMusic.set(false);
   inCafe = true;
   const menu = ui.querySelector('.menu') as any;
   menu?._pv?.dispose();

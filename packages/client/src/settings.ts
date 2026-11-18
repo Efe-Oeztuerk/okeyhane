@@ -29,6 +29,8 @@ export interface Settings {
   touchUi: 'auto' | 'on' | 'off';
   /** Tastenkürzel-Hilfe unten einblenden */
   showKeyHints: boolean;
+  /** Arabesk-Melodie im Menü */
+  menuMusic: boolean;
 }
 
 export interface KeyBinds {
@@ -137,6 +139,7 @@ const defaults: Settings = {
   invertY: false,
   touchUi: 'auto',
   showKeyHints: true,
+  menuMusic: true,
 };
 /** Touchgerät (Handy/Tablet) */
 export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
