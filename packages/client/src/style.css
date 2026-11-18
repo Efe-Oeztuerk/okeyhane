@@ -346,9 +346,9 @@ button.badge { box-shadow: 0 0 0 2px #e3b04b inset; }
 
 /* ---------- Handy (Touch, kleine Seite ≤ 540 px) ---------- */
 body.phone {
-  --tw: clamp(29px, calc((100vw - 150px - env(safe-area-inset-left) - env(safe-area-inset-right)) / 16 - 3px), 48px);
+  --tw: clamp(30px, calc((100vw - 112px - env(safe-area-inset-left) - env(safe-area-inset-right)) / 16 - 3px), 50px);
   --th: calc(var(--tw) * 1.36);
-  --tf: calc(var(--tw) * 0.56);
+  --tf: calc(var(--tw) * 0.64);
 }
 body.phone .tile .heart { font-size: calc(var(--tw) * 0.26); margin-top: 0; }
 body.phone .tile:hover { transform: none; }
@@ -467,3 +467,22 @@ body.chat-open .touch-ui .tbtns { display: none; }
 /* Fernseh-Modus */
 .tv-exit { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 10px); right: calc(env(safe-area-inset-right, 0px) + 12px); z-index: 60; background: rgba(20,14,10,.75); color: #f3e3c3; border: 1px solid rgba(255,255,255,.18); border-radius: 18px; padding: 7px 14px; font-weight: 700; font-size: 13px; cursor: pointer; }
 body.tv-watch .hud-left, body.tv-watch .hud-right, body.tv-watch .hud-top, body.tv-watch .istaka-wrap, body.tv-watch .touch-ui, body.tv-watch .actionbar, body.tv-watch .chat { opacity: 0; pointer-events: none; transition: opacity .3s; }
+
+/* Handy: kein Doppeltipp-/Pinch-Zoom des Browsers */
+html, body { touch-action: manipulation; -webkit-text-size-adjust: 100%; }
+body.touch * { -webkit-tap-highlight-color: transparent; }
+body.touch button, body.touch .tile, body.touch .chip { touch-action: manipulation; user-select: none; -webkit-user-select: none; }
+
+/* Handy: Symbol-Spalte nur im Chat-Menü (Tab „Menü“) */
+body.phone .hud-right { display: none !important; }
+body.phone .hud-left { left: max(10px, env(safe-area-inset-left)) !important; }
+.cd-menu { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; overflow-y: auto; align-content: start; }
+.cd-menu > button, .cd-menu > .radiochip { display: flex; align-items: center; gap: 8px; justify-content: flex-start; padding: 10px 12px; font-size: 18px; min-height: 46px; border-radius: 10px; }
+.cd-menu .cd-lbl { font-size: 12px; font-weight: 600; text-align: left; line-height: 1.15; }
+.cd-menu > .radiochip { grid-column: 1 / -1; font-size: 13px; background: rgba(255,255,255,.06); }
+.okeyinfo .lastthrow .tile { box-shadow: 0 0 0 2px #e3b04b, 0 3px 0 #c9b48a; }
+body.phone .okeyinfo .lastlbl { display: inline !important; font-size: 10px; max-width: none; }
+body.phone .okeyinfo .ok-meta { display: none !important; }
+.cd-menu > .radiochip { width: auto !important; max-width: none !important; justify-content: space-between; }
+.cd-menu > .radiochip .rc-text { max-width: none !important; overflow: visible; white-space: normal; flex: 1; }
+.cd-menu > .radiochip .rc-text::before { content: none !important; }

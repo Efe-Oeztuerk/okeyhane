@@ -1062,6 +1062,7 @@ export class World {
         if (s === this.mySeat) return; // eigener Rauch kommt über selfPuff
         this.puff(pos, d ? 2 : 10, d, amt ?? 1);
       };
+      a.onRing = (pos, d) => s !== this.mySeat && this.rings(pos, d);
       a.onSlam = () => {
         sfx.slam();
         this.shakeT = 0.25;
@@ -1083,8 +1084,10 @@ export class World {
   private decoShishas: THREE.Group[] = [];
   private seatShishas: (THREE.Group | null)[] = [null, null, null, null];
 
-  emote(seat: number, key: string) {
-    this.avatars[seat]?.emote(key);
+  emote(seat: number, key: string, ring = false) {
+    const av = this.avatars[seat];
+    if (av && ring) av.ringNext = true;
+    av?.emote(key);
     if (key === 'tea') setTimeout(() => sfx.sip(), 800);
     if (key === 'nargile') setTimeout(() => sfx.smoke(), 1500);
   }
@@ -1110,11 +1113,32 @@ export class World {
     }
   }
 
+  /** Rauchringe: 2–3 Kringel, die wachsen, steigen und verblassen */
+  private ringList: { m: THREE.Mesh; v: THREE.Vector3; life: number }[] = [];
+  private ringGeo = new THREE.TorusGeometry(0.03, 0.011, 8, 28);
+  rings(pos: THREE.Vector3, dir: THREE.Vector3) {
+    if (!settings.smoke) return;
+    const n = 2 + Math.floor(Math.random() * 2);
+    for (let i = 0; i < n; i++) {
+      setTimeout(() => {
+        const m = new THREE.Mesh(this.ringGeo, new THREE.MeshBasicMaterial({ color: '#e8e4dc', transparent: true, opacity: 0, depthWrite: false }));
+        m.position.copy(pos);
+        m.lookAt(pos.clone().add(dir));
+        this.scene.add(m);
+        this.ringList.push({ m, v: dir.clone().multiplyScalar(0.32).add(new THREE.Vector3(0, 0.05, 0)), life: 0 });
+      }, i * 420);
+    }
+  }
+
   /** Eigener Rauch/Dampf direkt vor der Kamera (Ego-Perspektive) */
-  selfPuff(kind: 'smoke' | 'steam') {
+  selfPuff(kind: 'smoke' | 'steam', ring = false) {
     const fwd = new THREE.Vector3();
     this.camera.getWorldDirection(fwd);
     const pos = this.camera.position.clone().add(fwd.clone().multiplyScalar(0.42)).add(new THREE.Vector3(0, 0.02, 0));
+    if (kind === 'smoke' && ring) {
+      this.rings(this.camera.position.clone().add(fwd.clone().multiplyScalar(0.3)).add(new THREE.Vector3(0, -0.04, 0)), fwd.clone().setY(fwd.y + 0.1).normalize());
+      return;
+    }
     if (kind === 'smoke') {
       let n = 0;
       const iv = setInterval(() => {
@@ -1192,7 +1216,9 @@ export class World {
   private seatCam(seat: number) {
     const dir = seatPos(seat);
     const off = this.tableRoot.position;
-    const pos = new THREE.Vector3(dir.x * 1.18, 1.5, dir.z * 1.18).add(off);
+    // Handy: näher ran, damit die Steine auf dem Tisch gut lesbar sind
+    const ph = document.body.classList.contains('phone');
+    const pos = new THREE.Vector3(dir.x * (ph ? 1.0 : 1.18), ph ? 1.4 : 1.5, dir.z * (ph ? 1.0 : 1.18)).add(off);
     // klassischer Blick aufs Brett; „Blick heben“ schiebt den Zielpunkt Richtung Gegenüber
     const lift = Math.max(0, Math.min(1, settings.camTilt / 25));
     // Handy: auf die Tischmitte zielen (der Bereich unten ist von der Istaka verdeckt)
@@ -2112,6 +2138,8 @@ export class World {
       const k = this.camera.view.fullHeight / (this.container.clientHeight || innerHeight);
       fov = (2 * Math.atan((Math.tan((fov * Math.PI) / 360) * k) / 0.9) * 180) / Math.PI;
     }
+    // Handy am Tisch: etwas enger → Steine größer
+    if (this.seated !== null && !this.third && !this.zooming && document.body.classList.contains('phone')) fov *= 0.9;
     // Hochformat (Handy): horizontales Sichtfeld erhalten
     if (this.camera.aspect < 1.4 && !this.zooming) fov = Math.min(105, (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (1.4 / this.camera.aspect)) * 180) / Math.PI);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
@@ -2156,6 +2184,20 @@ export class World {
       if (Math.random() < dt * 0.15) pg.rotation.y += (Math.random() - 0.5) * 1.5;
     }
     if (Math.random() < dt * 0.05) sfx.murmur();
+    // Rauchringe
+    for (let i = this.ringList.length - 1; i >= 0; i--) {
+      const r = this.ringList[i];
+      r.life += dt;
+      r.m.position.addScaledVector(r.v, dt);
+      r.v.multiplyScalar(0.993);
+      r.m.scale.setScalar(1 + r.life * 1.3);
+      (r.m.material as THREE.MeshBasicMaterial).opacity = 0.55 * Math.min(1, r.life * 5) * Math.max(0, 1 - r.life / 3.2);
+      if (r.life > 3.2) {
+        this.scene.remove(r.m);
+        (r.m.material as THREE.Material).dispose();
+        this.ringList.splice(i, 1);
+      }
+    }
     // Rauch
     for (let i = this.smoke.length - 1; i >= 0; i--) {
       const p = this.smoke[i];

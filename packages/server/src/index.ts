@@ -173,7 +173,9 @@ function pushState(t: Table) {
   if (!t.game) return;
   for (const c of members(t)) {
     const seat = c.seat ?? c.watching ?? 0;
-    const view = t.game.viewFor(seat);
+    const view: any = t.game.viewFor(seat);
+    // Zuschauer sehen keine Steine (sonst könnte man spicken und sich dann setzen)
+    if (c.seat === null && t.game.hand.phase !== 'handOver' && !t.game.gameOver) view.myHand = [];
     send(c, {
       type: 'state',
       view,
@@ -254,7 +256,7 @@ function scheduleBots(t: Table) {
   const seat = g.hand.current;
   if (t.seats[seat].bot) {
     t.botTimer = setTimeout(() => {
-      if (t.game !== g || g.hand.current !== seat) return;
+      if (t.game !== g || g.hand.current !== seat || !t.seats[seat].bot) return;
       try {
         botTurn(g, seat);
       } catch (e) {
@@ -592,6 +594,11 @@ function handle(c: Client, m: Msg) {
         c.seat = s;
         c.watching = null;
         pushTable(t);
+        if (t.game) {
+          pushState(t);
+          scheduleBots(t);
+          scheduleTurnTimer(t);
+        }
         return;
       }
       case 'watch': {
@@ -631,6 +638,15 @@ function handle(c: Client, m: Msg) {
         const s = Number(m.seat);
         if (t.seats[s]) t.seats[s].bot = null;
         pushTable(t);
+        return;
+      }
+      case 'giveOwner': {
+        if (!isOwner) throw new GameError('Nur der Tischbesitzer');
+        const target = members(t).find((x) => x.id === m.id);
+        if (!target || target === c) return;
+        t.ownerId = target.id;
+        pushTable(t);
+        broadcast(t, { type: 'ownerChanged', name: target.info.name });
         return;
       }
       case 'kick': {
@@ -705,9 +721,14 @@ function handle(c: Client, m: Msg) {
       case 'quick':
         broadcast(t, { type: 'quick', seat: c.seat, from: c.info.name, key: m.key });
         return;
-      case 'emote':
-        if (c.seat !== null) broadcast(t, { type: 'emote', seat: c.seat, key: m.key });
+      case 'emote': {
+        // max. alle 2 s (gegen Spam)
+        const now = Date.now();
+        if (now - ((c as any).lastEmote ?? 0) < 1800) return;
+        (c as any).lastEmote = now;
+        if (c.seat !== null) broadcast(t, { type: 'emote', seat: c.seat, key: m.key, ring: m.key === 'nargile' && Math.random() < 0.4 });
         return;
+      }
       case 'eye':
         if (c.seat !== null) broadcast(t, { type: 'eye', seat: c.seat, key: m.key });
         return;

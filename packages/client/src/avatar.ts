@@ -642,6 +642,9 @@ export class Avatar3D {
   /** Rauch-Callback: Position + Richtung */
   onSmoke: ((pos: THREE.Vector3, dir?: THREE.Vector3, amount?: number) => void) | null = null;
   onSlam: (() => void) | null = null;
+  /** nächstes Ausatmen bläst Rauchringe */
+  ringNext = false;
+  onRing: ((pos: THREE.Vector3, dir: THREE.Vector3) => void) | null = null;
 
   private legs: { hip: THREE.Group; knee: THREE.Group }[] = [];
   private standing = false;
@@ -1442,7 +1445,10 @@ export class Avatar3D {
             if (this.steamT <= 0 && !frozen) {
               this.steamT = 0.06;
               const dir = new THREE.Vector3(0, 0.22, 0.5).applyQuaternion(this.root.getWorldQuaternion(new THREE.Quaternion()));
-              this.onSmoke?.(this.mouthWorld(), dir, 1);
+              if (this.ringNext) {
+                this.ringNext = false;
+                this.onRing?.(this.mouthWorld(), dir.clone().setY(0.06).normalize());
+              } else this.onSmoke?.(this.mouthWorld(), dir, 1);
             }
           }
           break;

@@ -464,6 +464,7 @@ function setupTouch(world: World, api: ControlApi) {
     hold('🪞', 'Von vorne', () => world.setThird('front'), () => world.setThird(null)),
     tap('☕', 'Çaycı', () => api.openCayci()),
     tap('😊', 'Emotes', () => (wheelIsOpen() ? closeWheel() : api.openEmotes()), 'seated-only'),
+    tap('💨', 'Nargile', () => api.emote('nargile'), 'seated-only'),
     tap('💬', 'Chat', () => api.toggleChat()),
   );
   const sitBtn = h('button', { class: 'sitbtn hidden', onclick: () => world.interact() }, '🪑 ' + (de() ? 'Hinsetzen' : 'Otur'));

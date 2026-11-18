@@ -205,8 +205,8 @@ on('quick', (m) => {
   if (m.seat !== null) world.say(m.seat, text);
 });
 on('emote', (m) => {
-  world.emote(m.seat, m.key);
-  if (m.seat !== null && m.seat === you.seat) selfFeedback(m.key);
+  world.emote(m.seat, m.key, !!m.ring);
+  if (m.seat !== null && m.seat === you.seat) selfFeedback(m.key, !!m.ring);
   if (m.smoke) {
     setTimeout(() => world.smokeCloud(), 1400);
     addLog(h('div', { class: 'sys' }, `${nameOf(m.seat)} 💨`));
@@ -246,12 +246,12 @@ on('eye', (m) => {
 });
 
 /** Rückmeldung für eigene Aktionen (eigener Körper ist in Ego-Perspektive unsichtbar) */
-function selfFeedback(key: string) {
+function selfFeedback(key: string, ring = false) {
   if (key === 'nargile') {
     sfx.bubble();
     setTimeout(() => {
       sfx.exhale();
-      world.selfPuff('smoke');
+      world.selfPuff('smoke', ring);
     }, 1900);
   } else if (key === 'tea') {
     world.selfPuff('steam');
@@ -375,6 +375,7 @@ function errTr(x: string) {
   return x;
 }
 on('kicked', () => leaveCafe());
+on('ownerChanged', (m) => toast(`👑 ${m.name} ${getLang() === 'de' ? 'ist jetzt Tischbesitzer' : 'artık masa sahibi'}`, '#2d5a3a'));
 on('left', () => leaveCafe());
 on('lobby', () => {
   istaka.clear();
@@ -1270,6 +1271,12 @@ function renderLeft() {
         : h('span', { class: 'muted' }, table!.isPublic ? '🌐 ' + t('publicTable') : '🔒 ' + t('privateTable')),
       h('button', { class: 'small ghost', onclick: () => openFriends() }, '👥 ' + (getLang() === 'de' ? 'Einladen' : 'Davet et') + (pendingCount() ? ` (${pendingCount()})` : '')),
     ),
+    h(
+      'div',
+      { class: 'row', style: { margin: '0 0 6px' } },
+      world.seated !== null && !table!.started && you.seat !== null ? h('button', { class: 'small ghost', onclick: () => (world.sitAt(null), renderAll()) }, '🚶 ' + t('leave')) : null,
+      h('button', { class: 'small danger', onclick: () => send({ type: 'leaveTable' }) }, '🚪 ' + t('back')),
+    ),
   );
   const people = h('div', { class: 'people' });
   table!.seats.forEach((p, s) => {
@@ -1284,6 +1291,23 @@ function renderLeft() {
           'span',
           { class: 'row', style: { gap: '4px' } },
           !isMe && !p.bot ? h('button', { class: 'small ghost', title: 'Mute', onclick: () => (voice.setMuted(p.id, !voice.isMuted(p.id)), renderLeft()) }, voice.isMuted(p.id) ? '🔇' : '🔊') : null,
+          // Zuschauer: Platz eines Bots übernehmen (laufendes Spiel)
+          you.seat === null && p.bot && table!.started ? h('button', { class: 'small', title: getLang() === 'de' ? 'Platz übernehmen' : 'Yerine otur', onclick: () => send({ type: 'sit', seat: s }) }, '🪑') : null,
+          isOwner && !isMe && !p.bot
+            ? h(
+                'button',
+                {
+                  class: 'small ghost',
+                  title: getLang() === 'de' ? 'Tischbesitz abgeben' : 'Masa sahipliğini devret',
+                  onclick: () =>
+                    popupMenu(getLang() === 'de' ? `👑 ${p.name} zum Tischbesitzer machen?` : `👑 ${p.name} masa sahibi olsun mu?`, [
+                      { label: getLang() === 'de' ? '✓ Ja, abgeben' : '✓ Evet, devret', fn: () => send({ type: 'giveOwner', id: p.id }) },
+                      { label: getLang() === 'de' ? '✗ Abbrechen' : '✗ Vazgeç', fn: () => {} },
+                    ]),
+                },
+                '👑',
+              )
+            : null,
           isOwner && !isMe && !p.bot ? h('button', { class: 'small danger', onclick: () => send({ type: 'kick', id: p.id }) }, '✕') : null,
         ),
       ),
@@ -1302,21 +1326,22 @@ function renderLeft() {
       );
   }
   el.append(people);
-  el.append(
-    h(
-      'div',
-      { class: 'row', style: { marginTop: '8px' } },
-      world.seated !== null && !table!.started && you.seat !== null ? h('button', { class: 'small ghost', onclick: () => (world.sitAt(null), renderAll()) }, '🚶 ' + t('leave')) : null,
-      h('button', { class: 'small danger', onclick: () => send({ type: 'leaveTable' }) }, '🚪 ' + t('back')),
-    ),
-  );
 }
 
+let chatMenuPane: HTMLElement | null = null;
 function renderRight() {
-  const el = slot('right', 'hud-right');
-  el.innerHTML = '';
-  // PC und Handy gleich: Symbol-Spalte links (Text als Tooltip)
+  const col = slot('right', 'hud-right');
+  col.innerHTML = '';
+  // PC: Symbol-Spalte links (Text als Tooltip) · Handy: dieselben Knöpfe nur im Chat-Menü (Tab „Menü“)
   const ph = document.body.classList.contains('phone');
+  if (ph && (!chatMenuPane || !chatMenuPane.isConnected) && els.chat?.isConnected) {
+    // Chat wurde noch ohne Menü-Tab gebaut → neu aufbauen (ruft renderRight selbst auf)
+    els.chat.remove();
+    renderChat();
+    return;
+  }
+  const el = ph && chatMenuPane ? chatMenuPane : col;
+  if (el !== col) el.innerHTML = '';
   const touch = document.body.classList.contains('touch');
   const L = (icon: string, _text: string) => icon;
   const de = getLang() === 'de';
@@ -1353,14 +1378,22 @@ function renderRight() {
       },
       L('🎙️', voice.micOn ? t('voiceOn') : t('voiceOff')),
     ),
-    table!.started ? h('button', { class: 'small', onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, L('📝', t('sheet'))) : null,
+    table!.started ? h('button', { class: 'small', title: t('sheet'), onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, L('📝', t('sheet'))) : null,
     // am PC gibt es keine Touch-Knöpfe rechts → Chat, Çaycı, Emotes hier
     !touch ? h('button', { class: 'small', title: 'Chat (Enter)', onclick: () => setChatOpen(!els.chat?.classList.contains('open')) }, '💬') : null,
     !touch && you.seat !== null ? h('button', { class: 'small', title: de ? 'Çaycı rufen (K)' : 'Çaycı (K)', onclick: () => openCayci() }, '☕') : null,
     !touch && you.seat !== null ? h('button', { class: 'small', title: 'Emotes (E)', onclick: () => openWheelEmotes() }, '😊') : null,
+    !touch && you.seat !== null ? h('button', { class: 'small', title: 'Nargile', onclick: () => sendEmote('nargile') }, '💨') : null,
     h('button', { class: 'small ghost', title: de ? 'Einstellungen' : 'Ayarlar', onclick: () => openSettings() }, '⚙️'),
-    ph && !isApp() ? h('button', { class: 'small ghost', onclick: () => (document.querySelector('.fsbtn') as HTMLButtonElement | null)?.click() }, '⛶') : null,
+    ph && !isApp() ? h('button', { class: 'small ghost', title: de ? 'Vollbild' : 'Tam ekran', onclick: () => (document.querySelector('.fsbtn') as HTMLButtonElement | null)?.click() }, '⛶') : null,
   );
+  if (el !== col) {
+    // im Menü mit Beschriftung
+    el.querySelectorAll(':scope > *').forEach((b) => {
+      const tt = (b as HTMLElement).title || (b.classList.contains('mic-btn') ? (voice.micOn ? t('voiceOn') : t('voiceOff')) : b.classList.contains('radio') ? 'Radyo' : '');
+      if (tt) b.append(h('span', { class: 'cd-lbl' }, tt));
+    });
+  }
 }
 
 function renderChat() {
@@ -1393,27 +1426,32 @@ function renderChat() {
   const emotes = h(
     'div',
     { class: 'emotegrid' },
-    ['slam', 'tea', 'nargile', 'headshake', 'rubhands', 'tespih'].map((k) => h('button', { onclick: () => send({ type: 'emote', key: k }) }, t('e_' + k))),
+    ['slam', 'tea', 'nargile', 'headshake', 'rubhands', 'tespih'].map((k) => h('button', { onclick: () => sendEmote(k) }, t('e_' + k))),
     ['wink', 'blink', 'wide'].map((k) => h('button', { onclick: () => send({ type: 'eye', key: k }) }, '👁 ' + t('eye_' + k).replace(/ \(\d\)/, ''))),
   );
   const chatPane = h('div', { class: 'cd-pane' }, h('div', { class: 'cd-main' }, log, quick), h('div', { class: 'cd-input' }, input, h('button', { class: 'primary', onclick: sendChat }, t('send'))));
   const emotePane = h('div', { class: 'cd-pane hidden' }, emotes);
-  const tabBtn = (label: string, pane: HTMLElement, other: HTMLElement) => {
+  const phone = document.body.classList.contains('phone');
+  const menuPane = h('div', { class: 'cd-pane hidden' }, h('div', { class: 'cd-menu' }));
+  chatMenuPane = phone ? (menuPane.firstChild as HTMLElement) : null;
+  const panes = [chatPane, emotePane, ...(phone ? [menuPane] : [])];
+  const tabBtn = (label: string, pane: HTMLElement) => {
     const b = h('button', {
       class: 'cd-tab',
       onclick: () => {
-        pane.classList.remove('hidden');
-        other.classList.add('hidden');
+        panes.forEach((p) => p.classList.toggle('hidden', p !== pane));
         el!.querySelectorAll('.cd-tab').forEach((x) => x.classList.toggle('on', x === b));
       },
     }, label);
     return b;
   };
-  const t1 = tabBtn('💬 ' + (de ? 'CHAT' : 'SOHBET'), chatPane, emotePane);
-  const t2 = tabBtn('😊 ' + (de ? 'EMOTES' : 'HAREKETLER'), emotePane, chatPane);
+  const t1 = tabBtn('💬 ' + (de ? 'CHAT' : 'SOHBET'), chatPane);
+  const t2 = tabBtn('😊 ' + (de ? 'EMOTES' : 'HAREKET'), emotePane);
+  const t3 = phone ? tabBtn('☰ ' + (de ? 'MENÜ' : 'MENÜ'), menuPane) : null;
   t1.classList.add('on');
-  el.append(h('div', { class: 'cd-head' }, t1, t2, h('button', { class: 'cd-close', title: 'Esc', onclick: () => setChatOpen(false) }, '✕')), chatPane, emotePane);
+  el.append(h('div', { class: 'cd-head' }, t1, t2, t3, h('button', { class: 'cd-close', title: 'Esc', onclick: () => setChatOpen(false) }, '✕')), ...panes);
   log.scrollTop = log.scrollHeight;
+  if (phone) renderRight();
 }
 
 /** Chat-Seitenleiste öffnen/schließen (schließt andere Fenster) */
@@ -1483,7 +1521,7 @@ const controlsApi: any = {
   },
   sortRuns: () => !table?.rules.hardMode && istaka.sortRuns(),
   sortPairs: () => !table?.rules.hardMode && istaka.sortPairs(),
-  emote: (k) => send({ type: 'emote', key: k }),
+  emote: (k) => sendEmote(k),
   eye: (k) => send({ type: 'eye', key: k }),
   openCayci,
   openQuick: () =>
@@ -1495,7 +1533,7 @@ const controlsApi: any = {
     if (wheelIsOpen()) return closeWheel();
     closeOverlays('wheel');
     const de = getLang() === 'de';
-    const e = (icon: string, k: string) => ({ icon, label: t('e_' + k), fn: () => send({ type: 'emote', key: k }) });
+    const e = (icon: string, k: string) => ({ icon, label: t('e_' + k), fn: () => sendEmote(k) });
     const y = (icon: string, k: string) => ({ icon, label: t('eye_' + k).replace(/ \(\d\)/, ''), fn: () => send({ type: 'eye', key: k }) });
     openWheel([
       e('🫖', 'tea'),
@@ -1699,7 +1737,19 @@ function renderGame() {
             : `${t('waitingFor')}: ${turnName}`,
           timer,
         ),
-    h('div', { class: 'okeyinfo' }, 'Okey', okeyTile ? tileElement(okeyTile) : '', h('span', { class: 'muted' }, `${t('pileLeft')}: ${v.pileCount} (${Math.floor(v.pileCount / 5)}×5${v.pileCount % 5 ? ' + ' + (v.pileCount % 5) : ''}) · ${t(table!.rules.mode)} · El ${v.handNo + (v.phase === 'handOver' || v.gameOver ? 0 : 1)}`)),
+    (() => {
+      // statt Steinanzahl: zuletzt geworfener Stein (klein)
+      const last: Tile | null = st.topDiscards?.[(v.current + 3) % 4] ?? null;
+      return h(
+        'div',
+        { class: 'okeyinfo' },
+        'Okey',
+        okeyTile ? tileElement(okeyTile) : '',
+        h('span', { class: 'muted lastlbl' }, getLang() === 'de' ? 'Geworfen' : 'Atılan'),
+        last ? h('span', { class: 'lastthrow' }, tileElement(last)) : h('span', { class: 'muted' }, '–'),
+        h('span', { class: 'muted ok-meta' }, `${t(table!.rules.mode)} · El ${v.handNo + (v.phase === 'handOver' || v.gameOver ? 0 : 1)}`),
+      );
+    })(),
     h('div', { class: 'score' + (mine === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(1)), String(v.teamScores[1])),
     topToggle,
   );
@@ -2016,4 +2066,31 @@ function curPos(kind: 'tv' | 'music') {
 showMenu();
 
 // Debug-Zugriff (Konsole / automatische Tests)
+// iOS ignoriert user-scalable=no: Doppeltipp- und Pinch-Zoom selbst abfangen
+{
+  let lastEnd = 0;
+  document.addEventListener(
+    'touchend',
+    (e) => {
+      const now = Date.now();
+      const tag = (e.target as HTMLElement)?.tagName;
+      if (now - lastEnd < 320 && tag !== 'INPUT' && tag !== 'TEXTAREA') e.preventDefault();
+      lastEnd = now;
+    },
+    { passive: false },
+  );
+  for (const ev of ['gesturestart', 'gesturechange', 'gestureend']) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false } as any);
+  document.addEventListener('touchmove', (e) => (e as TouchEvent).touches.length > 1 && e.preventDefault(), { passive: false });
+}
+/** Emotes/Shisha mit 2 s Pause, damit niemand vollspammt */
+let lastEmoteAt = 0;
+function sendEmote(k: string) {
+  const now = Date.now();
+  if (now - lastEmoteAt < 2000) {
+    toast(getLang() === 'de' ? '⏳ Kurz warten…' : '⏳ Biraz bekle…');
+    return;
+  }
+  lastEmoteAt = now;
+  send({ type: 'emote', key: k });
+}
 (window as any).__okey = { world, send, istaka, bgm, get state() { return st; }, get table() { return table; } };
