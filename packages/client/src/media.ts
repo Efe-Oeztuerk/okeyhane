@@ -44,6 +44,8 @@ export class MediaPlayer {
   private state: MediaState | null = null;
   private mount: HTMLElement;
   enabled = true;
+  /** zusätzlicher Faktor (z. B. 0 = stumm, weil ein anderer Fernseher näher ist) */
+  gain = 1;
 
   constructor(
     private host: HTMLElement,
@@ -60,7 +62,7 @@ export class MediaPlayer {
   }
 
   private volume(st: MediaState | null) {
-    return Math.round(vol(this.volKey) * ((st?.volume ?? 100) / 100) * 100);
+    return Math.round(vol(this.volKey) * ((st?.volume ?? 100) / 100) * this.gain * 100);
   }
 
   async apply(st: MediaState | null) {

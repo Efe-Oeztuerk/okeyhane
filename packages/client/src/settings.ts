@@ -33,6 +33,10 @@ export interface Settings {
   menuMusic: boolean;
   /** Spielerliste links eingeklappt */
   hudCompact: boolean;
+  /** Anzeige oben (Punkte/Okey) ausgeblendet */
+  hideTop: boolean;
+  /** Chat ausgeblendet */
+  hideChat: boolean;
   /** Kahvehane-Radio: Sender-ID oder 'off' */
   radioStation: string;
   /** Menümusik + Radio stumm */
@@ -147,6 +151,8 @@ const defaults: Settings = {
   showKeyHints: false,
   menuMusic: true,
   hudCompact: false,
+  hideTop: false,
+  hideChat: false,
   radioStation: 'okeyhane',
   musicMuted: false,
 };
@@ -155,6 +161,7 @@ export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointe
 if (isTouch) {
   defaults.quality = 'low';
   defaults.hudCompact = true;
+  defaults.hideChat = true;
 }
 
 const stored = JSON.parse(localStorage.getItem('settings') || '{}');

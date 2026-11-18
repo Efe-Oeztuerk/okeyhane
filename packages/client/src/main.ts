@@ -52,7 +52,30 @@ let chatLog: HTMLElement[] = [];
 
 const ui = document.getElementById('ui')!;
 const world = new World(document.getElementById('world')!);
-const tv = new MediaPlayer(world.tvHost, 'volTv', true);
+// alle Fernseher zeigen dasselbe; Ton nur vom nächsten
+const tvs = world.tvHosts.map((host) => new MediaPlayer(host, 'volTv', true));
+const tv = {
+  set enabled(v: boolean) {
+    tvs.forEach((p) => (p.enabled = v));
+  },
+  get enabled() {
+    return tvs[0].enabled;
+  },
+  apply: (s: MediaState | null) => tvs.forEach((p) => p.apply(s)),
+  stopAll: () => tvs.forEach((p) => p.stopAll()),
+  tick: () => tvs.forEach((p) => p.tick()),
+  refreshVolume: () => tvs.forEach((p) => p.refreshVolume()),
+};
+setInterval(() => {
+  const near = world.nearestTv();
+  tvs.forEach((p, i) => {
+    const g = i === near ? 1 : 0;
+    if (p.gain !== g) {
+      p.gain = g;
+      p.refreshVolume();
+    }
+  });
+}, 500);
 const musicHost = h('div', { id: 'music-host' });
 document.body.append(musicHost);
 const music = new MediaPlayer(musicHost, 'volMusic', false);
@@ -93,12 +116,18 @@ on('table', (m) => {
     seenRows = 0;
     lastHandNo = -1;
   }
+  if (prevStarted && !table!.started) {
+    // Spiel beendet → alle stehen auf
+    world.sitAt(null);
+    toast(getLang() === 'de' ? '🚶 Spiel beendet – ihr seid aufgestanden. Zum Weiterspielen wieder hinsetzen.' : '🚶 Oyun bitti – kalktınız. Tekrar oynamak için oturun.', '#2d5a3a');
+  }
   if (!table!.started) {
     st = null;
     world.setGame(null);
     istaka.clear();
   }
   voice.syncMembers([...table!.seats.map((s) => s?.id ?? ''), ...table!.spectators.map((s) => s.id)]);
+  world.keepWalkers([...table!.seats.map((s) => s?.id ?? ''), ...table!.spectators.map((s) => s.id)]);
   applyMedia();
   renderAll();
 });
@@ -155,6 +184,28 @@ on('order', (m) => {
   addLog(h('div', { class: 'sys' }, `${m.from}: ${orderLabel(item)} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
   if (m.seat === you.seat) sfx.bell();
 });
+// Mitspieler, die im Kahvehane herumlaufen
+on('pos', (m) => inCafe && world.setWalker(m.id, m));
+let lastPose = '';
+let lastPoseAt = 0;
+let wasWalking = false;
+setInterval(() => {
+  if (!inCafe || !table) return;
+  const p = world.myPose();
+  if (!p) {
+    if (wasWalking) send({ type: 'pos', x: 0, z: 0, yaw: 0, walking: false });
+    wasWalking = false;
+    return;
+  }
+  const key = `${p.x.toFixed(2)},${p.z.toFixed(2)},${p.yaw.toFixed(2)}`;
+  const now = Date.now();
+  if (key === lastPose && now - lastPoseAt < 2000) return;
+  lastPose = key;
+  lastPoseAt = now;
+  wasWalking = true;
+  send({ type: 'pos', x: p.x, z: p.z, yaw: p.yaw, walking: true });
+}, 120);
+
 on('eye', (m) => {
   world.eye(m.seat, m.key);
   if (m.seat !== null && m.seat === you.seat) eyeFeedback(m.key);
@@ -761,6 +812,11 @@ function enterCafe() {
     else if (zone === 'finish') tryFinish(id);
   };
   istaka.onChange = () => renderActions();
+  let layoutTimer = 0;
+  istaka.onLayout = (slots) => {
+    clearTimeout(layoutTimer);
+    layoutTimer = window.setTimeout(() => you.seat !== null && st && send({ type: 'layout', slots }), 400);
+  };
   renderAll();
 }
 
@@ -1025,7 +1081,15 @@ function renderChat() {
     }
     if (e.key === 'Escape') input.blur();
   });
+  const chatToggle = () => {
+    settings.hideChat = !settings.hideChat;
+    saveSettings();
+    el.classList.toggle('collapsed', settings.hideChat);
+  };
+  el.classList.toggle('collapsed', settings.hideChat);
   el.append(
+    h('button', { class: 'small ghost chat-open', onclick: chatToggle }, '💬 Chat'),
+    h('button', { class: 'small ghost chat-close', title: getLang() === 'de' ? 'Chat ausblenden' : 'Sohbeti gizle', onclick: chatToggle }, '▾'),
     log,
     h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, input, h('button', { class: 'small', onclick: sendChat }, t('send'))),
     h('div', { class: 'quick' }, ['hadi', 'okeyBende', 'caylar', 'buElBizim', 'yazik', 'helal', 'tesekkur', 'gecmisOlsun'].map((k) => h('button', { class: 'ghost', onclick: () => send({ type: 'quick', key: k }) }, t('q_' + k)))),
@@ -1090,10 +1154,16 @@ setupControls(world, istaka, {
       ...['wink', 'blink', 'wide'].map((k) => ({ label: '👁 ' + t('eye_' + k).replace(/ \(\d\)/, ''), fn: () => send({ type: 'eye', key: k }) })),
     ]),
   focusChat: () => {
-    els.chat?.classList.add('open');
+    settings.hideChat = false;
+    saveSettings();
+    els.chat?.classList.remove('collapsed');
     (els.chat?.querySelector('input') as HTMLInputElement | null)?.focus();
   },
-  toggleChat: () => els.chat?.classList.toggle('open'),
+  toggleChat: () => {
+    settings.hideChat = !settings.hideChat;
+    saveSettings();
+    els.chat?.classList.toggle('collapsed', settings.hideChat);
+  },
   toggleSheet: () => {
     if (!table?.started) return;
     sheetOpen = !sheetOpen;
@@ -1234,7 +1304,22 @@ function renderGame() {
   let timer = '';
   if (st.turnDeadline) timer = ` · ${Math.max(0, Math.ceil((st.turnDeadline - Date.now()) / 1000))}s`;
   const okeyTile: Tile | null = st.okey ? { id: -1, color: st.okey.color, value: st.okey.value, fake: false } : null;
-  top.append(
+  const topToggle = h(
+    'button',
+    {
+      class: 'small ghost toptoggle',
+      title: getLang() === 'de' ? 'Anzeige oben ein-/ausblenden' : 'Üst bilgiyi aç/kapa',
+      onclick: () => ((settings.hideTop = !settings.hideTop), saveSettings(), renderGame()),
+    },
+    settings.hideTop ? '▾' : '▴',
+  );
+  top.classList.toggle('mini', settings.hideTop);
+  if (settings.hideTop) {
+    top.append(
+      h('div', { class: 'turn small' + (isMe ? ' me' : '') }, isMe ? (v.phase === 'draw' ? '①' : '②') + ' ' + (getLang() === 'de' ? 'Du' : 'Sen') : `⏳ ${turnName}`),
+      topToggle,
+    );
+  } else top.append(
     h('div', { class: 'score' + (mine === 0 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(0)), String(v.teamScores[0])),
     v.phase === 'handOver' || v.phase === 'gameOver'
       ? h('div', { class: 'turn' }, v.gameOver ? t('gameOver') : t('handOver'))
@@ -1254,6 +1339,7 @@ function renderGame() {
         ),
     h('div', { class: 'okeyinfo' }, 'Okey', okeyTile ? tileElement(okeyTile) : '', h('span', { class: 'muted' }, `${t('pileLeft')}: ${v.pileCount} (${Math.floor(v.pileCount / 5)}×5${v.pileCount % 5 ? ' + ' + (v.pileCount % 5) : ''}) · ${t(table!.rules.mode)} · El ${v.handNo + (v.phase === 'handOver' || v.gameOver ? 0 : 1)}`)),
     h('div', { class: 'score' + (mine === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(1)), String(v.teamScores[1])),
+    topToggle,
   );
 
   // Istaka + Aktionen
@@ -1329,6 +1415,20 @@ function renderGame() {
             ? h('button', { class: iAmReady ? 'ghost' : 'primary', onclick: () => send({ type: 'ready', ready: !iAmReady }) }, iAmReady ? (de ? '↩ Doch nicht bereit' : '↩ Hazır değilim') : de ? '✓ Bereit für die nächste Runde' : '✓ Sonraki ele hazırım')
             : null,
           isOwner ? h('button', { onclick: () => send({ type: 'nextHand' }) }, de ? '▶ Jetzt starten (Tischbesitzer)' : '▶ Hemen başlat (masa sahibi)') : null,
+          isOwner
+            ? h(
+                'button',
+                {
+                  class: 'danger',
+                  onclick: () =>
+                    popupMenu(de ? '⏹ Ganzes Spiel beenden? Alle stehen auf.' : '⏹ Oyunu bitir? Herkes kalkar.', [
+                      { label: de ? '✓ Ja, Spiel beenden' : '✓ Evet, bitir', fn: () => send({ type: 'backToLobby' }) },
+                      { label: de ? '✗ Nein, weiterspielen' : '✗ Hayır, devam', fn: () => {} },
+                    ]),
+                },
+                de ? '⏹ Spiel beenden' : '⏹ Oyunu bitir',
+              )
+            : null,
         ),
       );
     }
@@ -1344,19 +1444,40 @@ function handsPanel(v: any): HTMLElement {
   box.append(toggle);
   if (!showHands) return box;
   const revealed: any[][] | null = v.revealedHands;
+  const layouts: Record<number, (number | null)[]> | null = st?.layouts ?? null;
   const finisher = st?.lastResult?.finisher;
   for (let s = 0; s < 4; s++) {
     const tiles: any[] = (s === you.seat ? v.myHand : revealed?.[s]) ?? [];
+    const byId = new Map(tiles.map((x: any) => [x.id, x]));
+    // Anordnung wie auf dem eigenen Brett (eigenes: lokal, andere: vom Server; Bots: sortiert)
+    let slots: (number | null)[] = s === you.seat ? [...istaka.slots] : layouts?.[s] ? [...layouts[s]] : [];
+    slots = slots.length === 32 ? slots.map((id) => (id !== null && byId.has(id) ? id : null)) : new Array(32).fill(null);
+    const placed = new Set(slots.filter((x) => x !== null));
+    const rest = tiles.filter((x: any) => !placed.has(x.id)).sort((a: any, b: any) => (a.fake ? 1 : 0) - (b.fake ? 1 : 0) || String(a.color).localeCompare(String(b.color)) || a.value - b.value);
+    for (const x of rest) {
+      const free = slots.indexOf(null);
+      if (free < 0) break;
+      slots[free] = x.id;
+    }
     const row = h('div', { class: 'handrow' + (s === finisher ? ' winner' : '') + (s % 2 === 0 ? ' tA' : ' tB') });
     row.append(h('div', { class: 'hn' }, (s === finisher ? '🏁 ' : '') + nameOf(s)));
-    const line = h('div', { class: 'hl' });
-    for (const tl of tiles) {
-      const el = tileElement(tl, st?.okey);
-      el.classList.add('mini');
-      line.append(el);
+    const board = h('div', { class: 'miniboard' });
+    for (let r = 0; r < 2; r++) {
+      const line = h('div', { class: 'mb-row' });
+      for (let c = 0; c < 16; c++) {
+        const id = slots[r * 16 + c];
+        const cell = h('div', { class: 'mb-slot' });
+        if (id !== null && byId.has(id)) {
+          const el = tileElement(byId.get(id), st?.okey);
+          el.classList.add('mini');
+          cell.append(el);
+        }
+        line.append(cell);
+      }
+      board.append(line);
     }
-    if (!tiles.length) line.append(h('span', { class: 'muted' }, s === finisher ? (de ? 'fertig' : 'bitti') : '—'));
-    row.append(line);
+    if (!tiles.length) board.append(h('div', { class: 'muted', style: { textAlign: 'center' } }, s === finisher ? (de ? 'fertig – alle Steine ausgelegt' : 'bitti') : '—'));
+    row.append(board);
     box.append(row);
   }
   return box;
@@ -1378,13 +1499,18 @@ function renderActions() {
   }
   const draw = myTurn('draw');
   const disc = myTurn('discard');
-  bar.append(
-    btn('🀫 ' + t('drawPile'), draw, () => act({ action: 'drawPile' })),
-    btn('↘ ' + t('drawSide'), draw && !!st.topDiscards[(you.seat + 3) % 4] && !v.okeyBirTile, () => act({ action: 'drawDiscard' })),
-    btn('⬇ ' + t('discard'), disc && one !== null, () => act({ action: 'discard', tileId: one })),
-    btn('✔ ' + t('finish'), disc && one !== null, () => tryFinish(one!), 'primary'),
-    btn('👁 ' + t('showIndicator'), v.current === you.seat, () => act({ action: 'showIndicator' })),
-  );
+  // nur die Knöpfe, die gerade passen: erst ziehen, dann werfen/beenden
+  if (draw)
+    bar.append(
+      btn('🀫 ' + t('drawPile'), true, () => act({ action: 'drawPile' }), 'primary'),
+      btn('↘ ' + t('drawSide'), !!st.topDiscards[(you.seat + 3) % 4] && !v.okeyBirTile, () => act({ action: 'drawDiscard' })),
+    );
+  if (disc)
+    bar.append(
+      btn('⬇ ' + t('discard'), one !== null, () => act({ action: 'discard', tileId: one })),
+      btn('🏁 ' + t('finish'), one !== null, () => tryFinish(one!), 'primary'),
+    );
+  if (v.current === you.seat && v.players?.[you.seat]?.discards?.length === 0) bar.append(btn('👁 ' + t('showIndicator'), true, () => act({ action: 'showIndicator' })));
   if (r.mode === 'perisan') bar.append(btn('🀄 ' + t('okeyBir'), disc && one !== null && !v.okeyBirTile, () => act({ action: 'okeyBir', tileId: one }), 'danger'));
   if (r.mode === 'okey101') {
     bar.append(

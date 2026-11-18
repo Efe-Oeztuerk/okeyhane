@@ -296,3 +296,19 @@ body.touch .crosshair { display: none; }
 
 /* Unterschrift: kleiner Stift als Mauszeiger (Spitze unten links) */
 .sigpad { cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='26' height='26' viewBox='0 0 26 26'><path d='M3 23 L5 16 L18 3 L23 8 L10 21 Z' fill='%23f2c14e' stroke='%231d2a6b' stroke-width='1.6' stroke-linejoin='round'/><path d='M3 23 L5 16 L10 21 Z' fill='%231d2a6b'/><path d='M16 5 L21 10' stroke='%231d2a6b' stroke-width='1.6'/></svg>") 3 23, crosshair; touch-action: none; }
+/* Mini-Istaka am Handende (1:1 wie gelegt) */
+.miniboard { padding: 4px 6px 6px; border-radius: 8px 8px 4px 4px; background: linear-gradient(#a4703c, #7a4b2a 60%, #5a3a22); box-shadow: inset 0 1px 0 rgba(255,255,255,0.2); }
+.miniboard .mb-row { display: grid; grid-template-columns: repeat(16, 26px); gap: 2px; height: 38px; border-bottom: 3px solid #4a2e18; margin-bottom: 3px; }
+.miniboard .mb-slot { width: 26px; height: 36px; }
+@media (max-width: 980px) { .miniboard .mb-row { grid-template-columns: repeat(16, 20px); height: 30px; } .miniboard .mb-slot, .tile.mini { width: 20px; height: 28px; } .tile.mini .num { font-size: 12px; } }
+.handrow .hn { width: 100px; }
+/* ausblendbare Anzeige oben + Chat */
+.hud-top .toptoggle { align-self: flex-start; padding: 2px 8px; }
+.hud-top.mini { gap: 6px; }
+.hud-top .turn.small { padding: 4px 10px; font-size: 13px; }
+.chat .chat-open { display: none; align-self: flex-start; }
+.chat .chat-close { position: absolute; top: -30px; left: 0; padding: 2px 8px; }
+.chat.collapsed > * { display: none !important; }
+.chat.collapsed > .chat-open { display: inline-block !important; }
+body.touch .chat.collapsed { display: flex; }
+body.touch .chat { display: flex; }

@@ -60,7 +60,7 @@ export interface GameVisual {
 
 export class World {
   scene = new THREE.Scene();
-  camera = new THREE.PerspectiveCamera(62, 1, 0.05, 50);
+  camera = new THREE.PerspectiveCamera(62, 1, 0.05, 200);
   renderer: THREE.WebGLRenderer;
   css: CSS3DRenderer;
   private clock = new THREE.Clock();
@@ -85,10 +85,11 @@ export class World {
   private windowMesh!: THREE.Mesh;
   private ambient!: THREE.HemisphereLight;
   private lamps: THREE.PointLight[] = [];
-  private tvCss!: CSS3DObject;
-  private tvScreen!: THREE.Mesh;
-  private tvHole!: THREE.Mesh;
-  tvHost: HTMLDivElement;
+  /** mehrere Fernseher, alle zeigen dasselbe (vom Tisch gesteuert) */
+  private tvs: { host: HTMLDivElement; css: CSS3DObject; screen: THREE.Mesh; hole: THREE.Mesh; pos: THREE.Vector3 }[] = [];
+  get tvHosts() {
+    return this.tvs.map((t) => t.host);
+  }
   private dayMode = '';
   // Bewegung
   seated: number | null = null;
@@ -129,8 +130,6 @@ export class World {
     this.renderer.domElement.className = 'gl';
     container.append(this.css.domElement, this.renderer.domElement);
 
-    this.tvHost = document.createElement('div');
-    this.tvHost.className = 'tv-host';
 
     this.buildRoom();
     this.buildGarden();
@@ -284,32 +283,11 @@ export class World {
     clk.position.set(0.2, 2.6, -d / 2 + 0.02);
     this.scene.add(clk);
 
-    // Fernseher (Nordwand, links)
-    const tvW = 2.0;
-    const tvH = 1.125;
-    const tvX = -1.2;
-    const tvY = 2.25;
-    const tvZ = -d / 2 + 0.12;
-    const body = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.12, tvH + 0.12, 0.08), new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.4 }));
-    body.position.set(tvX, tvY, tvZ - 0.05);
-    this.scene.add(body);
-    this.tvScreen = new THREE.Mesh(
-      new THREE.PlaneGeometry(tvW, tvH),
-      new THREE.MeshBasicMaterial({ map: D.tvStandby() }),
-    );
-    this.tvScreen.position.set(tvX, tvY, tvZ - 0.005);
-    this.scene.add(this.tvScreen);
-    this.tvHole = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, transparent: false, blending: THREE.NoBlending }));
-    this.tvHole.position.set(tvX, tvY, tvZ);
-    this.tvHole.visible = false;
-    this.scene.add(this.tvHole);
-    this.tvHost.style.width = '960px';
-    this.tvHost.style.height = '540px';
-    this.tvCss = new CSS3DObject(this.tvHost);
-    this.tvCss.position.set(tvX, tvY, tvZ);
-    this.tvCss.scale.setScalar(tvW / 960);
-    this.tvCss.visible = false;
-    this.scene.add(this.tvCss);
+    // Fernseher: Nordwand (Haupt-TV), Westwand, außen an der Fassade für den Garten (links + rechts)
+    this.addTv(new THREE.Vector3(-1.2, 2.25, -d / 2 + 0.12), 0, 2.0);
+    this.addTv(new THREE.Vector3(-w / 2 + 0.12, 2.2, 0.75), Math.PI / 2, 1.4);
+    this.addTv(new THREE.Vector3(-3.6, 2.88, d / 2 + 0.16), 0, 1.25, true);
+    this.addTv(new THREE.Vector3(3.6, 2.88, d / 2 + 0.16), 0, 1.25, true);
 
     // Deckenventilator
     this.fan = new THREE.Group();
@@ -528,7 +506,7 @@ export class World {
     mosque.position.set(10, 0, z1 + 34);
     this.scene.add(mosque);
     // Himmel
-    this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 16), new THREE.MeshBasicMaterial({ map: D.sky('day'), side: THREE.BackSide, fog: false }));
+    this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(120, 32, 16), new THREE.MeshBasicMaterial({ map: D.sky('day'), side: THREE.BackSide, fog: false }));
     this.scene.add(this.skyDome);
     this.sun = new THREE.DirectionalLight('#fff2d8', 0.8);
     this.sun.position.set(8, 14, 20);
@@ -557,16 +535,33 @@ export class World {
     trunk.position.set(0, 1.8, z1 - 1.3);
     trunk.castShadow = true;
     this.scene.add(trunk);
-    const leaves = new THREE.MeshStandardMaterial({ color: '#4f7a3a', roughness: 0.9 });
-    for (const [lx, ly, lz, r] of [
-      [0, 4.4, 0, 1.7],
-      [1.3, 4.0, 0.4, 1.3],
-      [-1.2, 4.1, -0.3, 1.35],
-      [0.3, 4.2, -1.2, 1.2],
-      [-0.4, 5.2, 0.6, 1.2],
+    // Krone aus vielen kleinen Blattbüscheln in mehreren Grüntönen (leichtes Eigenleuchten,
+    // damit sie von unten nicht braun/dunkel wirkt) + ein paar Äste
+    const greens = ['#5f9440', '#4f8636', '#6aa34a', '#457a2f', '#78b052'];
+    const leafMats = greens.map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.85, emissive: '#1d3a12', emissiveIntensity: 0.35, flatShading: true }));
+    const tz = z1 - 1.3;
+    for (const [ax, az] of [
+      [1, 0.3],
+      [-1, 0.2],
+      [0.2, -1],
+      [-0.3, 1],
     ]) {
-      const f = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves);
-      f.position.set(lx, ly, z1 - 1.3 + lz);
+      const br = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.11, 1.6, 8), bark);
+      br.position.set(ax * 0.45, 3.6, tz + az * 0.45);
+      br.rotation.set(az * 0.7, 0, -ax * 0.7);
+      this.scene.add(br);
+    }
+    let seed = 7;
+    const rnd = () => ((seed = (seed * 9301 + 49297) % 233280) / 233280);
+    for (let i = 0; i < 26; i++) {
+      const ang = rnd() * Math.PI * 2;
+      const rad = 0.3 + rnd() * 1.7;
+      const y = 3.7 + rnd() * 1.9 - rad * 0.25;
+      const r = 0.55 + rnd() * 0.55;
+      const f = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leafMats[i % leafMats.length]);
+      f.position.set(Math.cos(ang) * rad, y, tz + Math.sin(ang) * rad);
+      f.scale.y = 0.75;
+      f.rotation.set(rnd() * 3, rnd() * 3, 0);
       f.castShadow = true;
       this.scene.add(f);
     }
@@ -664,6 +659,55 @@ export class World {
     );
     g.add(tail);
     return g;
+  }
+
+  /** Ein Fernseher mit Rahmen, Standbild und YouTube-Fläche (CSS3D, „Loch“ im WebGL-Bild) */
+  private addTv(pos: THREE.Vector3, rotY: number, tvW: number, outside = false) {
+    const tvH = (tvW * 9) / 16;
+    const g = new THREE.Group();
+    g.position.copy(pos);
+    g.rotation.y = rotY;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.12, tvH + 0.12, 0.08), new THREE.MeshStandardMaterial({ color: '#111', roughness: 0.4 }));
+    body.position.z = -0.05;
+    g.add(body);
+    if (outside) {
+      // kleines Vordach gegen Regen
+      const roof = new THREE.Mesh(new THREE.BoxGeometry(tvW + 0.3, 0.04, 0.3), new THREE.MeshStandardMaterial({ color: '#5a3a22' }));
+      roof.position.set(0, tvH / 2 + 0.12, 0.08);
+      g.add(roof);
+    }
+    const screen = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), new THREE.MeshBasicMaterial({ map: D.tvStandby() }));
+    screen.position.z = -0.005;
+    g.add(screen);
+    const hole = new THREE.Mesh(new THREE.PlaneGeometry(tvW, tvH), new THREE.MeshBasicMaterial({ color: 0x000000, opacity: 0, transparent: false, blending: THREE.NoBlending }));
+    hole.visible = false;
+    g.add(hole);
+    this.scene.add(g);
+    const host = document.createElement('div');
+    host.className = 'tv-host';
+    host.style.width = '960px';
+    host.style.height = '540px';
+    const css = new CSS3DObject(host);
+    css.position.copy(pos);
+    css.rotation.y = rotY;
+    css.scale.setScalar(tvW / 960);
+    css.visible = false;
+    this.scene.add(css);
+    this.tvs.push({ host, css, screen, hole, pos: pos.clone() });
+  }
+
+  /** Index des Fernsehers, der der Kamera am nächsten ist (nur der hat Ton) */
+  nearestTv() {
+    let best = 0;
+    let bd = Infinity;
+    this.tvs.forEach((t, i) => {
+      const d = t.pos.distanceTo(this.camera.position);
+      if (d < bd) {
+        bd = d;
+        best = i;
+      }
+    });
+    return best;
   }
 
   private semaver(x: number, y: number, z: number) {
@@ -931,7 +975,7 @@ export class World {
         sfx.slam();
         this.shakeT = 0.25;
       };
-      a.root.visible = s !== mySeat || !!this.third;
+      a.root.visible = (s !== mySeat || !!this.third) && !this.hiddenSeats.has(s);
       this.tableRoot.add(a.root);
       this.avatars[s] = a;
       // eigene Nargile neben dem Stuhl (Seite des Schlauchs)
@@ -1071,6 +1115,77 @@ export class World {
       this.camTarget = this.seatCam(this.seated);
       this.camera.position.copy(this.camTarget.pos);
       this.camLook.copy(this.camTarget.look);
+    }
+  }
+
+  // ------------------------------------------------------------ Mitspieler, die herumlaufen
+
+  private walkers = new Map<string, { av: Avatar3D; key: string; tx: number; tz: number; yaw: number; seat: number | null }>();
+  private hiddenSeats = new Set<number>();
+
+  /** eigene Position zum Senden (null = sitzt) */
+  myPose(): { x: number; z: number; yaw: number } | null {
+    return this.seated === null ? { x: this.walkPos.x, z: this.walkPos.z, yaw: this.yaw } : null;
+  }
+
+  /** Position eines anderen Spielers (läuft = sichtbar als stehende Figur) */
+  setWalker(id: string, d: { name: string; avatar: Avatar; x: number; z: number; yaw: number; walking: boolean; seat: number | null }) {
+    let w = this.walkers.get(id);
+    if (!d.walking) {
+      if (w) {
+        this.scene.remove(w.av.root);
+        this.walkers.delete(id);
+      }
+      if (d.seat !== null) this.setSeatHidden(d.seat, false);
+      return;
+    }
+    const key = JSON.stringify(d.avatar) + d.name;
+    if (!w || w.key !== key) {
+      if (w) this.scene.remove(w.av.root);
+      const av = new Avatar3D(d.avatar, d.name, { standing: true });
+      av.root.scale.setScalar(0.88);
+      av.root.position.set(d.x, 0.72, d.z);
+      this.scene.add(av.root);
+      w = { av, key, tx: d.x, tz: d.z, yaw: d.yaw, seat: d.seat };
+      this.walkers.set(id, w);
+    }
+    w.tx = d.x;
+    w.tz = d.z;
+    w.yaw = d.yaw;
+    w.seat = d.seat;
+    if (d.seat !== null) this.setSeatHidden(d.seat, true);
+  }
+
+  /** nur diese IDs sind noch da */
+  keepWalkers(ids: string[]) {
+    for (const [id, w] of this.walkers) {
+      if (ids.includes(id)) continue;
+      this.scene.remove(w.av.root);
+      if (w.seat !== null) this.setSeatHidden(w.seat, false);
+      this.walkers.delete(id);
+    }
+  }
+
+  /** Sitzfigur ausblenden, solange der Spieler herumläuft */
+  setSeatHidden(seat: number, hidden: boolean) {
+    if (hidden) this.hiddenSeats.add(seat);
+    else this.hiddenSeats.delete(seat);
+    const a = this.avatars[seat];
+    if (a) a.root.visible = !hidden && (seat !== this.mySeat || !!this.third);
+  }
+
+  private updateWalkers(dt: number) {
+    for (const w of this.walkers.values()) {
+      const p = w.av.root.position;
+      const dx = w.tx - p.x;
+      const dz = w.tz - p.z;
+      const d = Math.hypot(dx, dz);
+      const k = 1 - Math.exp(-dt * 8);
+      p.x += dx * k;
+      p.z += dz * k;
+      w.av.root.rotation.y = w.yaw + Math.PI;
+      w.av.setWalking(d > 0.03 ? Math.min(1.5, d * 6) : 0);
+      w.av.update(dt);
     }
   }
 
@@ -1247,10 +1362,14 @@ export class World {
     this.zoneDiscard = mk(0.13, '#7fe07f', '➜ AT · Abwerfen');
     this.zoneFinish.position.set(0, TABLE_Y + 0.004, 0);
   }
-  private myCorner() {
-    const me = this.mySeat ?? 0;
-    return seatPos(me).add(seatPos((me + 1) % 4)).multiplyScalar(0.27);
+  /** Abwurfstapel eines Platzes: vor seinem Brett, nach rechts versetzt */
+  private discardSpot(s: number) {
+    return seatPos(s).multiplyScalar(0.33).add(seatPos((s + 1) % 4).multiplyScalar(0.19));
   }
+  private myCorner() {
+    return this.discardSpot(this.mySeat ?? 0);
+  }
+  private prevPile = 0;
   /** Welche Wurfzone liegt unter diesem Bildschirmpunkt? */
   dropZoneAt(x: number, y: number): 'finish' | 'discard' | null {
     const r = this.renderer.domElement.getBoundingClientRect();
@@ -1503,14 +1622,17 @@ export class World {
       }
     }
 
-    // Mitte: Steine in 5er-Stapeln (wie am echten Tisch) + Rest
+    // Mitte: genau EIN Stapel zum Ziehen; die übrigen 5er-Stapel stehen links daneben
+    // und rücken nach, sobald der mittlere leer ist (wie am echten Tisch).
+    const fwd = viewDir.clone().negate();
+    const right = seatPos((viewer + 1) % 4);
+    const left = right.clone().negate();
     if (v.pileCount > 0) {
       const pile = new THREE.Group();
       const full = Math.floor(v.pileCount / 5);
       const rest = v.pileCount % 5;
-      const stacks = [...Array(full).fill(5), ...(rest ? [rest] : [])];
-      const cols = Math.min(4, Math.max(1, Math.ceil(Math.sqrt(stacks.length))));
-      const rows = Math.ceil(stacks.length / cols);
+      const centerN = rest > 0 ? rest : 5;
+      const sideN = rest > 0 ? full : full - 1;
       const tileMat = [
         new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
         new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
@@ -1520,44 +1642,63 @@ export class World {
         new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 }),
       ];
       const lineMat = new THREE.MeshBasicMaterial({ color: '#b9a57c' });
-      stacks.forEach((n, i) => {
-        const col = i % cols;
-        const row = Math.floor(i / cols);
-        const x = (col - (cols - 1) / 2) * 0.044;
-        const z = (row - (rows - 1) / 2) * 0.058;
+      const stack = (n: number, isPile: boolean) => {
+        const g = new THREE.Group();
         const hgt = n * 0.012;
         const st = new THREE.Mesh(new THREE.BoxGeometry(0.036, hgt, 0.05), tileMat);
-        st.position.set(x, hgt / 2, z);
+        st.position.y = hgt / 2;
         st.castShadow = true;
-        st.userData.pile = true;
-        pile.add(st);
-        // Fugen zwischen den Steinen im Stapel
+        g.add(st);
         for (let k = 1; k < n; k++) {
           const ln = new THREE.Mesh(new THREE.BoxGeometry(0.0365, 0.0015, 0.0505), lineMat);
-          ln.position.set(x, k * 0.012, z);
-          ln.userData.pile = true;
-          pile.add(ln);
+          ln.position.y = k * 0.012;
+          g.add(ln);
         }
-      });
-      pile.position.set(-0.075, TABLE_Y, 0);
+        g.rotation.y = Math.atan2(viewDir.x, viewDir.z);
+        if (isPile) g.traverse((o) => (o.userData.pile = true));
+        return g;
+      };
+      // Ziehstapel in der Mitte
+      const center = stack(centerN, true);
+      center.position.set(0, TABLE_Y, 0);
+      pile.add(center);
+      // Reserve-Stapel links (2 Reihen)
+      const sidePos = (i: number) => {
+        const col = Math.floor(i / 2);
+        const row = i % 2;
+        return left.clone().multiplyScalar(0.095 + col * 0.046).add(fwd.clone().multiplyScalar(row ? -0.032 : 0.032)).setY(TABLE_Y);
+      };
+      for (let i = 0; i < sideN; i++) {
+        const sStack = stack(5, false);
+        sStack.position.copy(sidePos(i));
+        pile.add(sStack);
+      }
+      // ein 5er-Stapel ist gerade aufgebraucht → nächster rutscht von der Seite in die Mitte
+      if (this.prevPile - 1 === v.pileCount && this.prevPile % 5 === 1 && rest === 0) {
+        this.flyers.push({ m: center, from: sidePos(0), to: center.position.clone(), t: 0, spin: 0 });
+        center.position.copy(sidePos(0));
+      }
       pile.userData.pile = true;
-      this.pileObj = pile;
+      this.pileObj = center;
       this.gameGroup.add(pile);
-      this.clickables.push(pile);
+      this.clickables.push(center);
     } else this.pileObj = null;
+    this.prevPile = v.pileCount;
+
     if (v.indicator) {
       const m = tileMesh(v.indicator, true);
       m.scale.setScalar(FLAT);
       m.rotation.x = -Math.PI / 2;
       m.rotation.z = readRot;
-      m.position.set(0.1, TABLE_Y + 0.01, 0);
+      const ind = right.clone().multiplyScalar(0.13);
+      m.position.set(ind.x, TABLE_Y + 0.01, ind.z);
       this.gameGroup.add(m);
       if (v.okeyBirTile) {
         const o = tileMesh(v.okeyBirTile, true);
         o.scale.setScalar(FLAT);
         o.rotation.x = -Math.PI / 2;
         o.rotation.z = readRot + 0.3;
-        o.position.set(0.11, TABLE_Y + 0.03, 0.01);
+        o.position.set(ind.x + 0.01, TABLE_Y + 0.03, ind.z + 0.01);
         this.gameGroup.add(o);
       }
     }
@@ -1566,7 +1707,8 @@ export class World {
     for (let s = 0; s < 4; s++) {
       const a = seatPos(s);
       const b = seatPos((s + 1) % 4);
-      const corner = a.clone().add(b).multiplyScalar(0.27);
+      const corner = this.discardSpot(s);
+      void b;
       const pile = v.finisher === s ? v.discards[s].slice(0, -1) : v.discards[s];
       const shown = pile.slice(-4);
       shown.forEach((tile, i) => {
@@ -1654,9 +1796,11 @@ export class World {
   // ------------------------------------------------------------ Fernseher
 
   setTvVisible(v: boolean) {
-    this.tvCss.visible = v;
-    this.tvHole.visible = v;
-    this.tvScreen.visible = !v;
+    for (const t of this.tvs) {
+      t.css.visible = v;
+      t.hole.visible = v;
+      t.screen.visible = !v;
+    }
   }
 
   // ------------------------------------------------------------ Loop
@@ -1816,6 +1960,7 @@ export class World {
       if (Math.random() < dt * 0.04) n.emote(['tea', 'nargile', 'headshake', 'tespih', 'slam'][Math.floor(Math.random() * 5)]);
     }
     this.updateCaycı(dt);
+    this.updateWalkers(dt);
     if (Math.random() < dt * 0.05) sfx.murmur();
     // Rauch
     for (let i = this.smoke.length - 1; i >= 0; i--) {

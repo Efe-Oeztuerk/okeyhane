@@ -52,6 +52,8 @@ interface Table {
   spot: number;
   /** nach einer Hand: wer ist bereit für die nächste (Plätze) */
   ready: Set<number>;
+  /** Anordnung der Steine auf den Brettern (32 Plätze, Stein-IDs) – wird am Handende gezeigt */
+  layouts: Record<number, (number | null)[]>;
 }
 
 const tables = new Map<string, Table>();
@@ -169,6 +171,8 @@ function pushState(t: Table) {
       }),
       okey: t.game.hand.okey,
       lastResult: t.game.hand.lastResult,
+      // Bretter der anderen erst nach der Hand (sonst wäre es Spicken)
+      layouts: t.game.hand.phase === 'handOver' || t.game.gameOver ? t.layouts : null,
     });
   }
 }
@@ -241,6 +245,7 @@ function maybeNextHand(t: Table, force = false) {
   const all = t.seats.every((s, i) => (!s.client && !s.bot) || t.ready.has(i));
   if (!all && !force) return;
   t.ready.clear();
+  t.layouts = {};
   g.nextHand();
   afterAction(t);
 }
@@ -316,6 +321,7 @@ function handle(c: Client, m: Msg) {
         recorded: false,
         spot: Math.max(0, Math.min(3, Number(m.spot) || 0)),
         ready: new Set(),
+        layouts: {},
       };
       tables.set(table.code, table);
       table.seats[0].client = c;
@@ -451,7 +457,13 @@ function handle(c: Client, m: Msg) {
         return;
       }
       case 'backToLobby': {
+        // Spiel beenden (nach jeder Hand oder am Ende) – alle stehen auf
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
+        if (t.game && !t.game.gameOver && t.game.hand.phase !== 'handOver') throw new GameError('Erst nach der Hand');
+        if (t.botTimer) clearTimeout(t.botTimer);
+        if (t.turnTimer) clearTimeout(t.turnTimer);
+        t.ready.clear();
+        t.layouts = {};
         t.game = null;
         t.started = false;
         for (const s of t.seats) if (!s.client) s.bot = null;
@@ -489,6 +501,18 @@ function handle(c: Client, m: Msg) {
       case 'eye':
         if (c.seat !== null) broadcast(t, { type: 'eye', seat: c.seat, key: m.key });
         return;
+      case 'pos': {
+        // Laufen im Kahvehane: Position an die anderen am Tisch weitergeben
+        const x = Number(m.x), z = Number(m.z), yaw = Number(m.yaw);
+        if (![x, z, yaw].every(Number.isFinite)) return;
+        broadcast(t, { type: 'pos', id: c.id, seat: c.seat, name: c.info.name, avatar: c.info.avatar, x, z, yaw, walking: !!m.walking }, c);
+        return;
+      }
+      case 'layout': {
+        if (c.seat === null || !Array.isArray(m.slots) || m.slots.length !== 32) return;
+        t.layouts[c.seat] = m.slots.map((x: unknown) => (typeof x === 'number' ? x : null));
+        return;
+      }
       case 'ready': {
         // bereit für die nächste Hand
         if (c.seat === null || !t.game || t.game.hand.phase !== 'handOver') return;

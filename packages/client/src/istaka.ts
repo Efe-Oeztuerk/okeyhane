@@ -155,8 +155,16 @@ export class Istaka {
     this.render();
   }
 
+  /** Anordnung geändert (für die Anzeige am Handende bei allen) */
+  onLayout: ((slots: (number | null)[]) => void) | null = null;
+  private lastLayout = '';
   private persist() {
-    sessionStorage.setItem('istaka', JSON.stringify(this.slots));
+    const j = JSON.stringify(this.slots);
+    sessionStorage.setItem('istaka', j);
+    if (j !== this.lastLayout) {
+      this.lastLayout = j;
+      this.onLayout?.(this.slots);
+    }
   }
 
   /** Umgedrehte Steine (z. B. um den Okey zu verstecken) – nur lokal */
