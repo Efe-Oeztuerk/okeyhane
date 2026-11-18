@@ -981,8 +981,8 @@ export class World {
     });
     // Çaycı
     this.cayci = new Avatar3D(
-      // Ahmet: eigene Avaturn-Figur (bei „niedrig“ der Cartoon-Çaycı)
-      { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none', ...(settings.quality !== 'low' ? { style: 'real' as const, realBase: 'ahmet' } : {}) },
+      // Ahmet: eigene Avaturn-Figur (immer, auch bei „niedrig“ – nur eine Figur)
+      { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none', style: 'real' as const, realBase: 'ahmet' },
       'Ahmet',
       { showName: true, standing: true },
     );
