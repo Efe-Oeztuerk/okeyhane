@@ -84,7 +84,7 @@ export class Istaka {
       const row = h('div', { class: 'rowslots' });
       for (let c = 0; c < COLS; c++) {
         const idx = r * COLS + c;
-        const slot = h('div', { class: 'slot' });
+        const slot = h('div', { class: 'slot' + (idx === this.cursor ? ' cursor' : '') });
         slot.dataset.slot = String(idx);
         const id = this.slots[idx];
         if (id !== null) {
@@ -102,6 +102,87 @@ export class Istaka {
       }
       this.el.append(row);
     }
+  }
+
+  // ---------------------------------------------------------- Tastatur / Controller
+
+  /** Cursor-Platz für Tastatur und Controller (-1 = aus) */
+  cursor = -1;
+
+  /** Cursor bewegen; mit carry wandern die markierten Steine mit */
+  moveCursor(dx: number, dy: number, carry = false) {
+    if (this.cursor < 0) {
+      // beim ersten Druck: auf den ersten Stein
+      const first = this.slots.findIndex((x) => x !== null);
+      this.cursor = first < 0 ? 0 : first;
+      this.render();
+      return;
+    }
+    let r = Math.floor(this.cursor / COLS);
+    let c = this.cursor % COLS;
+    const nr = Math.max(0, Math.min(1, r + dy));
+    const nc = Math.max(0, Math.min(COLS - 1, c + dx));
+    if (carry && this.selected.size) {
+      const sel = this.orderedSelection();
+      const idx = sel.map((id) => this.slots.indexOf(id));
+      const moved = idx.map((i) => {
+        const rr = Math.floor(i / COLS) + (nr - r);
+        const cc = (i % COLS) + (nc - c);
+        return rr < 0 || rr > 1 || cc < 0 || cc >= COLS ? -1 : rr * COLS + cc;
+      });
+      if (moved.every((m) => m >= 0)) {
+        const free = moved.every((m) => this.slots[m] === null || this.selected.has(this.slots[m]!));
+        if (free) {
+          idx.forEach((i) => (this.slots[i] = null));
+          moved.forEach((m, k) => (this.slots[m] = sel[k]));
+        } else if (sel.length === 1) {
+          // einzelner Stein: Platz tauschen
+          const other = this.slots[moved[0]];
+          this.slots[moved[0]] = sel[0];
+          this.slots[idx[0]] = other;
+        } else return;
+        sfx.tile();
+      } else return;
+    }
+    r = nr;
+    c = nc;
+    this.cursor = r * COLS + c;
+    this.render();
+    this.onChange?.();
+  }
+
+  cursorTile(): number | null {
+    return this.cursor >= 0 ? this.slots[this.cursor] : null;
+  }
+
+  /** Stein unter dem Cursor (de)markieren */
+  toggleAtCursor(group = false) {
+    const id = this.cursorTile();
+    if (id === null) return;
+    if (group) {
+      const g = this.groupOf(id);
+      const allSel = g.every((x) => this.selected.has(x));
+      for (const x of g) allSel ? this.selected.delete(x) : this.selected.add(x);
+    } else if (this.selected.has(id)) this.selected.delete(id);
+    else this.selected.add(id);
+    this.refreshSelection();
+    this.onChange?.();
+  }
+
+  /** Stein unter dem Cursor umdrehen */
+  flipAtCursor() {
+    const id = this.cursorTile() ?? (this.selected.size === 1 ? [...this.selected][0] : null);
+    if (id === null) return;
+    if (this.flipped.has(id)) this.flipped.delete(id);
+    else this.flipped.add(id);
+    this.refreshSelection();
+    sfx.tile();
+  }
+
+  /** Stein für Abwerfen/Bitirmek: genau ein markierter, sonst der unter dem Cursor */
+  actionTile(): number | null {
+    if (this.selected.size === 1) return [...this.selected][0];
+    return this.cursorTile();
   }
 
   /** Auswahl ohne kompletten Neuaufbau aktualisieren */

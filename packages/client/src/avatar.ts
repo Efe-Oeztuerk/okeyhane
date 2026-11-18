@@ -320,6 +320,86 @@ function clothTexture(a: Avatar): THREE.Texture {
         }
         break;
       }
+      case 'elbise': {
+        // Blumenkleid: kleine Streublumen, runder Ausschnitt, Gürtel
+        const petals = [shade(col, 1.6), '#f6efe0', shade(col, 0.55)];
+        for (let i = 0; i < 160; i++) {
+          const x = Math.random() * 512;
+          const y = Math.random() * 512;
+          const r = 4 + Math.random() * 5;
+          g.fillStyle = petals[i % 3];
+          for (let k = 0; k < 5; k++) {
+            const a = (k / 5) * Math.PI * 2;
+            g.beginPath();
+            g.arc(x + Math.cos(a) * r, y + Math.sin(a) * r, r * 0.6, 0, Math.PI * 2);
+            g.fill();
+          }
+          g.fillStyle = '#e8b93a';
+          g.beginPath();
+          g.arc(x, y, r * 0.45, 0, Math.PI * 2);
+          g.fill();
+        }
+        g.fillStyle = dark;
+        g.beginPath();
+        g.ellipse(cx, 40, 58, 40, 0, 0, Math.PI);
+        g.fill();
+        g.fillStyle = shade(col, 0.5);
+        g.fillRect(0, 300, 512, 18);
+        break;
+      }
+      case 'bluz': {
+        // Bluse: Rüschenkragen, kleine Perlmuttknöpfe, feine Längsfalten
+        g.strokeStyle = shade(col, 0.88);
+        g.lineWidth = 2;
+        for (let x = cx - 90; x <= cx + 90; x += 14) {
+          g.beginPath();
+          g.moveTo(x, 90);
+          g.lineTo(x, 260);
+          g.stroke();
+        }
+        g.fillStyle = light;
+        for (let i = 0; i < 14; i++) {
+          const x = cx - 78 + i * 12;
+          g.beginPath();
+          g.arc(x, 62 + Math.abs(i - 6.5) * 2, 9, 0, Math.PI);
+          g.fill();
+        }
+        g.fillStyle = '#f7f2ea';
+        for (let i = 0; i < 6; i++) {
+          g.beginPath();
+          g.arc(cx, 95 + i * 42, 4.5, 0, Math.PI * 2);
+          g.fill();
+        }
+        break;
+      }
+      case 'yelek': {
+        // Weste über weißem Hemd
+        g.fillStyle = '#efe9dc';
+        g.fillRect(cx - 70, 0, 140, 512);
+        g.fillStyle = col;
+        g.beginPath();
+        g.moveTo(cx - 70, 40);
+        g.lineTo(cx - 8, 230);
+        g.lineTo(cx - 8, 512);
+        g.lineTo(cx - 70, 512);
+        g.closePath();
+        g.moveTo(cx + 70, 40);
+        g.lineTo(cx + 8, 230);
+        g.lineTo(cx + 8, 512);
+        g.lineTo(cx + 70, 512);
+        g.closePath();
+        g.fill();
+        g.strokeStyle = shade(col, 1.6);
+        g.lineWidth = 3;
+        g.stroke();
+        g.fillStyle = '#c9a04a';
+        for (let i = 0; i < 4; i++) {
+          g.beginPath();
+          g.arc(cx - 16, 260 + i * 45, 5, 0, Math.PI * 2);
+          g.fill();
+        }
+        break;
+      }
       case 'hirka': {
         // Strickjacke: Rippenmuster, offenes Hemd innen, Knöpfe
         g.strokeStyle = shade(col, 0.82);
@@ -354,6 +434,49 @@ function clothTexture(a: Avatar): THREE.Texture {
   t.wrapS = THREE.RepeatWrapping;
   t.offset.x = 0.5;
   return t;
+}
+
+/** Kopftuch-Stoff: einfarbig mit Rand, Yazma mit Muster oder weißer Tülbent */
+function scarfTexture(kind: string, col: string): THREE.Texture {
+  return canvas(256, 256, (g) => {
+    const base = kind === 'tulbent' ? '#f7f4ec' : col;
+    g.fillStyle = base;
+    g.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 1800; i++) {
+      g.fillStyle = Math.random() > 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.06)';
+      g.fillRect(Math.random() * 256, Math.random() * 256, 1.5, 1.5);
+    }
+    if (kind === 'esarp') {
+      // Paisley/Yazma-Muster
+      const c2 = shade(col, 1.7);
+      const c3 = shade(col, 0.5);
+      for (let y = 10; y < 256; y += 42) {
+        for (let x = (y / 42) % 2 ? 20 : 0; x < 256; x += 42) {
+          g.fillStyle = c2;
+          g.beginPath();
+          g.ellipse(x, y, 11, 7, 0.6, 0, Math.PI * 2);
+          g.fill();
+          g.fillStyle = c3;
+          g.beginPath();
+          g.arc(x + 3, y - 1, 3, 0, Math.PI * 2);
+          g.fill();
+        }
+      }
+      g.fillStyle = '#d9b44a';
+      g.fillRect(0, 0, 256, 6);
+    } else if (kind === 'tulbent') {
+      g.strokeStyle = 'rgba(0,0,0,0.06)';
+      for (let i = 0; i < 256; i += 6) {
+        g.beginPath();
+        g.moveTo(i, 0);
+        g.lineTo(i, 256);
+        g.stroke();
+      }
+    } else {
+      g.fillStyle = shade(col, 0.75);
+      g.fillRect(0, 0, 256, 8);
+    }
+  });
 }
 
 // ------------------------------------------------------------------ Hilfen
@@ -517,7 +640,12 @@ export class Avatar3D {
   onSmoke: ((pos: THREE.Vector3, dir?: THREE.Vector3, amount?: number) => void) | null = null;
   onSlam: (() => void) | null = null;
 
-  constructor(public spec: Avatar, displayName: string, opts: { showName?: boolean } = {}) {
+  private legs: { hip: THREE.Group; knee: THREE.Group }[] = [];
+  private standing = false;
+  private walkPhase = 0;
+  private walkSpeed = 0;
+
+  constructor(public spec: Avatar, displayName: string, opts: { showName?: boolean; standing?: boolean } = {}) {
     const a = spec;
     const skin = mat(a.skin, 0.65);
     const cloth = mat('#ffffff', 0.85, { map: clothTexture(a) });
@@ -526,13 +654,70 @@ export class Avatar3D {
     const sleeveFor = (side: number) => (kitDef ? mat(kitDef.sleeves(a.shirtColor)[side === 1 ? 1 : 0], 0.85) : sleeve);
     const hairM = mat(a.hairColor, a.hair === 'slick' ? 0.3 : 0.75, { map: hairTexture(a.hairColor) });
     this.root.add(this.body);
+    const fem = a.body === 'f';
+    const scarfOn = !!a.scarf && a.scarf !== 'none';
+    const mk = a.makeup ?? 'none';
 
     // ---------- Oberkörper
     const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.2, 0.3, 8, 24), cloth);
-    torso.scale.set(1.15, 1, 0.8);
+    torso.scale.set(fem ? 1.06 : 1.15, 1, fem ? 0.82 : 0.8);
     torso.position.y = 0.42;
     torso.castShadow = true;
     this.body.add(torso);
+    this.standing = !!opts.standing;
+    // ---------- Beine: sitzend (Oberschenkel nach vorn) oder stehend
+    {
+      const skirted = fem || a.shirt === 'elbise';
+      const pantsCol = a.shirt === 'takim' ? shade(a.shirtColor, 0.9) : a.shirt === 'esofman' ? a.shirtColor : '#3a342e';
+      const pants = mat(pantsCol, 0.9);
+      const stock = mat(shade(a.skin, 0.75), 0.7);
+      const skirtLeg = mat(a.shirt === 'elbise' ? a.shirtColor : shade(a.shirtColor, 0.55), 1);
+      const shoe = mat('#1d1712', 0.45);
+      for (const side of [-1, 1]) {
+        const hip = new THREE.Group();
+        hip.position.set(0.1 * side, 0.08, 0.0);
+        const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(skirted && !this.standing ? 0.085 : 0.075, 0.32, 6, 12), skirted && !this.standing ? skirtLeg : skirted ? stock : pants);
+        thigh.position.y = -0.2;
+        thigh.castShadow = true;
+        hip.add(thigh);
+        const knee = new THREE.Group();
+        knee.position.y = -0.41;
+        const shin = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, 0.32, 6, 12), skirted ? stock : pants);
+        shin.position.y = -0.2;
+        shin.castShadow = true;
+        knee.add(shin);
+        const foot = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.06, 0.2), shoe);
+        foot.position.set(0, -0.43, 0.05);
+        knee.add(foot);
+        hip.add(knee);
+        this.body.add(hip);
+        this.legs.push({ hip, knee });
+      }
+      this.poseLegs(0);
+    }
+
+    // Rock / Kleid-Saum (Teyze oder Elbise)
+    if (fem || a.shirt === 'elbise') {
+      const skirtM = a.shirt === 'elbise' ? cloth : mat(shade(a.shirtColor, 0.55), 1);
+      const skirt = new THREE.Mesh(
+        new THREE.LatheGeometry(
+          ([
+            new THREE.Vector2(0.205, 0.36),
+            new THREE.Vector2(0.222, 0.2),
+            new THREE.Vector2(0.245, 0.0),
+            ...(this.standing
+              ? [new THREE.Vector2(0.275, -0.2), new THREE.Vector2(0.31, -0.42), new THREE.Vector2(0.3, -0.44)]
+              : [new THREE.Vector2(0.26, -0.03), new THREE.Vector2(0.25, -0.05)]),
+          ] as THREE.Vector2[]).reverse(),
+          28,
+        ),
+        skirtM,
+      );
+      skirt.scale.set(1.05, 1, 0.95);
+      skirt.position.z = 0.02;
+      skirt.castShadow = true;
+      this.body.add(skirt);
+    }
     // Schultern weich
     for (const s of [-1, 1]) {
       const sh = new THREE.Mesh(new THREE.SphereGeometry(0.085, 16, 12), sleeveFor(s));
@@ -572,7 +757,7 @@ export class Avatar3D {
     this.body.add(this.head);
     this.head.add(this.skull);
     const fs = a.face === 'long' ? [0.92, 1.12, 0.96] : a.face === 'square' ? [1.06, 0.98, 1] : [1, 1, 1];
-    this.skull.scale.set(fs[0], fs[1], fs[2]);
+    this.skull.scale.set(fs[0] * (fem ? 0.95 : 1), fs[1], fs[2]);
     const headMesh = new THREE.Mesh(new THREE.SphereGeometry(0.2, 32, 24), skin);
     headMesh.castShadow = true;
     this.skull.add(headMesh);
@@ -601,11 +786,40 @@ export class Avatar3D {
       eye.position.set(0.07 * s, 0.03, 0.163);
       this.skull.add(eye);
       this.eyes.push(eye);
-      const lid = new THREE.Mesh(new THREE.SphereGeometry(0.039, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), skin);
+      const lidM = mk === 'full' ? mat('#8a5a7a', 0.5) : mk === 'light' ? mat(shade(a.skin, 0.85), 0.5) : skin;
+      const lid = new THREE.Mesh(new THREE.SphereGeometry(0.039, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), lidM);
       lid.position.copy(eye.position);
       lid.rotation.x = -1.2; // offen
       this.skull.add(lid);
       this.lids.push(lid);
+    }
+    // Wimpern / Lidstrich
+    if (fem || mk !== 'none') {
+      const lashM = mat('#151010', 0.6);
+      for (const s of [-1, 1]) {
+        this.skull.add(
+          tube(
+            [
+              [0.038 * s, 0.05, 0.19],
+              [0.07 * s, 0.062, 0.197],
+              [0.108 * s, 0.052, 0.178],
+              [0.118 * s, 0.06, 0.17],
+            ],
+            mk === 'full' ? 0.0045 : 0.003,
+            lashM,
+          ),
+        );
+      }
+    }
+    // Rouge
+    if (mk !== 'none') {
+      const blushM = new THREE.MeshBasicMaterial({ color: '#e06a6a', transparent: true, opacity: mk === 'full' ? 0.35 : 0.2, depthWrite: false });
+      for (const s of [-1, 1]) {
+        const b = new THREE.Mesh(new THREE.CircleGeometry(0.03, 20), blushM);
+        b.position.set(0.105 * s, -0.035, 0.17);
+        b.lookAt(new THREE.Vector3(0.105 * s * 3, -0.035 * 3, 0.17 * 3));
+        this.skull.add(b);
+      }
     }
     // Augenbrauen (gebogen)
     const browR = a.eyebrows === 'thick' ? 0.011 : 0.006;
@@ -623,7 +837,7 @@ export class Avatar3D {
     }
     // Nase
     const nose = new THREE.Mesh(new THREE.SphereGeometry(0.036, 14, 10), skin);
-    nose.scale.set(0.85, 1, 1.15);
+    nose.scale.set(fem ? 0.7 : 0.85, fem ? 0.85 : 1, fem ? 1.0 : 1.15);
     nose.position.set(0, -0.025, 0.205);
     this.skull.add(nose);
     // Mund
@@ -633,8 +847,8 @@ export class Avatar3D {
         [0, -0.105, 0.19],
         [0.035, -0.095, 0.183],
       ],
-      0.006,
-      mat('#7a2a20', 0.6),
+      mk !== 'none' ? (mk === 'full' ? 0.011 : 0.008) : 0.006,
+      mat(mk !== 'none' ? a.lipColor ?? '#b8434e' : fem ? '#a5524a' : '#7a2a20', mk === 'full' ? 0.25 : 0.6),
     );
     this.skull.add(mouth);
 
@@ -679,10 +893,10 @@ export class Avatar3D {
     }
 
     // Haare
-    const hatOn = a.hat !== 'none';
+    const hatOn = a.hat !== 'none' && !scarfOn;
     const hr = hatOn ? 0.205 : 0.212;
-    if (a.hair !== 'none') {
-      const capLen = a.hair === 'long' ? 1.45 : a.hair === 'slick' ? 1.12 : 1.22;
+    if (a.hair !== 'none' && !scarfOn) {
+      const capLen = a.hair === 'long' || a.hair === 'wavy' ? 1.45 : a.hair === 'slick' ? 1.12 : a.hair === 'bun' ? 1.3 : 1.22;
       const cap = shell(hr, 0, capLen, hairM);
       cap.rotation.x = -0.5;
       cap.castShadow = true;
@@ -713,6 +927,27 @@ export class Avatar3D {
           this.skull.add(c);
         }
       }
+      if (a.hair === 'bun' && !hatOn) {
+        // Topuz: Dutt hinten oben, Haar glatt zurück
+        const bun = new THREE.Mesh(new THREE.SphereGeometry(0.075, 18, 14), hairM);
+        bun.position.set(0, 0.13, -0.17);
+        this.skull.add(bun);
+        const tie = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.009, 8, 20), mat('#8e1b1b', 0.6));
+        tie.position.set(0, 0.105, -0.13);
+        tie.rotation.x = 0.9;
+        this.skull.add(tie);
+      }
+      if (a.hair === 'wavy') {
+        // Wellen bis auf die Schultern
+        for (const sx of [-1, 0, 1]) {
+          for (let k = 0; k < 4; k++) {
+            const w = new THREE.Mesh(new THREE.SphereGeometry(0.06, 12, 10), hairM);
+            w.position.set(sx * 0.13 + Math.sin(k * 1.7) * 0.015, -0.03 - k * 0.07, sx === 0 ? -0.15 : -0.07 + Math.abs(sx) * 0.0);
+            w.scale.set(1.15, 1, 0.8);
+            this.skull.add(w);
+          }
+        }
+      }
       if (a.hair === 'long') {
         const back = new THREE.Mesh(new THREE.CapsuleGeometry(0.15, 0.18, 6, 16), hairM);
         back.scale.set(1.3, 1, 0.55);
@@ -721,8 +956,13 @@ export class Avatar3D {
       }
     }
 
+    // Kopftuch (ersetzt Haare und Mütze)
+    if (scarfOn) this.buildScarf(a.scarf!, a.scarfColor ?? '#2f4f6f');
+
     // Kopfbedeckung
-    if (a.hat === 'kasket') {
+    if (!hatOn) {
+      // nichts
+    } else if (a.hat === 'kasket') {
       const capM = mat('#5b4a3a', 0.9, { map: hairTexture('#5b4a3a') });
       const crown = shell(0.222, 0, 1.12, capM);
       crown.rotation.x = -0.32;
@@ -805,6 +1045,17 @@ export class Avatar3D {
       );
     }
 
+    // Ohrringe
+    if (a.jewelry === 'earrings') {
+      const gold = mat('#d9b44a', 0.25, { metalness: 0.9 });
+      for (const s of [-1, 1]) {
+        const hoop = new THREE.Mesh(new THREE.TorusGeometry(0.018, 0.004, 8, 18), gold);
+        hoop.position.set(0.2 * s, -0.07, 0.01);
+        hoop.rotation.y = Math.PI / 2;
+        this.skull.add(hoop);
+      }
+    }
+
     // Zubehör im Mund
     if (a.accessory === 'cigar') {
       const cg = new THREE.Group();
@@ -869,6 +1120,15 @@ export class Avatar3D {
         ring.position.set(0.02, 0, 0.04);
         ring.rotation.y = Math.PI / 2;
         hand.add(ring);
+      }
+      if (a.jewelry === 'bilezik') {
+        // Altın bilezik: mehrere Goldreifen am Handgelenk
+        const gold = mat('#e0b84a', 0.2, { metalness: 0.95 });
+        for (let i = 0; i < 3; i++) {
+          const b = new THREE.Mesh(new THREE.TorusGeometry(0.056, 0.006, 8, 22), gold);
+          b.position.z = FORE - 0.035 - i * 0.016;
+          fore.add(b);
+        }
       }
       if (side === -1 && a.jewelry === 'watch') {
         const strap = new THREE.Mesh(new THREE.TorusGeometry(0.052, 0.011, 8, 20), mat('#3a2a1a', 0.6));
@@ -953,6 +1213,96 @@ export class Avatar3D {
     this.applyArm(this.arms[1], REST);
   }
 
+  /** Başörtüsü / Tülbent / Eşarp: Kopf und Hals bedeckt, Gesicht frei, Tuch fällt über die Schultern */
+  private buildScarf(kind: string, color: string) {
+    const tex = scarfTexture(kind, color);
+    tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+    tex.repeat.set(3, 2);
+    const m = mat('#ffffff', kind === 'esarp' ? 0.45 : 0.85, { map: tex, side: THREE.DoubleSide });
+    const R = 0.228;
+    const FOREHEAD = 0.98; // Rand über den Augenbrauen
+    const CHIN = 2.38; // Rand unter dem Kinn
+    const HALF = 0.6; // halbe Gesichtsbreite (Winkel)
+    // Kappe oben
+    const top = new THREE.Mesh(new THREE.SphereGeometry(R, 32, 12, 0, Math.PI * 2, 0, FOREHEAD), m);
+    top.castShadow = true;
+    this.skull.add(top);
+    // Seiten + Hinterkopf mit Gesichtsöffnung
+    const sides = new THREE.Mesh(
+      new THREE.SphereGeometry(R, 32, 16, Math.PI / 2 + HALF, Math.PI * 2 - HALF * 2, FOREHEAD, Math.PI - 0.12 - FOREHEAD),
+      m,
+    );
+    sides.castShadow = true;
+    this.skull.add(sides);
+    // unter dem Kinn
+    const chin = new THREE.Mesh(new THREE.SphereGeometry(R, 32, 6, 0, Math.PI * 2, CHIN, Math.PI - 0.12 - CHIN), m);
+    this.skull.add(chin);
+    if (kind === 'tulbent') {
+      // Oya: kleine bunte Häkelblüten genau am Rand der Gesichtsöffnung
+      const cols = ['#c0392b', '#e8b93a', '#2d7a4a', '#2f6fb0'];
+      const onSphere = (phi: number, th: number) =>
+        new THREE.Vector3(-Math.cos(phi) * Math.sin(th), Math.cos(th), Math.sin(phi) * Math.sin(th)).multiplyScalar(R + 0.006);
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= 8; i++) pts.push(onSphere(Math.PI / 2 - HALF + (i / 8) * HALF * 2, FOREHEAD));
+      for (let i = 1; i <= 6; i++) {
+        const th = FOREHEAD + (i / 7) * (CHIN - 0.25 - FOREHEAD);
+        pts.push(onSphere(Math.PI / 2 - HALF, th), onSphere(Math.PI / 2 + HALF, th));
+      }
+      pts.forEach((p, i) => {
+        const f = new THREE.Mesh(new THREE.SphereGeometry(0.0095, 8, 6), mat(cols[i % cols.length], 0.5));
+        f.position.copy(p);
+        this.skull.add(f);
+      });
+    }
+    // Knoten/Nadel unter dem Kinn
+    if (kind === 'tulbent') {
+      const knot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 12, 10), m);
+      knot.scale.set(1.3, 0.8, 1);
+      knot.position.set(0.05, -0.2, 0.13);
+      this.skull.add(knot);
+    } else {
+      const pin = new THREE.Mesh(new THREE.SphereGeometry(0.008, 8, 6), mat('#d9b44a', 0.2, { metalness: 0.9 }));
+      pin.position.set(-0.11, -0.13, 0.17);
+      this.skull.add(pin);
+    }
+    // Tuch fällt über Hals und Schultern
+    const drape = new THREE.Mesh(
+      new THREE.LatheGeometry(
+        [
+          new THREE.Vector2(0.11, 0.86),
+          new THREE.Vector2(0.13, 0.78),
+          new THREE.Vector2(0.19, 0.69),
+          new THREE.Vector2(0.27, 0.6),
+          new THREE.Vector2(kind === 'tulbent' ? 0.29 : 0.3, kind === 'tulbent' ? 0.56 : 0.5),
+        ],
+        32,
+      ),
+      m,
+    );
+    drape.scale.set(1, 1, 0.82);
+    drape.castShadow = true;
+    this.body.add(drape);
+  }
+
+  /** Beine setzen: Sitzen (Knie 90°) oder Gehen (Schwingen) */
+  private poseLegs(swing: number) {
+    this.legs.forEach((l, i) => {
+      if (!this.standing) {
+        l.hip.rotation.x = -Math.PI / 2 + 0.08;
+        l.knee.rotation.x = Math.PI / 2 - 0.05;
+      } else {
+        const s = Math.sin(this.walkPhase + (i ? Math.PI : 0)) * swing;
+        l.hip.rotation.x = -s * 0.5;
+        l.knee.rotation.x = Math.max(0, s) * 0.6;
+      }
+    });
+  }
+
+  /** Gehgeschwindigkeit (m/s) für die Schrittanimation */
+  setWalking(speed: number) {
+    this.walkSpeed = speed;
+  }
+
   // ------------------------------------------------------------------ API
 
   say(text: string) {
@@ -1006,6 +1356,12 @@ export class Avatar3D {
     const k = 1 - Math.exp(-dt * 10); // weiches Nachziehen
     const breathe = Math.sin(this.time * 1.5);
     this.body.position.y = breathe * 0.004;
+    if (this.standing) {
+      this.walkPhase += dt * this.walkSpeed * 7;
+      const sw = Math.min(1, this.walkSpeed * 1.2);
+      this.poseLegs(sw);
+      this.body.position.y += Math.abs(Math.sin(this.walkPhase)) * 0.025 * sw;
+    }
     this.body.rotation.x = breathe * 0.01;
 
     // Zielposen

@@ -15,7 +15,14 @@ const dl = new THREE.DirectionalLight('#fff', 1.4);
 dl.position.set(1, 2, 3);
 scene.add(dl);
 const base: Avatar = { skin: '#d9a77c', face: 'round', hair: 'short', hairColor: '#2b1d14', eyebrows: 'thick', beard: 'none', mustache: 'classic', shirt: 'gomlek', shirtColor: '#7a3b2e', hat: 'none', glasses: 'none', accessory: 'tespih', jewelry: 'chain' };
-const specs: Partial<Avatar>[] = new URLSearchParams(location.hash.slice(1)).get('kits') ? [
+const F: Partial<Avatar> = { body: 'f', beard: 'none', mustache: 'none', eyebrows: 'thin', accessory: 'none', jewelry: 'bilezik' };
+const specs: Partial<Avatar>[] = q.get('fem') ? [
+  { ...F, scarf: 'basortu', scarfColor: '#2f4f6f', shirt: 'hirka', shirtColor: '#7a5a3a', makeup: 'light' },
+  { ...F, scarf: 'tulbent', shirt: 'elbise', shirtColor: '#2d5a3a', glasses: 'reading', accessory: 'tespih', skin: '#e8b991' },
+  { ...F, scarf: 'esarp', scarfColor: '#7a3b2e', shirt: 'bluz', shirtColor: '#e8e2d4', makeup: 'full' },
+  { ...F, hair: 'bun', hairColor: '#a8a8a8', shirt: 'yelek', shirtColor: '#5a2d6a', jewelry: 'earrings', glasses: 'reading' },
+  { ...F, hair: 'wavy', hairColor: '#4a3020', shirt: 'elbise', shirtColor: '#8e1b1b', makeup: 'full', jewelry: 'earrings' },
+] : q.get('kits') ? [
   { shirt: 'trikot', kit: 'aYildiz' },
   { shirt: 'trikot', kit: 'sariKirmizi', hair: 'curly' },
   { shirt: 'trikot', kit: 'sariLacivert', hair: 'slick' },
@@ -29,7 +36,12 @@ const specs: Partial<Avatar>[] = new URLSearchParams(location.hash.slice(1)).get
   { hair: 'none', shirt: 'esofman', shirtColor: '#1a3a8a', hat: 'bere', beard: 'full', hairColor: '#888' },
 ];
 const avatars = specs.map((s, i) => {
-  const a = new Avatar3D({ ...base, ...s }, 'Test ' + (i + 1));
+  const a = new Avatar3D({ ...base, ...s }, 'Test ' + (i + 1), { standing: !!q.get('stand') });
+  if (q.get('stand')) {
+    a.root.position.y = 0.82 * 0.88 - 0.45;
+    a.root.scale.setScalar(0.88);
+    if (q.get('walk')) a.setWalking(1.2);
+  }
   a.root.position.x = (i - (specs.length - 1) / 2) * 0.75;
   scene.add(a.root);
   if (q.get('emote')) a.pose(q.get('emote')!, Number(q.get('p') ?? 0.5));

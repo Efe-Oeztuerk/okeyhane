@@ -17,20 +17,57 @@ export interface Settings {
   ownMusicUrl: string;
   pushToTalk: boolean;
   keys: KeyBinds;
+  /** Sichtfeld am Tisch / beim Laufen (Grad, vertikal) */
+  fovTable: number;
+  fovWalk: number;
+  /** Blickwinkel am Tisch nach unten (Grad) */
+  camTilt: number;
+  /** Maus/Touch/Stick-Empfindlichkeit in % */
+  sensitivity: number;
+  invertY: boolean;
+  /** Touch-Steuerung: auto = bei Touchscreen */
+  touchUi: 'auto' | 'on' | 'off';
+  /** Tastenkürzel-Hilfe unten einblenden */
+  showKeyHints: boolean;
 }
 
 export interface KeyBinds {
+  // Bewegung / Ansicht
   forward: string;
   back: string;
   left: string;
   right: string;
   look: string;
   zoom: string;
-  ptt: string;
+  thirdBack: string;
+  thirdFront: string;
+  // Spielzüge
+  drawPile: string;
+  drawSide: string;
+  discard: string;
+  finish: string;
+  indicator: string;
+  okeyBir: string;
+  select: string;
+  flip: string;
+  sortRuns: string;
+  sortPairs: string;
+  // Emotes & Kahvehane
+  emoteTea: string;
+  emoteNargile: string;
+  emoteSlam: string;
+  emoteTespih: string;
+  emoteHeadshake: string;
+  emoteRub: string;
   wink: string;
   blink: string;
   wide: string;
+  cayci: string;
+  quick: string;
+  chat: string;
   sheet: string;
+  media: string;
+  ptt: string;
 }
 
 export const defaultKeys: KeyBinds = {
@@ -40,18 +77,41 @@ export const defaultKeys: KeyBinds = {
   right: 'KeyD',
   look: 'Space',
   zoom: 'KeyC',
-  ptt: 'KeyV',
+  thirdBack: 'KeyB',
+  thirdFront: 'KeyN',
+  drawPile: 'KeyQ',
+  drawSide: 'KeyE',
+  discard: 'KeyF',
+  finish: 'KeyG',
+  indicator: 'KeyI',
+  okeyBir: 'KeyO',
+  select: 'KeyR',
+  flip: 'KeyX',
+  sortRuns: 'KeyH',
+  sortPairs: 'KeyJ',
+  emoteTea: 'Digit4',
+  emoteNargile: 'Digit5',
+  emoteSlam: 'Digit6',
+  emoteTespih: 'Digit7',
+  emoteHeadshake: 'Digit8',
+  emoteRub: 'Digit9',
   wink: 'Digit1',
   blink: 'Digit2',
   wide: 'Digit3',
+  cayci: 'KeyK',
+  quick: 'KeyT',
+  chat: 'Enter',
   sheet: 'KeyY',
+  media: 'KeyM',
+  ptt: 'KeyV',
 };
 
 /** Lesbarer Name einer Taste */
 export function keyLabel(code: string) {
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
-  const map: Record<string, string> = { Space: 'Leertaste', ShiftLeft: 'Shift', ControlLeft: 'Strg', AltLeft: 'Alt', Tab: 'Tab', CapsLock: 'Caps', Backquote: '^' };
+  const map: Record<string, string> = { Space: '␣', ShiftLeft: 'Shift', ControlLeft: 'Strg', AltLeft: 'Alt', Tab: 'Tab', CapsLock: 'Caps', Backquote: '^', Enter: 'Enter', ArrowLeft: '←', ArrowRight: '→', ArrowUp: '↑', ArrowDown: '↓' };
+  if (code.startsWith('Numpad')) return 'Num' + code.slice(6);
   return map[code] ?? code;
 }
 
@@ -70,7 +130,17 @@ const defaults: Settings = {
   ownMusicUrl: '',
   pushToTalk: false,
   keys: { ...defaultKeys },
+  fovTable: 70,
+  fovWalk: 66,
+  camTilt: 20,
+  sensitivity: 100,
+  invertY: false,
+  touchUi: 'auto',
+  showKeyHints: true,
 };
+/** Touchgerät (Handy/Tablet) */
+export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
+if (isTouch) defaults.quality = 'low';
 
 const stored = JSON.parse(localStorage.getItem('settings') || '{}');
 export const settings: Settings = { ...defaults, ...stored, keys: { ...defaultKeys, ...(stored.keys ?? {}) } };

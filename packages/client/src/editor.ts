@@ -7,19 +7,24 @@ import { World } from './scene.ts';
 import { KITS } from './avatar.ts';
 import type { Profile } from './settings.ts';
 
-const OPTIONS: { key: keyof Avatar; values: string[]; labels: Record<string, string> }[] = [
+type Opt = { key: keyof Avatar; values: string[]; labels: Record<string, string>; only?: 'm' | 'f' };
+const OPTIONS: Opt[] = [
   { key: 'face', values: ['round', 'long', 'square'], labels: { round: 'Yuvarlak · Rund', long: 'Uzun · Lang', square: 'Köşeli · Eckig' } },
-  { key: 'hair', values: ['none', 'short', 'curly', 'slick', 'long'], labels: { none: 'Kel · Glatze', short: 'Kısa · Kurz', curly: 'Kıvırcık · Lockig', slick: 'Briyantinli · Gegelt', long: 'Uzun · Lang' } },
+  { key: 'hair', values: ['none', 'short', 'curly', 'slick', 'long', 'bun', 'wavy'], labels: { none: 'Kel · Glatze', short: 'Kısa · Kurz', curly: 'Kıvırcık · Lockig', slick: 'Briyantinli · Gegelt', long: 'Uzun · Lang', bun: 'Topuz · Dutt', wavy: 'Dalgalı · Wellig' } },
+  { key: 'scarf', values: ['none', 'basortu', 'tulbent', 'esarp'], labels: { none: 'Yok · Keins', basortu: 'Başörtüsü · Kopftuch', tulbent: 'Oyalı tülbent · Weißes Tuch mit Oya', esarp: 'Eşarp · Seidentuch' }, only: 'f' },
+  { key: 'makeup', values: ['none', 'light', 'full'], labels: { none: 'Yok · Ohne', light: 'Hafif · Dezent', full: 'Tam · Voll' } },
   { key: 'eyebrows', values: ['thin', 'thick'], labels: { thin: 'İnce · Dünn', thick: 'Kalın · Dick' } },
-  { key: 'beard', values: ['none', 'stubble', 'full'], labels: { none: 'Yok · Keiner', stubble: 'Kirli sakal · Stoppeln', full: 'Gür · Vollbart' } },
-  { key: 'mustache', values: ['none', 'classic', 'thick'], labels: { none: 'Yok · Keiner', classic: 'Klasik', thick: 'Pala · Dick' } },
-  { key: 'shirt', values: ['gomlek', 'takim', 'esofman', 'trikot', 'hirka'], labels: { gomlek: 'Gömlek · Hemd', takim: 'Takım · Anzug', esofman: 'Eşofman · Trainingsanzug', trikot: 'Forma · Trikot', hirka: 'Hırka · Strickjacke' } },
+  { key: 'beard', values: ['none', 'stubble', 'full'], labels: { none: 'Yok · Keiner', stubble: 'Kirli sakal · Stoppeln', full: 'Gür · Vollbart' }, only: 'm' },
+  { key: 'mustache', values: ['none', 'classic', 'thick'], labels: { none: 'Yok · Keiner', classic: 'Klasik', thick: 'Pala · Dick' }, only: 'm' },
+  { key: 'shirt', values: ['gomlek', 'takim', 'esofman', 'trikot', 'hirka', 'elbise', 'bluz', 'yelek'], labels: { gomlek: 'Gömlek · Hemd', takim: 'Takım · Anzug', esofman: 'Eşofman · Trainingsanzug', trikot: 'Forma · Trikot', hirka: 'Hırka · Strickjacke', elbise: 'Çiçekli elbise · Blumenkleid', bluz: 'Bluz · Bluse', yelek: 'Yelek · Weste' } },
   { key: 'hat', values: ['none', 'kasket', 'takke', 'bere'], labels: { none: 'Yok · Keine', kasket: 'Kasket', takke: 'Takke', bere: 'Bere · Mütze' } },
   { key: 'glasses', values: ['none', 'reading', 'sun'], labels: { none: 'Yok · Keine', reading: 'Okuma · Lesebrille', sun: 'Güneş · Sonnenbrille' } },
   { key: 'accessory', values: ['none', 'tespih', 'cigar', 'toothpick'], labels: { none: 'Yok · Nichts', tespih: 'Tespih', cigar: 'Puro · Zigarre', toothpick: 'Kürdan · Zahnstocher' } },
-  { key: 'jewelry', values: ['none', 'chain', 'ring', 'watch'], labels: { none: 'Yok · Nichts', chain: 'Kolye · Kette', ring: 'Yüzük · Ring', watch: 'Saat · Uhr' } },
+  { key: 'jewelry', values: ['none', 'chain', 'ring', 'watch', 'earrings', 'bilezik'], labels: { none: 'Yok · Nichts', chain: 'Kolye · Kette', ring: 'Yüzük · Ring', watch: 'Saat · Uhr', earrings: 'Küpe · Ohrringe', bilezik: 'Altın bilezik · Goldreifen' } },
   { key: 'shisha', values: ['classic', 'gold', 'crystal', 'ruby', 'emerald', 'black', 'saray', 'usta', 'sultan'], labels: { classic: 'Klasik', gold: 'Altın · Gold', crystal: 'Kristal', ruby: 'Yakut · Rubin', emerald: 'Zümrüt · Smaragd', black: 'Siyah · Schwarz', saray: '★ Saray', usta: '★ Usta', sultan: '★ Sultan' } },
 ];
+const SCARF = ['#2f4f6f', '#7a3b2e', '#5a2d6a', '#2d5a3a', '#c9a04a', '#e8e2d4', '#1a1a1a', '#b5446e'];
+const LIPS = ['#b8434e', '#9b2335', '#c2185b', '#a0522d', '#d4706f'];
 const SKINS = ['#f3d2b3', '#e8b991', '#d9a77c', '#c48a5c', '#a26e4a', '#7a4f32', '#5a3a24'];
 const HAIR = ['#1a1a1a', '#2b1d14', '#4a3020', '#7a5a3a', '#a8a8a8', '#e0e0e0', '#b5651d'];
 const CLOTH = ['#7a3b2e', '#2f4f6f', '#2d5a3a', '#444444', '#e8e2d4', '#8e1b1b', '#d4a017', '#5a2d6a', '#1a3a8a', '#c0392b'];
@@ -99,8 +104,42 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
         ),
       );
     };
+    const fem = p.avatar.body === 'f';
+    opts.append(
+      h('label', {}, 'Tip · Typ'),
+      h(
+        'div',
+        { class: 'chips' },
+        (
+          [
+            ['m', 'Amca · Onkel'],
+            ['f', 'Teyze · Tante'],
+          ] as const
+        ).map(([v, l]) =>
+          h(
+            'div',
+            {
+              class: 'chip' + ((p.avatar.body ?? 'm') === v ? ' on' : ''),
+              onclick: () => {
+                if ((p.avatar.body ?? 'm') === v) return;
+                p.avatar.body = v;
+                if (v === 'f') {
+                  // passende Startwerte für eine Teyze
+                  Object.assign(p.avatar, { beard: 'none', mustache: 'none', hat: 'none', hair: 'bun', scarf: 'basortu', scarfColor: p.avatar.scarfColor ?? '#2f4f6f', shirt: 'hirka', eyebrows: 'thin', makeup: 'light', jewelry: 'bilezik' });
+                } else {
+                  Object.assign(p.avatar, { scarf: 'none', makeup: 'none', hair: 'short', shirt: 'gomlek', mustache: 'classic', jewelry: 'none' });
+                }
+                refresh();
+              },
+            },
+            l,
+          ),
+        ),
+      ),
+    );
     swatchRow(t('char_skin'), 'skin', SKINS);
     for (const o of OPTIONS) {
+      if (o.only && o.only !== (fem ? 'f' : 'm')) continue;
       opts.append(
         h('label', {}, t('char_' + o.key)),
         h(
@@ -122,6 +161,8 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
         ),
       );
       if (o.key === 'hair') swatchRow(t('char_hairColor'), 'hairColor', HAIR);
+      if (o.key === 'scarf' && p.avatar.scarf && p.avatar.scarf !== 'none' && p.avatar.scarf !== 'tulbent') swatchRow('Örtü rengi · Tuchfarbe', 'scarfColor', SCARF);
+      if (o.key === 'makeup' && p.avatar.makeup && p.avatar.makeup !== 'none') swatchRow('Ruj · Lippenstift', 'lipColor', LIPS);
       if (o.key === 'shirt' && p.avatar.shirt === 'trikot') {
         opts.append(
           h('label', {}, 'Retro Forma · Retro-Trikot'),

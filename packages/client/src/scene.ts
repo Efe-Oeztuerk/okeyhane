@@ -29,7 +29,19 @@ function facing(obj: THREE.Object3D, x: number, z: number) {
   obj.rotation.y = Math.atan2(-x, -z);
 }
 
-const ROOM = { w: 10, d: 9, h: 3.4 };
+const ROOM = { w: 13, d: 10, h: 3.4 };
+/** Garten vor dem Eingang (Südseite) */
+const GARDEN = { z0: ROOM.d / 2, z1: ROOM.d / 2 + 5.6 };
+/** Tische, an denen gespielt werden kann */
+export const SPOTS = [
+  { x: 0, z: 0, tr: 'Orta masa', de: 'Mitteltisch' },
+  { x: 4.6, z: -0.9, tr: 'Pencere kenarı', de: 'Am Fenster' },
+  { x: -2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sol', de: 'Garten links' },
+  { x: 2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sağ', de: 'Garten rechts' },
+];
+/** Bestellbares beim Çaycı (rein kosmetisch) */
+export const ORDER_ITEMS = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep'] as const;
+export type OrderItem = (typeof ORDER_ITEMS)[number];
 
 export interface GameVisual {
   mySeat: number | null;
@@ -53,6 +65,12 @@ export class World {
   private avatars: (Avatar3D | null)[] = [null, null, null, null];
   private avatarSpecs: string[] = ['', '', '', ''];
   private chairs: THREE.Group[] = [];
+  /** alles, was zum Spieltisch gehört (Spieler, Steine, Bestellungen) – sitzt am gewählten Tisch */
+  private tableRoot = new THREE.Group();
+  private itemsGroup = new THREE.Group();
+  private orders: THREE.Object3D[][] = [[], [], [], []];
+  spot = 0;
+  private spotMeshes: THREE.Object3D[][] = [];
   private gameGroup = new THREE.Group();
   private clickables: THREE.Object3D[] = [];
   private smoke: { s: THREE.Sprite; v: THREE.Vector3; life: number; max: number; amount: number }[] = [];
@@ -60,7 +78,6 @@ export class World {
   private npcs: Avatar3D[] = [];
   private cayci!: Avatar3D;
   private cayciState = { t: 20, phase: 'idle' as 'idle' | 'go' | 'serve' | 'back', pos: new THREE.Vector3(3.6, 0, -3.2) };
-  private teaGlasses: THREE.Group[] = [];
   private fan!: THREE.Object3D;
   private clockHands: { h: THREE.Object3D; m: THREE.Object3D } | null = null;
   private windowMesh!: THREE.Mesh;
@@ -73,18 +90,23 @@ export class World {
   private dayMode = '';
   // Bewegung
   seated: number | null = null;
-  private walkPos = new THREE.Vector3(0, 1.6, 3.4);
+  private walkPos = new THREE.Vector3(0, 1.6, ROOM.d / 2 - 1.2);
   private yaw = 0;
   private pitch = -0.1;
   private keys = new Set<string>();
   private camTarget: { pos: THREE.Vector3; look: THREE.Vector3 } | null = null;
   private camLook = new THREE.Vector3(0, 1, 0);
   // Callbacks
-  onChair: ((seat: number) => void) | null = null;
+  onChair: ((seat: number, spot: number) => void) | null = null;
   onPile: (() => void) | null = null;
   onSide: (() => void) | null = null;
   onMeld: ((index: number) => void) | null = null;
   private hoverChair = -1;
+  private hoverChairObj: THREE.Object3D | null = null;
+  /** analoge Bewegung (Touch-Joystick / Controller): x = rechts, y = vorwärts */
+  moveInput = { x: 0, y: 0 };
+  /** letzte Zeigerart (mouse / touch / pen) */
+  pointerType = 'mouse';
   private boardHover = false;
   /** wird gerade ein Stuhl angeschaut? */
   get lookingAtChair() {
@@ -109,9 +131,11 @@ export class World {
     this.tvHost.className = 'tv-host';
 
     this.buildRoom();
-    this.buildTable();
+    this.buildGarden();
+    SPOTS.forEach((_, i) => this.buildTable(i));
     this.buildNpcs();
-    this.scene.add(this.gameGroup);
+    this.scene.add(this.tableRoot);
+    this.tableRoot.add(this.gameGroup, this.itemsGroup);
     this.applyTimeOfDay();
     onSettings(() => {
       this.applyTimeOfDay();
@@ -146,7 +170,6 @@ export class World {
     const tileMat = new THREE.MeshStandardMaterial({ map: D.wallTiles(), roughness: 0.6 });
     const walls: [number, number, number, number][] = [
       [0, -d / 2, 0, w],
-      [0, d / 2, Math.PI, w],
       [-w / 2, 0, Math.PI / 2, d],
       [w / 2, 0, -Math.PI / 2, d],
     ];
@@ -165,15 +188,28 @@ export class World {
       rail.rotation.y = ry;
       this.scene.add(rail);
     }
-    // Fenster (Ostwand)
-    this.windowMesh = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.6), new THREE.MeshBasicMaterial({ map: D.cityWindow('day') }));
-    this.windowMesh.position.set(w / 2 - 0.01, 1.9, 0.5);
-    this.windowMesh.rotation.y = -Math.PI / 2;
-    this.scene.add(this.windowMesh);
-    const frame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.75, 2.55), new THREE.MeshStandardMaterial({ color: '#5a3a22' }));
-    frame.position.set(w / 2 - 0.02, 1.9, 0.5);
-    this.scene.add(frame);
-    this.windowMesh.position.x -= 0.03;
+    // Fenster (Ostwand) – zwei große Fenster mit Blick auf die Gasse
+    const winMat = new THREE.MeshBasicMaterial({ map: D.cityWindow('day') });
+    for (const wz of [SPOTS[1].z, 2.9]) {
+      const win = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 1.6), winMat);
+      win.position.set(w / 2 - 0.04, 1.9, wz);
+      win.rotation.y = -Math.PI / 2;
+      this.scene.add(win);
+      this.windowMesh = win;
+      const frame = new THREE.Mesh(new THREE.BoxGeometry(0.08, 1.75, 2.55), new THREE.MeshStandardMaterial({ color: '#5a3a22' }));
+      frame.position.set(w / 2 - 0.02, 1.9, wz);
+      this.scene.add(frame);
+      // Sprossen + Fensterbank mit Geranien
+      for (const dz of [-0.4, 0.4]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.04, 1.6, 0.04), new THREE.MeshStandardMaterial({ color: '#5a3a22' }));
+        bar.position.set(w / 2 - 0.06, 1.9, wz + dz);
+        this.scene.add(bar);
+      }
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 2.6), new THREE.MeshStandardMaterial({ color: '#4a2e1a' }));
+      sill.position.set(w / 2 - 0.15, 1.08, wz);
+      this.scene.add(sill);
+      for (const dz of [-0.8, 0.85]) this.scene.add(this.flowerPot(new THREE.Vector3(w / 2 - 0.16, 1.1, wz + dz), 0.11));
+    }
 
     // Schild über der Theke
     const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.6), new THREE.MeshStandardMaterial({ map: D.signText('OKEYHANE'), emissive: '#3a1008', emissiveIntensity: 0.4 }));
@@ -213,7 +249,8 @@ export class World {
     };
     picFrame(D.flag(), -3.4, 2.3, -d / 2 + 0.03, 0, 1.2, 0.8);
     for (let i = 0; i < 3; i++) picFrame(D.portrait(i + 1), -w / 2 + 0.03, 2.1, -2.4 + i * 1.1, Math.PI / 2, 0.55, 0.72);
-    for (let i = 0; i < 2; i++) picFrame(D.portrait(i + 7), w / 2 - 0.03, 2.1, -2.8 + i * 1.0, -Math.PI / 2, 0.5, 0.66);
+    for (let i = 0; i < 2; i++) picFrame(D.portrait(i + 7), w / 2 - 0.03, 2.1, -4.1 + i * 0.8, -Math.PI / 2, 0.5, 0.66);
+    for (let i = 0; i < 2; i++) picFrame(D.portrait(i + 4), -w / 2 + 0.03, 2.1, 3.6 + i * 0.75, Math.PI / 2, 0.5, 0.66);
     // Kilims
     const k1 = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 2.1), new THREE.MeshStandardMaterial({ map: D.kilim(1), roughness: 1 }));
     k1.position.set(-w / 2 + 0.02, 1.7, 2.2);
@@ -294,8 +331,9 @@ export class World {
     const lampPositions = [
       [0, 0],
       [-3, 2],
-      [3, 2],
+      [3, 2.6],
       [-3, -2],
+      [SPOTS[1].x - 0.6, SPOTS[1].z],
     ];
     for (const [x, z] of lampPositions) {
       const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.1), new THREE.MeshStandardMaterial({ color: '#222' }));
@@ -314,14 +352,7 @@ export class World {
       this.scene.add(l);
       this.lamps.push(l);
     }
-    // Eingangstür (Südwand)
-    const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.2, 0.06), new THREE.MeshStandardMaterial({ color: '#4a2e1a' }));
-    door.position.set(0, 1.1, d / 2 - 0.03);
-    this.scene.add(door);
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 0.9), new THREE.MeshStandardMaterial({ color: '#c8dde8', emissive: '#556070', transparent: true, opacity: 0.7 }));
-    glass.position.set(0, 1.55, d / 2 - 0.07);
-    glass.rotation.y = Math.PI;
-    this.scene.add(glass);
+    this.buildFacade();
     // Lokum-Teller auf der Theke (Sketchfab: nur_ay)
     const lokum = new THREE.Group();
     placeModel(lokum, 'lokum', 0.45, 'width');
@@ -350,7 +381,7 @@ export class World {
     // Läufer am Eingang (Sketchfab: mfb64)
     const runner = new THREE.Group();
     placeModel(runner, 'carpet', 2.6, 'width', { layFlat: true });
-    runner.position.set(0, 0.006, 2.95);
+    runner.position.set(0, 0.006, d / 2 - 1.1);
     this.scene.add(runner);
     // Nargile am Rand
     for (const [x, z, st] of [
@@ -364,6 +395,271 @@ export class World {
       this.scene.add(sh);
       this.decoShishas.push(sh);
     }
+  }
+
+
+  /** Vorderfront (Süd): Schaufenster, offene Tür, Schild außen */
+  private buildFacade() {
+    const { w, d, h } = ROOM;
+    const z = d / 2;
+    const inner = new THREE.MeshStandardMaterial({ color: '#e6d6b4', roughness: 0.95 });
+    const outer = new THREE.MeshStandardMaterial({ color: '#d8c19a', roughness: 0.95 });
+    const tiles = new THREE.MeshStandardMaterial({ map: D.wallTiles(), roughness: 0.6 });
+    const stone = new THREE.MeshStandardMaterial({ color: '#8d8274', roughness: 1 });
+    const wood = new THREE.MeshStandardMaterial({ color: '#5a3a22', roughness: 0.6 });
+    const piece = (x0: number, x1: number, y0: number, y1: number, lower = false) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(x1 - x0, y1 - y0, 0.18), [inner, inner, inner, inner, lower ? stone : outer, lower ? tiles : inner]);
+      m.position.set((x0 + x1) / 2, (y0 + y1) / 2, z);
+      m.receiveShadow = true;
+      this.scene.add(m);
+    };
+    const W = w / 2;
+    piece(-W, -0.7, 0, 0.9, true);
+    piece(0.7, W, 0, 0.9, true);
+    piece(-W, W, 2.35, h);
+    for (const [a, b] of [
+      [-W, -5.6],
+      [-1.6, -0.7],
+      [0.7, 1.6],
+      [5.6, W],
+    ])
+      piece(a, b, 0.9, 2.35);
+    // Schaufenster
+    const glass = new THREE.MeshStandardMaterial({ color: '#bcd6e0', transparent: true, opacity: 0.16, roughness: 0.05, depthWrite: false });
+    for (const cx of [-3.6, 3.6]) {
+      const g = new THREE.Mesh(new THREE.PlaneGeometry(4, 1.45), glass);
+      g.position.set(cx, 1.625, z);
+      this.scene.add(g);
+      for (let k = 0; k <= 4; k++) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.45, 0.06), wood);
+        bar.position.set(cx - 2 + k, 1.625, z);
+        this.scene.add(bar);
+      }
+      for (const yy of [0.92, 2.33, 1.95]) {
+        const bar = new THREE.Mesh(new THREE.BoxGeometry(4, 0.05, 0.07), wood);
+        bar.position.set(cx, yy, z);
+        this.scene.add(bar);
+      }
+      // Fensterbrett innen mit Teegläsern
+      const sill = new THREE.Mesh(new THREE.BoxGeometry(4, 0.05, 0.3), wood);
+      sill.position.set(cx, 0.92, z - 0.2);
+      this.scene.add(sill);
+    }
+    // Tür: offen nach innen geklappt
+    const door = new THREE.Mesh(new THREE.BoxGeometry(1.1, 2.25, 0.06), new THREE.MeshStandardMaterial({ color: '#4a2e1a' }));
+    door.rotation.y = Math.PI / 2;
+    door.position.set(-0.68, 1.125, z - 0.6);
+    this.scene.add(door);
+    const doorGlass = new THREE.Mesh(new THREE.PlaneGeometry(0.75, 0.9), new THREE.MeshStandardMaterial({ color: '#c8dde8', transparent: true, opacity: 0.5 }));
+    doorGlass.rotation.y = Math.PI / 2;
+    doorGlass.position.set(-0.64, 1.6, z - 0.6);
+    this.scene.add(doorGlass);
+    // Schild außen + Laternen
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 0.62), new THREE.MeshStandardMaterial({ map: D.signText('OKEYHANE'), emissive: '#3a1008', emissiveIntensity: 0.5 }));
+    sign.position.set(0, 2.88, z + 0.1);
+    this.scene.add(sign);
+    for (const lx of [-1.0, 1.0]) {
+      const lan = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.09, 0.22, 6), new THREE.MeshStandardMaterial({ color: '#ffd9a0', emissive: '#ffb050', emissiveIntensity: 0.8 }));
+      lan.position.set(lx, 2.1, z + 0.18);
+      this.scene.add(lan);
+    }
+  }
+
+  private bulbs: THREE.Mesh[] = [];
+  private sun!: THREE.DirectionalLight;
+  private skyDome!: THREE.Mesh;
+  private houses: THREE.Mesh[] = [];
+  private gardenLamps: THREE.PointLight[] = [];
+  private cat: THREE.Group | null = null;
+
+  /** Garten vor dem Kahvehane: Pflaster, Platane, Markise, Lichterkette, Blumenkästen, Gasse */
+  private buildGarden() {
+    const { w } = ROOM;
+    const { z0, z1 } = GARDEN;
+    const gd = z1 - z0;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(w, gd), new THREE.MeshStandardMaterial({ map: D.cobble(), roughness: 0.95 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, 0.002, z0 + gd / 2);
+    floor.receiveShadow = true;
+    this.scene.add(floor);
+    // Gasse + Gehweg gegenüber
+    const street = new THREE.Mesh(new THREE.PlaneGeometry(80, 9), new THREE.MeshStandardMaterial({ color: '#3d3a37', roughness: 1 }));
+    street.rotation.x = -Math.PI / 2;
+    street.position.set(0, -0.02, z1 + 4.5);
+    this.scene.add(street);
+    const around = new THREE.Mesh(new THREE.PlaneGeometry(80, 40), new THREE.MeshStandardMaterial({ color: '#7d7468', roughness: 1 }));
+    around.rotation.x = -Math.PI / 2;
+    around.position.set(0, -0.03, 0);
+    this.scene.add(around);
+    // Häuser gegenüber und seitlich
+    for (let i = 0; i < 9; i++) {
+      const hw = 4.2;
+      const hh = 7 + ((i * 37) % 5);
+      const hm = new THREE.Mesh(new THREE.BoxGeometry(hw, hh, 6), new THREE.MeshStandardMaterial({ map: D.houseFacade(i, false), roughness: 1 }));
+      hm.position.set(-18 + i * hw, hh / 2, z1 + 12);
+      hm.userData.seed = i;
+      this.scene.add(hm);
+      this.houses.push(hm);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(3.2, 1.4, 4), new THREE.MeshStandardMaterial({ color: '#9a4a32', roughness: 0.9 }));
+      roof.rotation.y = Math.PI / 4;
+      roof.scale.set(1, 1, 1.4);
+      roof.position.set(-18 + i * hw, hh + 0.7, z1 + 12);
+      this.scene.add(roof);
+    }
+    // Moschee-Silhouette in der Ferne
+    const mosque = new THREE.Group();
+    const stoneM = new THREE.MeshStandardMaterial({ color: '#cfc6b8', roughness: 1 });
+    const dome = new THREE.Mesh(new THREE.SphereGeometry(4, 24, 12, 0, Math.PI * 2, 0, Math.PI / 2), stoneM);
+    dome.position.y = 9;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(10, 9, 10), stoneM);
+    base.position.y = 4.5;
+    mosque.add(dome, base);
+    for (const mx of [-7, 7]) {
+      const min = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.6, 22, 12), stoneM);
+      min.position.set(mx, 11, 0);
+      const cap = new THREE.Mesh(new THREE.ConeGeometry(0.6, 3, 12), new THREE.MeshStandardMaterial({ color: '#6b7a8a' }));
+      cap.position.set(mx, 23.5, 0);
+      mosque.add(min, cap);
+    }
+    mosque.position.set(10, 0, z1 + 34);
+    this.scene.add(mosque);
+    // Himmel
+    this.skyDome = new THREE.Mesh(new THREE.SphereGeometry(70, 24, 16), new THREE.MeshBasicMaterial({ map: D.sky('day'), side: THREE.BackSide, fog: false }));
+    this.scene.add(this.skyDome);
+    this.sun = new THREE.DirectionalLight('#fff2d8', 0.8);
+    this.sun.position.set(8, 14, 20);
+    this.scene.add(this.sun);
+    // Blumenkästen am Rand (mit Durchgang zur Gasse)
+    const box = new THREE.MeshStandardMaterial({ color: '#b5a48a', roughness: 1 });
+    const planter = (x: number, zz: number, lx: number, lz: number) => {
+      const b = new THREE.Mesh(new THREE.BoxGeometry(lx, 0.55, lz), box);
+      b.position.set(x, 0.275, zz);
+      b.castShadow = true;
+      this.scene.add(b);
+      const n = Math.round(Math.max(lx, lz) / 0.45);
+      for (let i = 0; i < n; i++) {
+        const t = (i + 0.5) / n - 0.5;
+        const p = new THREE.Vector3(x + (lx > lz ? t * lx : 0), 0.62, zz + (lz > lx ? t * lz : 0));
+        this.scene.add(this.flowerPot(p, 0.13, true));
+      }
+    };
+    planter(-(w / 2 + 1.0) / 2 - 0.25, z1 - 0.2, w / 2 - 1.2, 0.4);
+    planter((w / 2 + 1.0) / 2 + 0.25, z1 - 0.2, w / 2 - 1.2, 0.4);
+    planter(-w / 2 + 0.2, z0 + gd / 2, 0.4, gd - 0.6);
+    planter(w / 2 - 0.2, z0 + gd / 2, 0.4, gd - 0.6);
+    // Platane (Çınar) mit Rundbank
+    const bark = new THREE.MeshStandardMaterial({ color: '#7b6a55', roughness: 1 });
+    const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.34, 3.6, 12), bark);
+    trunk.position.set(0, 1.8, z1 - 1.3);
+    trunk.castShadow = true;
+    this.scene.add(trunk);
+    const leaves = new THREE.MeshStandardMaterial({ color: '#4f7a3a', roughness: 0.9 });
+    for (const [lx, ly, lz, r] of [
+      [0, 4.4, 0, 1.7],
+      [1.3, 4.0, 0.4, 1.3],
+      [-1.2, 4.1, -0.3, 1.35],
+      [0.3, 4.2, -1.2, 1.2],
+      [-0.4, 5.2, 0.6, 1.2],
+    ]) {
+      const f = new THREE.Mesh(new THREE.IcosahedronGeometry(r, 1), leaves);
+      f.position.set(lx, ly, z1 - 1.3 + lz);
+      f.castShadow = true;
+      this.scene.add(f);
+    }
+    const bench = new THREE.Mesh(new THREE.TorusGeometry(0.62, 0.12, 6, 20), new THREE.MeshStandardMaterial({ color: '#7a4b2a' }));
+    bench.rotation.x = Math.PI / 2;
+    bench.scale.z = 0.4;
+    bench.position.set(0, 0.45, z1 - 1.3);
+    this.scene.add(bench);
+    // Markise über dem Eingang
+    const aw = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.4, 2.2), new THREE.MeshStandardMaterial({ map: D.awning(), side: THREE.DoubleSide, roughness: 0.9 }));
+    aw.position.set(0, 2.82, z0 + 1.0);
+    aw.rotation.x = -Math.PI / 2 + 0.22;
+    this.scene.add(aw);
+    // Lichterkette: Markise → Platane
+    const bulbMat = new THREE.MeshBasicMaterial({ color: '#ffd9a0' });
+    const string = (a: THREE.Vector3, b: THREE.Vector3, sag: number) => {
+      const pts: THREE.Vector3[] = [];
+      for (let i = 0; i <= 16; i++) {
+        const t = i / 16;
+        const p = a.clone().lerp(b, t);
+        p.y -= Math.sin(t * Math.PI) * sag;
+        pts.push(p);
+      }
+      const wire = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 32, 0.006, 4), new THREE.MeshBasicMaterial({ color: '#222' }));
+      this.scene.add(wire);
+      pts.forEach((p, i) => {
+        if (i % 2) return;
+        const bl = new THREE.Mesh(new THREE.SphereGeometry(0.045, 8, 6), bulbMat);
+        bl.position.copy(p).add(new THREE.Vector3(0, -0.05, 0));
+        this.scene.add(bl);
+        this.bulbs.push(bl);
+      });
+    };
+    const tree = new THREE.Vector3(0, 3.3, z1 - 1.3);
+    for (const sx of [-1, 1]) {
+      string(new THREE.Vector3(sx * (w / 2 - 0.5), 2.5, z0 + 2.0), tree, 0.45);
+      string(new THREE.Vector3(sx * (w / 2 - 0.5), 2.5, z0 + 2.0), new THREE.Vector3(sx * (w / 2 - 0.4), 2.2, z1 - 0.3), 0.3);
+    }
+    for (const sp of SPOTS.slice(2)) {
+      const l = new THREE.PointLight('#ffcf8a', 0, 6, 1.6);
+      l.position.set(sp.x, 2.6, sp.z);
+      this.scene.add(l);
+      this.gardenLamps.push(l);
+    }
+    // Sokak kedisi auf dem Blumenkasten
+    this.cat = this.makeCat();
+    this.cat.position.set(-w / 2 + 0.2, 0.55, z0 + 1.4);
+    this.cat.rotation.y = 0.6;
+    this.scene.add(this.cat);
+  }
+
+  /** Blumentopf mit Geranien (Sardunya) */
+  private flowerPot(pos: THREE.Vector3, r: number, noPot = false) {
+    const g = new THREE.Group();
+    if (!noPot) {
+      const pot = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 0.75, r * 1.4, 12), new THREE.MeshStandardMaterial({ color: '#b5603a', roughness: 0.9 }));
+      pot.position.y = r * 0.7;
+      g.add(pot);
+    }
+    const bush = new THREE.Mesh(new THREE.IcosahedronGeometry(r * 1.15, 1), new THREE.MeshStandardMaterial({ color: '#3f6b32', roughness: 1 }));
+    bush.position.y = noPot ? 0.02 : r * 1.6;
+    g.add(bush);
+    const cols = ['#d6233a', '#e8507a', '#f2f2f2', '#d6233a'];
+    for (let i = 0; i < 6; i++) {
+      const fl = new THREE.Mesh(new THREE.SphereGeometry(r * 0.32, 8, 6), new THREE.MeshStandardMaterial({ color: cols[i % cols.length], roughness: 0.7 }));
+      const a = (i / 6) * Math.PI * 2;
+      fl.position.set(Math.cos(a) * r * 0.75, bush.position.y + r * 0.6 + (i % 2) * r * 0.25, Math.sin(a) * r * 0.75);
+      g.add(fl);
+    }
+    g.position.copy(pos);
+    return g;
+  }
+
+  /** schlafende Straßenkatze */
+  private makeCat() {
+    const g = new THREE.Group();
+    const fur = new THREE.MeshStandardMaterial({ color: '#c98a3e', roughness: 1 });
+    const body = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), fur);
+    body.scale.set(1, 0.6, 1.4);
+    body.position.y = 0.1;
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.085, 12, 10), fur);
+    head.position.set(0, 0.12, 0.22);
+    g.add(body, head);
+    for (const s of [-1, 1]) {
+      const ear = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.06, 6), fur);
+      ear.position.set(0.045 * s, 0.2, 0.22);
+      g.add(ear);
+      const eye = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.004, 0.004), new THREE.MeshBasicMaterial({ color: '#222' }));
+      eye.position.set(0.03 * s, 0.13, 0.302);
+      g.add(eye);
+    }
+    const tail = new THREE.Mesh(
+      new THREE.TubeGeometry(new THREE.CatmullRomCurve3([new THREE.Vector3(0, 0.08, -0.2), new THREE.Vector3(0.15, 0.05, -0.15), new THREE.Vector3(0.2, 0.05, 0.05)]), 12, 0.025, 6),
+      fur,
+    );
+    g.add(tail);
+    return g;
   }
 
   private semaver(x: number, y: number, z: number) {
@@ -409,20 +705,24 @@ export class World {
 
   // ------------------------------------------------------------ Tisch + Stühle
 
-  private buildTable() {
+  private buildTable(spot: number) {
+    const sp = SPOTS[spot];
+    const meshes: THREE.Object3D[] = [];
     const wood = new THREE.MeshStandardMaterial({ color: '#5b3a22', roughness: 0.6 });
     const top = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.05, 1.2), wood);
-    top.position.y = TABLE_Y - 0.03;
+    top.position.set(sp.x, TABLE_Y - 0.03, sp.z);
     top.castShadow = top.receiveShadow = true;
     top.userData.table = true;
-    this.tableMeshes.push(top);
+    top.userData.spot = spot;
+    meshes.push(top);
     this.scene.add(top);
     const felt = new THREE.Mesh(new THREE.PlaneGeometry(1.08, 1.08), new THREE.MeshStandardMaterial({ map: D.feltTexture(), roughness: 1 }));
     felt.rotation.x = -Math.PI / 2;
-    felt.position.y = TABLE_Y - 0.004;
+    felt.position.set(sp.x, TABLE_Y - 0.004, sp.z);
     felt.receiveShadow = true;
     felt.userData.table = true;
-    this.tableMeshes.push(felt);
+    felt.userData.spot = spot;
+    meshes.push(felt);
     this.scene.add(felt);
     for (const [x, z] of [
       [-0.5, -0.5],
@@ -431,20 +731,23 @@ export class World {
       [0.5, 0.5],
     ]) {
       const leg = new THREE.Mesh(new THREE.BoxGeometry(0.06, TABLE_Y, 0.06), wood);
-      leg.position.set(x, TABLE_Y / 2, z);
+      leg.position.set(sp.x + x, TABLE_Y / 2, sp.z + z);
       leg.castShadow = true;
       this.scene.add(leg);
     }
     for (let s = 0; s < 4; s++) {
       const dir = seatPos(s);
       const chair = this.chair();
-      chair.position.set(dir.x * 1.07, 0, dir.z * 1.07);
+      chair.position.set(sp.x + dir.x * 1.07, 0, sp.z + dir.z * 1.07);
       facing(chair, dir.x, dir.z);
-      chair.userData.seat = s;
-      chair.traverse((o) => (o.userData.seat = s));
+      chair.traverse((o) => {
+        o.userData.seat = s;
+        o.userData.spot = spot;
+      });
       this.scene.add(chair);
       this.chairs.push(chair);
     }
+    this.spotMeshes[spot] = meshes;
   }
 
   private chair() {
@@ -500,8 +803,9 @@ export class World {
     // zwei Nebentische mit Tavla / Zeitung
     const spots = [
       { x: -3.2, z: 2.6 },
-      { x: 3.2, z: 2.8 },
+      { x: 2.7, z: 3.3 },
       { x: -3.3, z: -2.4 },
+      { x: -5.2, z: ROOM.d / 2 + 1.1 },
     ];
     spots.forEach((sp, ti) => {
       const t = new THREE.Mesh(new THREE.CylinderGeometry(0.4, 0.4, 0.04, 24), new THREE.MeshStandardMaterial({ color: '#5b3a22' }));
@@ -511,7 +815,7 @@ export class World {
       const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.12, 0.72), new THREE.MeshStandardMaterial({ color: '#3b2414' }));
       leg.position.set(sp.x, 0.36, sp.z);
       this.scene.add(leg);
-      if (ti !== 2) {
+      if (ti !== 2 && ti !== 3) {
         // Tavla-Brett
         const board = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.34), new THREE.MeshStandardMaterial({ color: '#8a5a2a' }));
         board.position.set(sp.x, 0.755, sp.z);
@@ -524,6 +828,12 @@ export class World {
       }
       this.scene.add(this.teaGlassMesh(new THREE.Vector3(sp.x + 0.25, 0.74, sp.z + 0.1)));
       const n = ti === 2 ? 1 : 2;
+      if (ti === 3) {
+        // Garten: Backgammon-Spieler mit Kaffee
+        const board = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.03, 0.34), new THREE.MeshStandardMaterial({ color: '#8a5a2a' }));
+        board.position.set(sp.x, 0.755, sp.z);
+        this.scene.add(board);
+      }
       for (let k = 0; k < n; k++) {
         const side = k === 0 ? -1 : 1;
         const chair = this.chair();
@@ -543,8 +853,9 @@ export class World {
     this.cayci = new Avatar3D(
       { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none' },
       'Çaycı',
-      { showName: true },
+      { showName: true, standing: true },
     );
+    this.cayci.root.scale.setScalar(0.88);
     this.cayci.root.position.copy(this.cayciState.pos);
     this.scene.add(this.cayci.root);
     // Tablett
@@ -569,6 +880,19 @@ export class World {
     this.dayMode = mode;
     (this.windowMesh.material as THREE.MeshBasicMaterial).map = D.cityWindow(mode as any);
     (this.windowMesh.material as THREE.MeshBasicMaterial).needsUpdate = true;
+    const skyM = this.skyDome.material as THREE.MeshBasicMaterial;
+    skyM.map = D.sky(mode as any);
+    skyM.needsUpdate = true;
+    for (const hm of this.houses) {
+      const m = hm.material as THREE.MeshStandardMaterial;
+      m.map = D.houseFacade(hm.userData.seed, mode === 'night');
+      m.emissive.set(mode === 'night' ? '#221a10' : '#000000');
+      m.needsUpdate = true;
+    }
+    this.sun.intensity = mode === 'day' ? 1.1 : mode === 'evening' ? 0.55 : 0.12;
+    this.sun.color.set(mode === 'day' ? '#fff2d8' : mode === 'evening' ? '#ffb27a' : '#8fa0ff');
+    for (const b of this.bulbs) (b.material as THREE.MeshBasicMaterial).color.set(mode === 'day' ? '#d8c8a8' : '#ffd27a');
+    for (const l of this.gardenLamps) l.intensity = mode === 'day' ? 0 : 2.2;
     this.ambient.intensity = mode === 'day' ? 0.95 : mode === 'evening' ? 0.6 : 0.35;
     this.ambient.color.set(mode === 'day' ? '#fff6e6' : mode === 'evening' ? '#ffd9b0' : '#b8c0ff');
     for (const l of this.lamps) l.intensity = mode === 'day' ? 1.4 : 2.6;
@@ -586,9 +910,9 @@ export class World {
       if (key === this.avatarSpecs[s]) continue;
       this.avatarSpecs[s] = key;
       const old = this.avatars[s];
-      if (old) this.scene.remove(old.root);
+      if (old) this.tableRoot.remove(old.root);
       this.avatars[s] = null;
-      if (this.seatShishas[s]) this.scene.remove(this.seatShishas[s]!);
+      if (this.seatShishas[s]) this.tableRoot.remove(this.seatShishas[s]!);
       this.seatShishas[s] = null;
       if (!p) continue;
       const a = new Avatar3D(p.avatar, p.name);
@@ -603,16 +927,15 @@ export class World {
         sfx.slam();
         this.shakeT = 0.25;
       };
-      a.root.visible = s !== mySeat;
-      this.scene.add(a.root);
+      a.root.visible = s !== mySeat || !!this.third;
+      this.tableRoot.add(a.root);
       this.avatars[s] = a;
       // eigene Nargile neben dem Stuhl (Seite des Schlauchs)
-      a.root.updateMatrixWorld(true);
+      a.root.updateMatrix();
       const sh = makeShisha((p.avatar.shisha as ShishaStyle) ?? 'classic');
-      const wp = a.root.localToWorld(new THREE.Vector3(0.5, -0.45, 0.02));
-      sh.position.copy(wp);
+      sh.position.copy(new THREE.Vector3(0.5, -0.45, 0.02).applyMatrix4(a.root.matrix));
       sh.rotation.y = a.root.rotation.y + Math.PI / 2;
-      this.scene.add(sh);
+      this.tableRoot.add(sh);
       this.seatShishas[s] = sh;
     }
   }
@@ -677,7 +1000,7 @@ export class World {
   smokeCloud() {
     if (!settings.smoke) return;
     for (let i = 0; i < 40; i++) {
-      this.puff(new THREE.Vector3((Math.random() - 0.5) * 0.8, TABLE_Y + 0.15, (Math.random() - 0.5) * 0.8), 1);
+      this.puff(new THREE.Vector3((Math.random() - 0.5) * 0.8, TABLE_Y + 0.15, (Math.random() - 0.5) * 0.8).add(this.tableRoot.position), 1);
     }
   }
 
@@ -704,22 +1027,69 @@ export class World {
     this.seated = seat;
     if (seat === null) {
       this.camTarget = null;
-      this.walkPos.set(0, 1.6, 2.2);
-      this.yaw = 0;
+      const sp = SPOTS[this.spot];
+      const back = this.spot >= 2 ? -1 : 1;
+      this.walkPos.set(sp.x, 1.6, sp.z + 2.2 * back);
+      this.yaw = back > 0 ? 0 : Math.PI;
       this.pitch = -0.15;
     } else {
-      const dir = seatPos(seat);
-      this.camTarget = {
-        pos: new THREE.Vector3(dir.x * 1.18, 1.5, dir.z * 1.18),
-        look: new THREE.Vector3(dir.x * 0.12, TABLE_Y - 0.12, dir.z * 0.12),
-      };
+      this.camTarget = this.seatCam(seat);
       this.focus = true;
       this.seatYaw = 0;
       this.seatPitch = 0;
       this.stopLook();
       this.onFocusChange?.(true);
     }
-    this.avatars.forEach((a, s) => a && (a.root.visible = s !== this.mySeat));
+    this.avatars.forEach((a, s) => a && (a.root.visible = s !== this.mySeat || !!this.third));
+  }
+
+  /**
+   * Kamera am Platz: etwas höher und weiter hinten, Blick ~20° nach unten,
+   * damit Tischmitte, Abwürfe UND die Gesichter (v. a. gegenüber) im Bild sind.
+   */
+  private seatCam(seat: number) {
+    const dir = seatPos(seat);
+    const off = this.tableRoot.position;
+    const pos = new THREE.Vector3(dir.x * 1.28, 1.56, dir.z * 1.28).add(off);
+    const pitch = (-settings.camTilt * Math.PI) / 180;
+    const look = pos.clone().add(new THREE.Vector3(-dir.x * Math.cos(pitch), Math.sin(pitch), -dir.z * Math.cos(pitch)).multiplyScalar(1.5));
+    return { pos, look };
+  }
+
+  /** an einen anderen Tisch umziehen (Spieler, Steine, Bestellungen wandern mit) */
+  setSpot(spot: number) {
+    if (spot === this.spot && this.tableRoot.position.x === SPOTS[spot].x) return;
+    this.spot = spot;
+    this.tableRoot.position.set(SPOTS[spot].x, 0, SPOTS[spot].z);
+    this.tableRoot.updateMatrixWorld(true);
+    if (this.seated !== null) {
+      this.camTarget = this.seatCam(this.seated);
+      this.camera.position.copy(this.camTarget.pos);
+      this.camLook.copy(this.camTarget.look);
+    }
+  }
+
+  // ------------------------------------------------------------ 3rd Person
+
+  /** gehaltene Taste: eigene Figur von hinten oder vorne sehen */
+  third: 'back' | 'front' | null = null;
+  private selfAvatar: Avatar3D | null = null;
+  private selfKey = '';
+  setThird(mode: 'back' | 'front' | null) {
+    if (this.third === mode) return;
+    this.third = mode;
+    this.avatars.forEach((a, s) => a && (a.root.visible = s !== this.mySeat || !!mode));
+  }
+  /** eigene (stehende) Figur zum Herumlaufen */
+  setSelf(spec: Avatar, name: string) {
+    const key = JSON.stringify(spec) + name;
+    if (key === this.selfKey) return;
+    this.selfKey = key;
+    if (this.selfAvatar) this.scene.remove(this.selfAvatar.root);
+    this.selfAvatar = new Avatar3D(spec, name, { standing: true });
+    this.selfAvatar.root.scale.setScalar(0.88);
+    this.selfAvatar.root.visible = false;
+    this.scene.add(this.selfAvatar.root);
   }
 
   /** Maus steuert die Kamera (Pointer-Lock) */
@@ -754,14 +1124,18 @@ export class World {
         this.setFocus(!this.focus);
       }
       if (e.code === settings.keys.zoom) this.zooming = true;
+      if (e.code === settings.keys.thirdBack) this.setThird('back');
+      if (e.code === settings.keys.thirdFront) this.setThird('front');
     });
     addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
       if (e.code === settings.keys.zoom) this.zooming = false;
+      if (e.code === settings.keys.thirdBack || e.code === settings.keys.thirdFront) this.setThird(null);
     });
     addEventListener('blur', () => {
       this.keys.clear();
       this.zooming = false;
+      this.setThird(null);
     });
     document.addEventListener('pointerlockchange', () => {
       const looking = this.isLooking();
@@ -778,15 +1152,28 @@ export class World {
       const r = el.getBoundingClientRect();
       this.mouseNdc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       if (!this.isLooking()) return;
-      const sens = 0.0022 * (this.zooming ? 0.45 : 1);
-      if (this.seated === null) {
-        this.yaw -= e.movementX * sens;
-        this.pitch = Math.max(-1.3, Math.min(1.3, this.pitch - e.movementY * sens));
-      } else if (!this.focus) {
-        this.seatYaw = Math.max(-2.7, Math.min(2.7, this.seatYaw - e.movementX * sens));
-        this.seatPitch = Math.max(-1.0, Math.min(1.1, this.seatPitch - e.movementY * sens));
-      }
+      this.lookDelta(e.movementX, e.movementY);
     });
+    // Touch / Stift: Wischen = Umschauen, Tippen = Klick (siehe handleClick)
+    let drag: { id: number; x: number; y: number } | null = null;
+    el.addEventListener('pointerdown', (e) => {
+      this.pointerType = e.pointerType || 'mouse';
+      if (e.pointerType === 'mouse') return;
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+    });
+    el.addEventListener('pointermove', (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x;
+      const dy = e.clientY - drag.y;
+      drag.x = e.clientX;
+      drag.y = e.clientY;
+      if (this.seated === null || !this.focus) this.lookDelta(dx * 1.6, dy * 1.6);
+    });
+    const end = (e: PointerEvent) => {
+      if (drag && e.pointerId === drag.id) drag = null;
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', end);
     el.addEventListener('click', (e) => this.handleClick(e));
     el.addEventListener('contextmenu', (e) => e.preventDefault());
   }
@@ -799,30 +1186,126 @@ export class World {
   }
 
   private handleClick(e: MouseEvent) {
+    const touch = this.pointerType !== 'mouse';
+    const at = touch ? this.ndcOf(e) : new THREE.Vector2(0, 0);
     if (this.seated === null) {
-      if (!this.isLooking()) {
+      if (!touch && !this.isLooking()) {
         this.startLook();
         return;
       }
-      const hit = this.pickNdc(new THREE.Vector2(0, 0), this.chairs);
-      if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat);
+      const hit = this.pickNdc(at, this.chairs);
+      if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
       return;
     }
     if (!this.focus) {
       // Umschauen: Brett anvisieren und klicken → zurück zum Brett
-      const hit = this.pickNdc(new THREE.Vector2(0, 0), [...this.clickables, ...this.tableMeshes]);
-      if (hit) this.setFocus(true);
+      const hit = this.pickNdc(at, [...this.clickables, ...this.tableMeshes, ...this.chairs]);
+      if (hit?.userData.seat !== undefined && hit.userData.spot !== this.spot) this.onChair?.(hit.userData.seat, hit.userData.spot);
+      else if (hit) this.setFocus(true);
       return;
     }
     const hit = this.pick(e, [...this.clickables, ...this.tableMeshes]);
     if (!hit) {
-      this.setFocus(false);
+      if (!touch) this.setFocus(false);
       return;
     }
     if (hit.userData.pile) this.onPile?.();
     else if (hit.userData.side) this.onSide?.();
     else if (hit.userData.meld !== undefined) this.onMeld?.(hit.userData.meld);
   }
+
+  private ndcOf(e: { clientX: number; clientY: number }) {
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return new THREE.Vector2(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+  }
+
+  /** Blick drehen (Touch-Wischen, Controller-Stick) in Pixel-ähnlichen Einheiten */
+  lookDelta(dx: number, dy: number) {
+    const sens = 0.0022 * (settings.sensitivity / 100) * (this.zooming ? 0.45 : 1);
+    const inv = settings.invertY ? -1 : 1;
+    if (this.seated === null) {
+      this.yaw -= dx * sens;
+      this.pitch = Math.max(-1.3, Math.min(1.3, this.pitch - dy * sens * inv));
+    } else if (!this.focus) {
+      this.seatYaw = Math.max(-2.7, Math.min(2.7, this.seatYaw - dx * sens));
+      this.seatPitch = Math.max(-1.0, Math.min(1.1, this.seatPitch - dy * sens * inv));
+    }
+  }
+
+  /** „Interagieren“ (Controller A / Taste): Stuhl bzw. Brett in der Bildmitte */
+  interact() {
+    const c = new THREE.Vector2(0, 0);
+    if (this.seated === null) {
+      const hit = this.pickNdc(c, this.chairs);
+      if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
+      return !!hit;
+    }
+    if (!this.focus) {
+      const hit = this.pickNdc(c, [...this.clickables, ...this.tableMeshes]);
+      if (hit) this.setFocus(true);
+      return !!hit;
+    }
+    return false;
+  }
+
+  setZoom(on: boolean) {
+    this.zooming = on;
+  }
+
+  /** Controller-Sticks (Tasten wertet controls.ts aus) */
+  private pollPad(dt: number) {
+    const pads = navigator.getGamepads?.() ?? [];
+    let lx = 0, ly = 0, rx = 0, ry = 0;
+    for (const p of pads) {
+      if (!p || p.axes.length < 4) continue;
+      const dz = (v: number) => (Math.abs(v) < 0.18 ? 0 : v);
+      lx = dz(p.axes[0]);
+      ly = dz(p.axes[1]);
+      rx = dz(p.axes[2]);
+      ry = dz(p.axes[3]);
+      break;
+    }
+    this.padMove = { x: lx, y: -ly };
+    if (this.seated === null && !this.touchMoving) this.moveInput = this.padMove;
+    if (rx || ry) this.lookDelta(rx * 900 * dt, ry * 700 * dt);
+  }
+  padMove = { x: 0, y: 0 };
+  touchMoving = false;
+
+  /** Kollision: Wände, Tür, Tische, Theke */
+  private collide(prev: THREE.Vector3) {
+    const p = this.walkPos;
+    const W = ROOM.w / 2 - 0.4;
+    p.x = Math.max(-W, Math.min(W, p.x));
+    const doorZ = ROOM.d / 2;
+    const inside = prev.z < doorZ;
+    if (inside) {
+      p.z = Math.max(-ROOM.d / 2 + 1.25, p.z);
+      if (p.z > doorZ - 0.3 && Math.abs(p.x) > 0.5) p.z = doorZ - 0.3;
+    } else {
+      p.z = Math.min(GARDEN.z1 - 0.55, p.z);
+      if (p.z < doorZ + 0.3 && Math.abs(p.x) > 0.5) p.z = doorZ + 0.3;
+      p.x = Math.max(-ROOM.w / 2 + 0.55, Math.min(ROOM.w / 2 - 0.55, p.x));
+    }
+    const round = (cx: number, cz: number, r: number) => {
+      const dx = p.x - cx;
+      const dz = p.z - cz;
+      const d = Math.hypot(dx, dz);
+      if (d < r && d > 1e-4) {
+        p.x = cx + (dx / d) * r;
+        p.z = cz + (dz / d) * r;
+      }
+    };
+    for (const sp of SPOTS) round(sp.x, sp.z, 1.3);
+    for (const o of this.obstacles) round(o.x, o.z, o.r);
+  }
+  private obstacles: { x: number; z: number; r: number }[] = [
+    { x: -3.2, z: 2.6, r: 0.95 },
+    { x: 2.7, z: 3.3, r: 0.95 },
+    { x: -3.3, z: -2.4, r: 0.8 },
+    { x: -5.2, z: ROOM.d / 2 + 1.1, r: 0.95 },
+    { x: 0, z: GARDEN.z1 - 1.3, r: 0.85 },
+  ];
 
   private pickNdc(ndc: THREE.Vector2, targets: THREE.Object3D[]): THREE.Object3D | null {
     this.raycaster.setFromCamera(ndc, this.camera);
@@ -976,7 +1459,7 @@ export class World {
       if (!a) return;
       if (s === v.current) a.lookAtYaw(0);
       else {
-        const target = seatPos(v.current).multiplyScalar(1.0);
+        const target = seatPos(v.current).multiplyScalar(1.0).add(this.tableRoot.position);
         target.y = 1.3;
         const local = a.root.worldToLocal(target.clone());
         a.lookAtYaw(Math.atan2(local.x, local.z));
@@ -1008,8 +1491,7 @@ export class World {
       this.clickables.push(g);
     });
 
-    // Teegläser
-    for (const tg of this.teaGlasses) this.gameGroup.add(tg);
+
   }
 
   // ------------------------------------------------------------ Fernseher
@@ -1036,6 +1518,7 @@ export class World {
     const t = this.clock.elapsedTime;
 
     // Kamera
+    this.pollPad(dt);
     if (this.camTarget) {
       const pos = this.camTarget.pos;
       let look: THREE.Vector3;
@@ -1049,44 +1532,84 @@ export class World {
         const pitch = Math.max(-1.2, Math.min(1.2, basePitch + this.seatPitch));
         look = pos.clone().add(new THREE.Vector3(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch)));
       }
-      const kpos = 1 - Math.pow(0.002, dt);
-      this.camera.position.lerp(pos, kpos);
+      let camPos = pos;
+      if (this.third && this.seated !== null) {
+        // eigene Figur von hinten / vorne
+        const dir = seatPos(this.seated);
+        const head = dir.clone().multiplyScalar(1.04).add(this.tableRoot.position);
+        head.y = 1.42;
+        if (this.third === 'back') {
+          camPos = head.clone().add(dir.clone().multiplyScalar(1.5)).add(new THREE.Vector3(0, 0.55, 0));
+          look = head.clone().add(dir.clone().multiplyScalar(-1.0)).add(new THREE.Vector3(0, -0.45, 0));
+        } else {
+          camPos = head.clone().add(dir.clone().multiplyScalar(-0.95)).add(new THREE.Vector3(0, 0.05, 0));
+          look = head.clone().add(new THREE.Vector3(0, -0.12, 0));
+        }
+      }
+      const kpos = 1 - Math.pow(this.third ? 0.0005 : 0.002, dt);
+      this.camera.position.lerp(camPos, kpos);
       this.camLook.lerp(look, 1 - Math.pow(0.0005, dt));
       this.camera.lookAt(this.camLook);
+      if (this.selfAvatar) this.selfAvatar.root.visible = false;
     } else {
       const speed = 2.2 * dt;
       const fwd = new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
       const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
       const K = settings.keys;
-      if (this.keys.has(K.forward) || this.keys.has('ArrowUp')) this.walkPos.addScaledVector(fwd, speed);
-      if (this.keys.has(K.back) || this.keys.has('ArrowDown')) this.walkPos.addScaledVector(fwd, -speed);
-      if (this.keys.has(K.left) || this.keys.has('ArrowLeft')) this.walkPos.addScaledVector(right, -speed);
-      if (this.keys.has(K.right) || this.keys.has('ArrowRight')) this.walkPos.addScaledVector(right, speed);
-      // Grenzen + Tisch
-      this.walkPos.x = Math.max(-ROOM.w / 2 + 0.4, Math.min(ROOM.w / 2 - 0.4, this.walkPos.x));
-      this.walkPos.z = Math.max(-ROOM.d / 2 + 1.2, Math.min(ROOM.d / 2 - 0.4, this.walkPos.z));
-      const flat = new THREE.Vector2(this.walkPos.x, this.walkPos.z);
-      if (flat.length() < 1.25) {
-        flat.setLength(1.25);
-        this.walkPos.x = flat.x;
-        this.walkPos.z = flat.y;
+      let mx = this.moveInput.x;
+      let my = this.moveInput.y;
+      if (this.keys.has(K.forward) || this.keys.has('ArrowUp')) my += 1;
+      if (this.keys.has(K.back) || this.keys.has('ArrowDown')) my -= 1;
+      if (this.keys.has(K.left) || this.keys.has('ArrowLeft')) mx -= 1;
+      if (this.keys.has(K.right) || this.keys.has('ArrowRight')) mx += 1;
+      const ml = Math.hypot(mx, my);
+      if (ml > 1) {
+        mx /= ml;
+        my /= ml;
       }
-      this.walkPos.y = 1.6 + Math.sin(t * 8) * (this.keys.size ? 0.015 : 0);
-      this.camera.position.lerp(this.walkPos, 0.3);
+      const prev = this.walkPos.clone();
+      this.walkPos.addScaledVector(fwd, speed * my).addScaledVector(right, speed * mx);
+      this.collide(prev);
+      const moved = Math.hypot(this.walkPos.x - prev.x, this.walkPos.z - prev.z) / Math.max(dt, 1e-4);
+      this.walkPos.y = 1.6 + Math.sin(t * 8) * (moved > 0.2 ? 0.015 : 0);
       const look = new THREE.Vector3(-Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), -Math.cos(this.yaw) * Math.cos(this.pitch));
-      this.camera.lookAt(this.camera.position.clone().add(look));
+      // eigene Figur (nur in der 3rd-Person-Ansicht sichtbar)
+      const me = this.selfAvatar;
+      if (me) {
+        me.root.visible = !!this.third;
+        me.root.position.set(this.walkPos.x, 0.72, this.walkPos.z);
+        facing(me.root, -fwd.x, -fwd.z);
+        me.setWalking(moved);
+        me.update(dt);
+      }
+      if (this.third) {
+        const head = new THREE.Vector3(this.walkPos.x, 1.55, this.walkPos.z);
+        const camPos =
+          this.third === 'back'
+            ? head.clone().addScaledVector(fwd, -2.1).add(new THREE.Vector3(0, 0.45, 0))
+            : head.clone().addScaledVector(fwd, 1.6).add(new THREE.Vector3(0, 0.05, 0));
+        this.camera.position.lerp(camPos, 1 - Math.pow(0.0005, dt));
+        this.camera.lookAt(this.third === 'back' ? head.clone().addScaledVector(fwd, 1.5).add(new THREE.Vector3(0, -0.2, 0)) : head);
+      } else {
+        this.camera.position.lerp(this.walkPos, 0.3);
+        this.camera.lookAt(this.camera.position.clone().add(look));
+      }
       // Hover über Stühlen
       this.raycaster.setFromCamera(this.rayNdc(), this.camera);
-      const hit = this.raycaster.intersectObjects(this.chairs, true)[0];
-      const hs = hit && hit.distance < 4 ? hit.object.userData.seat : -1;
-      if (hs !== this.hoverChair) {
-        this.hoverChair = hs;
-        this.chairs.forEach((c, i) =>
+      const hit = this.third ? undefined : this.raycaster.intersectObjects(this.chairs, true)[0];
+      let hc: THREE.Object3D | null = hit && hit.distance < 4 ? hit.object : null;
+      while (hc && !this.chairs.includes(hc as THREE.Group)) hc = hc.parent;
+      if (hc !== this.hoverChairObj) {
+        for (const c of [this.hoverChairObj, hc]) {
+          if (!c) continue;
+          const on = c === hc;
           c.traverse((o) => {
             const m = (o as THREE.Mesh).material as THREE.MeshStandardMaterial;
-            if (m?.emissive) m.emissive.set(i === hs ? '#5a3a00' : '#000000');
-          }),
-        );
+            if (m?.emissive) m.emissive.set(on ? '#5a3a00' : '#000000');
+          });
+        }
+        this.hoverChairObj = hc;
+        this.hoverChair = hc ? hc.userData.seat : -1;
       }
     }
     // Brett leuchtet, wenn man es beim Umschauen anvisiert
@@ -1100,7 +1623,9 @@ export class World {
       }
     }
     // Zoom
-    const fov = this.zooming ? 30 : 62;
+    let fov = this.zooming ? 30 : this.seated !== null && !this.third ? settings.fovTable : settings.fovWalk;
+    // Hochformat (Handy): horizontales Sichtfeld erhalten
+    if (this.camera.aspect < 1.4 && !this.zooming) fov = Math.min(105, (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (1.4 / this.camera.aspect)) * 180) / Math.PI);
     if (Math.abs(this.camera.fov - fov) > 0.05) {
       this.camera.fov += (fov - this.camera.fov) * (1 - Math.pow(0.0001, dt));
       this.camera.updateProjectionMatrix();
@@ -1151,7 +1676,7 @@ export class World {
     for (const sh of [...this.decoShishas, ...this.seatShishas]) {
       if (!sh) continue;
       animateShisha(sh, t);
-      if (settings.smoke && Math.random() < dt * 0.25) this.puff(sh.position.clone().add(new THREE.Vector3(0, 0.84, 0)), 1, new THREE.Vector3(0, 0.12, 0), 0.5);
+      if (settings.smoke && Math.random() < dt * 0.25) this.puff(sh.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.84, 0)), 1, new THREE.Vector3(0, 0.12, 0), 0.5);
     }
     if (Math.random() < dt * 0.02) this.applyTimeOfDay();
 
@@ -1159,52 +1684,184 @@ export class World {
     this.css.render(this.scene, this.camera);
   }
 
+  // ------------------------------------------------------------ Çaycı + Bestellungen
+
+  private cayciQueue: { seat: number; item: OrderItem }[] = [];
+  private cayciPath: THREE.Vector3[] = [];
+  private cayciHome = new THREE.Vector3(3.6, 0, -3.6);
+
+  /** Wo am Tisch die Bestellung für einen Platz steht (lokal im tableRoot) */
+  private orderSpot(seat: number, k: number) {
+    const a = seatPos(seat);
+    const b = seatPos((seat + 3) % 4);
+    return a.clone().multiplyScalar(0.42).add(b.clone().multiplyScalar(0.34 - k * 0.09));
+  }
+
+  /** Çaycı rufen: kommt an den Tisch und bringt die Bestellung */
+  order(seat: number, item: OrderItem) {
+    this.cayciQueue.push({ seat, item });
+    if (this.cayciState.phase === 'idle') this.cayciState.t = 0;
+    this.cayci.say(['Geliyor abi!', 'Hemen!', 'Tamam usta!', 'Baş üstüne!'][Math.floor(Math.random() * 4)]);
+  }
+
+  /** Weg vom Çaycı zum Ziel (durch die Tür, falls im Garten) */
+  private routeTo(target: THREE.Vector3) {
+    const doorIn = new THREE.Vector3(0, 0, ROOM.d / 2 - 0.6);
+    const doorOut = new THREE.Vector3(0, 0, ROOM.d / 2 + 0.7);
+    const from = this.cayciState.pos;
+    const out = (v: THREE.Vector3) => v.z > ROOM.d / 2;
+    const path: THREE.Vector3[] = [];
+    if (out(from) !== out(target)) path.push(out(from) ? doorOut : doorIn, out(from) ? doorIn : doorOut);
+    path.push(target);
+    this.cayciPath = path;
+  }
+
   private updateCaycı(dt: number) {
     const st = this.cayciState;
-    const home = new THREE.Vector3(3.6, 0, -3.2);
-    const near = new THREE.Vector3(0.9, 0, -1.2);
     st.t -= dt;
-    const moveTo = (target: THREE.Vector3) => {
+    let walking = false;
+    const step = () => {
+      const target = this.cayciPath[0];
+      if (!target) return true;
       const d = target.clone().sub(st.pos);
       d.y = 0;
       const dist = d.length();
-      if (dist < 0.05) return true;
-      d.setLength(Math.min(dist, dt * 1.1));
+      if (dist < 0.05) {
+        this.cayciPath.shift();
+        return this.cayciPath.length === 0;
+      }
+      d.setLength(Math.min(dist, dt * 1.25));
       st.pos.add(d);
       facing(this.cayci.root, -d.x, -d.z);
-      this.cayci.root.position.y = Math.abs(Math.sin(performance.now() / 150)) * 0.03;
+      walking = true;
       return false;
     };
-    if (st.phase === 'idle' && st.t <= 0) st.phase = 'go';
-    else if (st.phase === 'go' && moveTo(near)) {
+    const tableP = (seat: number) => {
+      const dir = seatPos(seat);
+      const side = new THREE.Vector3(-dir.z, 0, dir.x);
+      return dir.clone().multiplyScalar(1.15).add(side.multiplyScalar(0.62)).add(this.tableRoot.position);
+    };
+    if (st.phase === 'idle' && st.t <= 0) {
+      // nächste Bestellung oder Runde Tee für alle
+      if (!this.cayciQueue.length) {
+        for (let s = 0; s < 4; s++) if (this.avatars[s] || this.seated === s) this.cayciQueue.push({ seat: s, item: 'cay' });
+      }
+      if (this.cayciQueue.length) {
+        st.phase = 'go';
+        this.routeTo(tableP(this.cayciQueue[0].seat));
+      } else st.t = 30;
+    } else if (st.phase === 'go' && step()) {
       st.phase = 'serve';
-      st.t = 2;
-      facing(this.cayci.root, -near.x, -near.z);
+      st.t = 1.4;
+      const c = this.tableRoot.position;
+      facing(this.cayci.root, st.pos.x - c.x, st.pos.z - c.z);
+      // alle Bestellungen für diesen Tisch abstellen
+      for (const o of this.cayciQueue) this.placeOrder(o.seat, o.item);
+      this.cayciQueue = [];
       sfx.spoon();
-      this.serveTea();
-    } else if (st.phase === 'serve' && st.t <= 0) st.phase = 'back';
-    else if (st.phase === 'back' && moveTo(home)) {
+      this.cayci.say(['Afiyet olsun!', 'Buyrun!', 'Taze demledim!'][Math.floor(Math.random() * 3)]);
+    } else if (st.phase === 'serve' && st.t <= 0) {
+      st.phase = 'back';
+      this.routeTo(this.cayciHome.clone());
+    } else if (st.phase === 'back' && step()) {
       st.phase = 'idle';
-      st.t = 70 + Math.random() * 60;
+      st.t = this.cayciQueue.length ? 0 : 80 + Math.random() * 60;
       facing(this.cayci.root, 0, 1);
-      this.cayci.root.position.y = 0;
     }
-    this.cayci.root.position.x = st.pos.x;
-    this.cayci.root.position.z = st.pos.z;
+    this.cayci.setWalking(walking ? 1.25 : 0);
+    this.cayci.root.position.set(st.pos.x, 0.72, st.pos.z);
     this.cayci.update(dt);
   }
 
-  private serveTea() {
-    this.teaGlasses = [];
-    for (let s = 0; s < 4; s++) {
-      if (!this.avatars[s] && this.seated !== s) continue;
-      const a = seatPos(s);
-      const b = seatPos((s + 3) % 4);
-      const p = a.clone().multiplyScalar(0.42).add(b.clone().multiplyScalar(0.36));
-      this.teaGlasses.push(this.teaGlassMesh(new THREE.Vector3(p.x, TABLE_Y, p.z)));
+  /** Bestellung als 3D-Objekt neben den Platz stellen (max. 3 pro Platz) */
+  private placeOrder(seat: number, item: OrderItem) {
+    const list = this.orders[seat];
+    if (list.length >= 3) this.itemsGroup.remove(list.shift()!);
+    list.forEach((o, k) => o.position.copy(this.orderSpot(seat, k)).setY(TABLE_Y));
+    const m = this.orderMesh(item);
+    m.position.copy(this.orderSpot(seat, list.length)).setY(TABLE_Y);
+    list.push(m);
+    this.itemsGroup.add(m);
+  }
+
+  private orderMesh(item: OrderItem) {
+    const g = new THREE.Group();
+    const saucer = (col: string) => {
+      const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.008, 20), new THREE.MeshStandardMaterial({ color: col, roughness: 0.4 }));
+      g.add(sc);
+    };
+    const glassTea = (col: string) => {
+      const gl = new THREE.Mesh(
+        new THREE.LatheGeometry([new THREE.Vector2(0.018, 0), new THREE.Vector2(0.024, 0.02), new THREE.Vector2(0.018, 0.045), new THREE.Vector2(0.026, 0.085)], 16),
+        new THREE.MeshStandardMaterial({ color: col, transparent: true, opacity: 0.85, roughness: 0.05, side: THREE.DoubleSide }),
+      );
+      gl.position.y = 0.006;
+      g.add(gl);
+      const spoon = new THREE.Mesh(new THREE.BoxGeometry(0.004, 0.002, 0.07), new THREE.MeshStandardMaterial({ color: '#ccc', metalness: 0.8 }));
+      spoon.position.set(0.035, 0.008, 0);
+      g.add(spoon);
+    };
+    switch (item) {
+      case 'cay':
+        saucer('#d33');
+        glassTea('#a8331a');
+        break;
+      case 'oralet':
+        saucer('#f2f2f2');
+        glassTea('#e8862a');
+        break;
+      case 'kahve': {
+        saucer('#f4f1ea');
+        const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.02, 0.045, 16), new THREE.MeshStandardMaterial({ color: '#f4f1ea', roughness: 0.3 }));
+        cup.position.y = 0.027;
+        const foam = new THREE.Mesh(new THREE.CircleGeometry(0.023, 16), new THREE.MeshStandardMaterial({ color: '#6b4a2a' }));
+        foam.rotation.x = -Math.PI / 2;
+        foam.position.y = 0.049;
+        const lok = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.018, 0.018), new THREE.MeshStandardMaterial({ color: '#f2b8c6', roughness: 0.9 }));
+        lok.position.set(0.034, 0.013, 0.012);
+        g.add(cup, foam, lok);
+        // Wasserglas daneben
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.016, 0.07, 12), new THREE.MeshStandardMaterial({ color: '#dff0f6', transparent: true, opacity: 0.45 }));
+        w.position.set(-0.06, 0.035, 0);
+        g.add(w);
+        break;
+      }
+      case 'su': {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.019, 0.09, 14), new THREE.MeshStandardMaterial({ color: '#dff0f6', transparent: true, opacity: 0.45, roughness: 0.05 }));
+        w.position.y = 0.045;
+        g.add(w);
+        break;
+      }
+      case 'sahlep': {
+        const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.027, 0.075, 16), new THREE.MeshStandardMaterial({ color: '#c0442a', roughness: 0.5 }));
+        mug.position.y = 0.038;
+        const top = new THREE.Mesh(new THREE.CircleGeometry(0.028, 16), new THREE.MeshStandardMaterial({ color: '#efe3cc' }));
+        top.rotation.x = -Math.PI / 2;
+        top.position.y = 0.076;
+        const cin = new THREE.Mesh(new THREE.CircleGeometry(0.012, 10), new THREE.MeshStandardMaterial({ color: '#8a5a2a' }));
+        cin.rotation.x = -Math.PI / 2;
+        cin.position.y = 0.077;
+        g.add(mug, top, cin);
+        break;
+      }
+      case 'kuruyemis': {
+        const bowl = new THREE.Mesh(new THREE.SphereGeometry(0.05, 16, 8, 0, Math.PI * 2, Math.PI / 2, Math.PI / 2), new THREE.MeshStandardMaterial({ color: '#c8a26a', side: THREE.DoubleSide }));
+        bowl.position.y = 0.045;
+        g.add(bowl);
+        const cols = ['#d9b98a', '#8a5a2a', '#b5793e', '#e8d7b0', '#6b8a3a'];
+        for (let i = 0; i < 14; i++) {
+          const n = new THREE.Mesh(new THREE.SphereGeometry(0.009, 6, 5), new THREE.MeshStandardMaterial({ color: cols[i % cols.length] }));
+          const a = i * 2.4;
+          const r = 0.01 + (i % 4) * 0.008;
+          n.position.set(Math.cos(a) * r, 0.03 + (i % 3) * 0.006, Math.sin(a) * r);
+          n.scale.set(1, 0.7, 1.3);
+          g.add(n);
+        }
+        break;
+      }
     }
-    if (this.visual) this.setGame(this.visual);
-    else this.teaGlasses.forEach((g) => this.gameGroup.add(g));
+    g.scale.setScalar(1.4);
+    return g;
   }
 
   /** Charakter-Vorschau (Editor) */
@@ -1217,12 +1874,17 @@ export class World {
     dl.position.set(1, 2, 2);
     scene.add(dl);
     const cam = new THREE.PerspectiveCamera(35, 1, 0.1, 10);
-    cam.position.set(0.18, 0.85, 2.5);
-    cam.lookAt(0.18, 0.6, 0);
-    let a = new Avatar3D(spec, name);
+    cam.position.set(0.22, 0.42, 3.75);
+    cam.lookAt(0.22, 0.32, 0);
+    const mk = (sp: Avatar, n: string) => {
+      const av = new Avatar3D(sp, n, { standing: true });
+      av.root.scale.setScalar(0.88);
+      return av;
+    };
+    let a = mk(spec, name);
     scene.add(a.root);
     let sh = makeShisha((spec.shisha as ShishaStyle) ?? 'classic');
-    sh.position.set(0.62, -0.45, 0.05);
+    sh.position.set(0.68, -0.72, 0.05);
     scene.add(sh);
     container.append(r.domElement);
     let rot = 0.4;
@@ -1247,11 +1909,11 @@ export class World {
     return {
       update(s: Avatar, n: string) {
         scene.remove(a.root);
-        a = new Avatar3D(s, n);
+        a = mk(s, n);
         scene.add(a.root);
         scene.remove(sh);
         sh = makeShisha((s.shisha as ShishaStyle) ?? 'classic');
-        sh.position.set(0.62, -0.45, 0.05);
+        sh.position.set(0.68, -0.72, 0.05);
         scene.add(sh);
       },
       emote(k: string) {

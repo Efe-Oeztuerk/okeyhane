@@ -15,6 +15,8 @@ import { sfx, unlockAudio } from './sound.ts';
 import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
 import { CREDITS } from './models.ts';
+import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP } from './controls.ts';
+import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
 
 // ------------------------------------------------------------------ Zustand
 
@@ -29,6 +31,7 @@ interface TableSummary {
   tv: MediaState;
   music: MediaState;
   signatures: Record<number, string>;
+  spot?: number;
 }
 
 let profile: Profile = loadProfile() ?? { name: '', avatar: { ...defaultAvatar }, signature: null };
@@ -78,6 +81,7 @@ on('table', (m) => {
   you = m.you;
   sessionStorage.setItem('tableCode', table!.code);
   if (!inCafe) enterCafe();
+  world.setSpot(table!.spot ?? 0);
   world.setPlayers(table!.seats, you.seat ?? you.watching);
   // Spiel startet: automatisch hinsetzen
   if (table!.started && !prevStarted) {
@@ -139,6 +143,12 @@ on('emote', (m) => {
     setTimeout(() => world.smokeCloud(), 1400);
     addLog(h('div', { class: 'sys' }, `${nameOf(m.seat)} 💨`));
   }
+});
+on('order', (m) => {
+  const item = m.item as OrderItem;
+  world.order(m.seat, item);
+  addLog(h('div', { class: 'sys' }, `${m.from}: ${orderLabel(item)} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
+  if (m.seat === you.seat) sfx.bell();
 });
 on('eye', (m) => {
   world.eye(m.seat, m.key);
@@ -262,6 +272,12 @@ function showMenu() {
   const nameInput = h('input', { value: profile.name, placeholder: t('yourName'), maxLength: 20 });
   const codeInput = h('input', { placeholder: t('code'), maxLength: 5, style: { textTransform: 'uppercase', width: '120px' } });
   const specBox = h('input', { type: 'checkbox' });
+  codeInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') go({ type: 'joinTable', code: codeInput.value, spectate: specBox.checked });
+  });
+  nameInput.addEventListener('keydown', (e) => {
+    if ((e as KeyboardEvent).key === 'Enter') commitName();
+  });
   const commitName = () => {
     profile.name = nameInput.value.trim() || 'Oyuncu';
     saveProfile(profile);
@@ -337,6 +353,19 @@ function openCredits() {
 
 function modal(...children: (HTMLElement | string)[]) {
   const m = h('div', { class: 'modal', onclick: (e: MouseEvent) => e.target === m && m.remove() }, h('div', { class: 'panel' }, ...children, h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '12px' } }, h('button', { onclick: () => m.remove() }, 'OK'))));
+  m.addEventListener('keydown', (e) => {
+    const ke = e as KeyboardEvent;
+    if (ke.key === 'Escape') return m.remove();
+    if (ke.key !== 'Enter') return;
+    const tgt = ke.target as HTMLElement;
+    if (tgt instanceof HTMLInputElement) {
+      // Enter = Knopf in derselben Zeile (z. B. „Laden“), sonst OK
+      const btn = (tgt.closest('.row')?.querySelector('button.primary, button') as HTMLButtonElement | null) ?? null;
+      e.preventDefault();
+      if (btn) btn.click();
+      else m.remove();
+    } else if (!(tgt instanceof HTMLButtonElement) && !(tgt instanceof HTMLSelectElement)) m.remove();
+  });
   ui.append(m);
   return m;
 }
@@ -379,6 +408,31 @@ function openSettings() {
         options.map(([v, l]) => h('option', { value: v, selected: settings[key] === v }, l)),
       ),
     );
+  const range = (key: keyof typeof settings, label: string, min: number, max: number, unit: string, after?: () => void) => {
+    const out = h('span', { class: 'muted', style: { minWidth: '44px', textAlign: 'right' } }, settings[key] + unit);
+    return h(
+      'label',
+      {},
+      label,
+      h(
+        'span',
+        { class: 'row', style: { gap: '6px', flexWrap: 'nowrap' } },
+        h('input', {
+          type: 'range',
+          min,
+          max,
+          value: settings[key] as number,
+          oninput: (e: Event) => {
+            (settings as any)[key] = Number((e.target as HTMLInputElement).value);
+            out.textContent = settings[key] + unit;
+            saveSettings();
+            after?.();
+          },
+        }),
+        out,
+      ),
+    );
+  };
   const check = (key: keyof typeof settings, label: string) =>
     h('label', {}, label, h('input', { type: 'checkbox', checked: settings[key] as boolean, onchange: (e: Event) => (((settings as any)[key] = (e.target as HTMLInputElement).checked), saveSettings()) }));
   modal(
@@ -404,7 +458,20 @@ function openSettings() {
         ['evening', '🌇'],
         ['night', '🌙'],
       ]),
+      h('b', { style: { marginTop: '10px' } }, getLang() === 'de' ? '🎥 Ansicht & Steuerung' : '🎥 Görüş & kontrol'),
+      range('fovTable', getLang() === 'de' ? 'Sichtfeld am Tisch' : 'Masada görüş açısı', 50, 90, '°'),
+      range('camTilt', getLang() === 'de' ? 'Blickwinkel am Tisch (nach unten)' : 'Masada bakış açısı (aşağı)', 8, 35, '°', () => world.seated !== null && world.sitAt(world.seated)),
+      range('fovWalk', getLang() === 'de' ? 'Sichtfeld beim Laufen' : 'Yürürken görüş açısı', 50, 90, '°'),
+      range('sensitivity', getLang() === 'de' ? 'Empfindlichkeit (Maus/Touch/Stick)' : 'Hassasiyet (fare/dokunma/kol)', 30, 250, '%'),
+      check('invertY', getLang() === 'de' ? 'Y-Achse umkehren' : 'Y eksenini ters çevir'),
+      select('touchUi', getLang() === 'de' ? 'Touch-Steuerung (Handy/iPad)' : 'Dokunmatik kontrol (telefon/iPad)', [
+        ['auto', t('auto')],
+        ['on', getLang() === 'de' ? 'An' : 'Açık'],
+        ['off', getLang() === 'de' ? 'Aus' : 'Kapalı'],
+      ]),
+      check('showKeyHints', getLang() === 'de' ? 'Tastenhilfe am Tisch zeigen' : 'Masada tuş ipuçlarını göster'),
       keybindSection(),
+      controllerSection(),
       h(
         'label',
         {},
@@ -422,45 +489,101 @@ function openSettings() {
 
 function keybindSection() {
   const de = getLang() === 'de';
-  const names: Record<keyof KeyBinds, string> = {
-    forward: de ? 'Vorwärts' : 'İleri',
-    back: de ? 'Rückwärts' : 'Geri',
-    left: de ? 'Links' : 'Sol',
-    right: de ? 'Rechts' : 'Sağ',
-    look: de ? 'Umschauen / Brett' : 'Etrafa bak / Masa',
-    zoom: de ? 'Zoom (halten)' : 'Yakınlaştır (basılı)',
-    ptt: de ? 'Push-to-Talk' : 'Bas-konuş',
-    wink: t('eye_wink').replace(/ \(\d\)/, ''),
-    blink: t('eye_blink').replace(/ \(\d\)/, ''),
-    wide: t('eye_wide').replace(/ \(\d\)/, ''),
-    sheet: t('sheet'),
-  };
-  const box = h('div', { class: 'col', style: { margin: '10px 0', gap: '4px' } }, h('b', {}, de ? '⌨️ Tastenbelegung' : '⌨️ Tuş ayarları'));
+  const groups: [string, [keyof KeyBinds, string, string][]][] = [
+    [
+      de ? '🚶 Bewegung & Ansicht' : '🚶 Hareket & görüş',
+      [
+        ['forward', 'Vorwärts', 'İleri'],
+        ['back', 'Rückwärts', 'Geri'],
+        ['left', 'Links', 'Sol'],
+        ['right', 'Rechts', 'Sağ'],
+        ['look', 'Umschauen ↔ Brett', 'Etrafa bak ↔ masa'],
+        ['zoom', 'Zoom (halten)', 'Yakınlaştır (basılı)'],
+        ['thirdBack', '3rd Person von hinten (halten)', 'Arkadan bak (basılı)'],
+        ['thirdFront', '3rd Person von vorne (halten)', 'Önden bak (basılı)'],
+      ],
+    ],
+    [
+      de ? '🀄 Spielzüge' : '🀄 Hamleler',
+      [
+        ['drawPile', 'Aus der Mitte ziehen', 'Ortadan çek'],
+        ['drawSide', 'Von der Seite nehmen', 'Yandan al'],
+        ['discard', 'Abwerfen', 'Taş at'],
+        ['finish', 'Fertig (Bitirmek)', 'Bitir'],
+        ['indicator', 'Gösterge zeigen', 'Gösterge göster'],
+        ['okeyBir', 'Okey bir (Perişan)', 'Okey bir (Perişan)'],
+        ['select', 'Stein markieren (Shift = Peri)', 'Taş seç (Shift = per)'],
+        ['flip', 'Stein umdrehen', 'Taşı çevir'],
+        ['sortRuns', 'Sortieren: Reihen', 'Diz: seri'],
+        ['sortPairs', 'Sortieren: Paare', 'Diz: çift'],
+      ],
+    ],
+    [
+      de ? '☕ Kahvehane & Emotes' : '☕ Kahvehane & hareketler',
+      [
+        ['emoteTea', 'Çay trinken', 'Çay iç'],
+        ['emoteNargile', 'Nargile ziehen', 'Nargile çek'],
+        ['emoteSlam', 'Auf den Tisch hauen', 'Masaya vur'],
+        ['emoteTespih', 'Tespih drehen', 'Tespih çek'],
+        ['emoteHeadshake', 'Kopf schütteln', 'Kafa salla'],
+        ['emoteRub', 'Hände reiben', 'El ovuştur'],
+        ['wink', 'Zwinkern', 'Göz kırp'],
+        ['blink', 'Blinzeln', 'Göz kırpıştır'],
+        ['wide', 'Große Augen', 'Göz aç'],
+        ['cayci', 'Çaycı rufen / bestellen', 'Çaycıyı çağır'],
+        ['quick', 'Sprüche-Menü', 'Hazır sözler'],
+        ['chat', 'Chat schreiben', 'Sohbet yaz'],
+        ['sheet', 'Punktezettel', 'Puan kağıdı'],
+        ['media', 'TV & Musik', 'TV & müzik'],
+        ['ptt', 'Push-to-Talk', 'Bas-konuş'],
+      ],
+    ],
+  ];
+  const box = h('div', { class: 'col keybinds', style: { margin: '10px 0', gap: '4px' } });
   const render = () => {
-    box.querySelectorAll('label').forEach((l) => l.remove());
-    for (const k of Object.keys(names) as (keyof KeyBinds)[]) {
-      const btn = h('button', { class: 'small ghost', style: { minWidth: '110px' } }, keyLabel(settings.keys[k]));
-      btn.onclick = () => {
-        btn.textContent = de ? 'Taste drücken…' : 'Tuşa bas…';
-        const cap = (e: KeyboardEvent) => {
-          e.preventDefault();
-          e.stopPropagation();
-          removeEventListener('keydown', cap, true);
-          if (e.code !== 'Escape') {
-            settings.keys[k] = e.code;
-            saveSettings();
-          }
-          render();
-          renderFocusBadge();
+    box.innerHTML = '';
+    box.append(h('b', {}, de ? '⌨️ Tastenbelegung' : '⌨️ Tuş ayarları'), h('div', { class: 'muted small' }, de ? 'Pfeiltasten bewegen den Cursor auf der Istaka · Shift + Pfeil schiebt markierte Steine' : 'Ok tuşları ıstakada imleci gezdirir · Shift + ok seçili taşları kaydırır'));
+    const used = new Map<string, number>();
+    for (const k of Object.keys(settings.keys)) used.set(settings.keys[k as keyof KeyBinds], (used.get(settings.keys[k as keyof KeyBinds]) ?? 0) + 1);
+    for (const [title, list] of groups) {
+      box.append(h('div', { class: 'kb-group' }, title));
+      for (const [k, dl, tl] of list) {
+        const dup = (used.get(settings.keys[k]) ?? 0) > 1;
+        const btn = h('button', { class: 'small ghost' + (dup ? ' dup' : ''), style: { minWidth: '96px' }, title: dup ? (de ? 'doppelt belegt' : 'çift atanmış') : '' }, keyLabel(settings.keys[k]));
+        btn.onclick = () => {
+          btn.textContent = de ? 'Taste drücken…' : 'Tuşa bas…';
+          const cap = (e: KeyboardEvent) => {
+            e.preventDefault();
+            e.stopPropagation();
+            removeEventListener('keydown', cap, true);
+            if (e.code !== 'Escape') {
+              settings.keys[k] = e.code;
+              saveSettings();
+            }
+            render();
+            renderFocusBadge();
+          };
+          addEventListener('keydown', cap, true);
         };
-        addEventListener('keydown', cap, true);
-      };
-      box.append(h('label', {}, names[k], btn));
+        box.append(h('label', {}, de ? dl : tl, btn));
+      }
     }
+    box.append(h('button', { class: 'small ghost', onclick: () => ((settings.keys = { ...defaultKeys }), saveSettings(), render()) }, de ? 'Standard wiederherstellen' : 'Varsayılana dön'));
   };
   render();
-  box.append(h('button', { class: 'small ghost', onclick: () => ((settings.keys = { ...defaultKeys }), saveSettings(), render()) }, de ? 'Standard wiederherstellen' : 'Varsayılana dön'));
   return box;
+}
+
+function controllerSection() {
+  const de = getLang() === 'de';
+  const pads = [...(navigator.getGamepads?.() ?? [])].filter(Boolean);
+  return h(
+    'div',
+    { class: 'col', style: { margin: '10px 0', gap: '4px' } },
+    h('b', {}, '🎮 Controller'),
+    h('div', { class: 'muted small' }, pads.length ? (de ? 'Verbunden: ' : 'Bağlı: ') + pads[0]!.id.slice(0, 50) : de ? 'Kein Controller erkannt – einstecken und eine Taste drücken.' : 'Kol bulunamadı – tak ve bir tuşa bas.'),
+    h('table', { class: 'padhelp' }, PAD_HELP().map(([a, b]) => h('tr', {}, h('td', {}, a), h('td', {}, b)))),
+  );
 }
 
 // ------------------------------------------------------------------ Kahvehane
@@ -471,9 +594,20 @@ function enterCafe() {
   menu?._pv?.dispose();
   ui.innerHTML = '';
   chatLog = [];
-  addLog(h('div', { class: 'sys' }, t('walkHint')));
-  world.onChair = (seat) => {
+  addLog(h('div', { class: 'sys' }, touchActive() ? (getLang() === 'de' ? 'Links: Joystick zum Laufen · rechts wischen: umschauen · Stuhl antippen: hinsetzen' : 'Sol: yürü · sağda kaydır: etrafa bak · sandalyeye dokun: otur') : t('walkHint')));
+  world.setSelf(profile.avatar, profile.name || 'Oyuncu');
+  world.onChair = (seat, spot) => {
     if (!table) return;
+    if (spot !== (table.spot ?? 0)) {
+      // anderer Tisch: vor dem Spielstart zieht die ganze Runde um
+      if (table.started) return toast(getLang() === 'de' ? 'Das Spiel läuft – Tischwechsel erst danach' : 'Oyun sürüyor – masa sonra değişir');
+      send({ type: 'setSpot', spot });
+      toast(`🪑 ${getLang() === 'de' ? SPOTS[spot].de : SPOTS[spot].tr}`, '#2d5a3a');
+      if (you.seat === null || you.seat !== seat) {
+        if (!table.seats[seat]) send({ type: 'sit', seat });
+      } else world.sitAt(seat);
+      return;
+    }
     if (you.seat === seat) {
       world.sitAt(seat);
       renderAll();
@@ -580,6 +714,8 @@ function renderFocusBadge() {
     : getLang() === 'de'
       ? `👀 Umschauen mit der Maus · Brett anvisieren + Klick oder ${L} = zurück · ${Z} = Zoom`
       : `👀 Fareyle etrafa bak · masaya nişan al + tıkla ya da ${L} = geri · ${Z} = yakınlaştır`;
+  if (touchActive()) el.textContent = world.focus ? (getLang() === 'de' ? '🎯 Brett · 👁 = umschauen · Stein antippen = wählen, doppelt = umdrehen, ziehen = werfen' : '🎯 Masa · 👁 = etrafa bak · taşa dokun = seç, çift = çevir, sürükle = at') : getLang() === 'de' ? '👀 Wischen = umschauen · Brett antippen = zurück' : '👀 Kaydır = etrafa bak · masaya dokun = geri';
+  else if (world.focus && settings.showKeyHints && table?.started) el.append(h('div', { class: 'keyline' }, keyHintLine()));
 }
 
 function renderHint() {
@@ -592,6 +728,10 @@ function renderHint() {
   el.classList.toggle('hidden', !walking);
   const K = settings.keys;
   const mv = [K.forward, K.left, K.back, K.right].map(keyLabel).join('');
+  if (touchActive()) {
+    el.textContent = getLang() === 'de' ? 'Joystick: laufen · Wischen: umschauen · Stuhl antippen: hinsetzen · 🎥 halten: dich selbst sehen' : 'Joystick: yürü · kaydır: etrafa bak · sandalyeye dokun: otur · 🎥 basılı: kendini gör';
+    return;
+  }
   el.textContent = looking
     ? getLang() === 'de'
       ? `Maus: umschauen · ${mv}: laufen · Stuhl anvisieren + Klick: hinsetzen · Esc: Mauszeiger`
@@ -698,7 +838,11 @@ function renderChat() {
   };
   input.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter') sendChat();
+    if (e.key === 'Enter') {
+      if (!input.value.trim()) return input.blur();
+      sendChat();
+    }
+    if (e.key === 'Escape') input.blur();
   });
   el.append(
     log,
@@ -710,22 +854,90 @@ function renderChat() {
   log.scrollTop = log.scrollHeight;
 }
 
-// Tastatur: 1/2/3 Augen-Signale
-addEventListener('keydown', (e) => {
-  if (!inCafe || e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-  const K = settings.keys;
-  if (e.code === K.wink) send({ type: 'eye', key: 'wink' });
-  if (e.code === K.blink) send({ type: 'eye', key: 'blink' });
-  if (e.code === K.wide) send({ type: 'eye', key: 'wide' });
-  if (e.code === K.sheet && table?.started) {
+// Steuerung ohne Maus: Tastenkürzel, Controller, Touch
+const ORDER_LABELS: Record<OrderItem, [string, string]> = {
+  cay: ['🫖 Çay', '🫖 Çay (Tee)'],
+  kahve: ['☕ Türk kahvesi', '☕ Türkischer Kaffee'],
+  kuruyemis: ['🥜 Kuruyemiş', '🥜 Kuruyemiş (Nüsse)'],
+  su: ['💧 Su', '💧 Su (Wasser)'],
+  oralet: ['🍊 Oralet', '🍊 Oralet (Orangentee)'],
+  sahlep: ['🥛 Sahlep', '🥛 Sahlep (heiße Milch, Zimt)'],
+};
+function orderLabel(i: OrderItem) {
+  return ORDER_LABELS[i]?.[getLang() === 'de' ? 1 : 0] ?? i;
+}
+function needTile(): number | null {
+  const id = istaka.actionTile();
+  if (id === null) toast(getLang() === 'de' ? 'Erst einen Stein wählen (Pfeiltasten / Klick)' : 'Önce bir taş seç (ok tuşları / tık)');
+  return id;
+}
+setupControls(world, istaka, {
+  inCafe: () => inCafe,
+  seated: () => you.seat !== null && world.seated === you.seat,
+  started: () => !!table?.started && !!st,
+  drawPile: () => myTurn('draw') && act({ action: 'drawPile' }),
+  drawSide: () => myTurn('draw') && act({ action: 'drawDiscard' }),
+  discard: () => {
+    if (!myTurn('discard')) return;
+    const id = needTile();
+    if (id !== null) act({ action: 'discard', tileId: id });
+  },
+  finish: () => {
+    if (!myTurn('discard')) return;
+    const id = needTile();
+    if (id !== null) act({ action: 'finish', tileId: id });
+  },
+  indicator: () => act({ action: 'showIndicator' }),
+  okeyBir: () => {
+    if (table?.rules.mode !== 'perisan' || !myTurn('discard')) return;
+    const id = needTile();
+    if (id !== null) act({ action: 'okeyBir', tileId: id });
+  },
+  sortRuns: () => !table?.rules.hardMode && istaka.sortRuns(),
+  sortPairs: () => !table?.rules.hardMode && istaka.sortPairs(),
+  emote: (k) => send({ type: 'emote', key: k }),
+  eye: (k) => send({ type: 'eye', key: k }),
+  openCayci,
+  openQuick: () =>
+    popupMenu(
+      '💬 ' + (getLang() === 'de' ? 'Sprüche' : 'Hazır sözler'),
+      ['hadi', 'okeyBende', 'caylar', 'buElBizim', 'yazik', 'helal', 'tesekkur', 'gecmisOlsun'].map((k) => ({ label: t('q_' + k), fn: () => send({ type: 'quick', key: k }) })),
+    ),
+  openEmotes: () =>
+    popupMenu('😊 Emotes', [
+      ...['tea', 'nargile', 'slam', 'tespih', 'headshake', 'rubhands'].map((k) => ({ label: t('e_' + k), fn: () => send({ type: 'emote', key: k }) })),
+      ...['wink', 'blink', 'wide'].map((k) => ({ label: '👁 ' + t('eye_' + k).replace(/ \(\d\)/, ''), fn: () => send({ type: 'eye', key: k }) })),
+    ]),
+  focusChat: () => {
+    els.chat?.classList.add('open');
+    (els.chat?.querySelector('input') as HTMLInputElement | null)?.focus();
+  },
+  toggleChat: () => els.chat?.classList.toggle('open'),
+  toggleSheet: () => {
+    if (!table?.started) return;
     sheetOpen = !sheetOpen;
     renderSheet();
-  }
-  if (e.key === 'Escape' && world.seated !== null && table && !table.started) {
-    world.sitAt(null);
-    renderAll();
-  }
+  },
+  openMedia: () => table && openMedia(),
+  escape: () => {
+    closeMenu();
+    if (world.seated !== null && table && !table.started) {
+      world.sitAt(null);
+      renderAll();
+    }
+  },
 });
+
+function openCayci() {
+  if (you.seat === null) {
+    return toast(getLang() === 'de' ? 'Setz dich erst an den Tisch – der Çaycı bringt es dann' : 'Önce masaya otur – çaycı getirsin');
+  }
+  sfx.spoon();
+  popupMenu(
+    '🫖 ' + (getLang() === 'de' ? 'Çaycı rufen – was darf es sein?' : 'Çaycı! Ne alırsın?'),
+    ORDER_ITEMS.map((i) => ({ label: orderLabel(i), fn: () => send({ type: 'order', item: i }) })),
+  );
+}
 
 // ------------------------------------------------------------------ Lobby + Regeln
 

@@ -6,6 +6,9 @@
   --red: #8e1b1b;
   --ink: #1d2a6b;
   --panel: rgba(32, 20, 12, 0.88);
+  --tw: 46px;
+  --th: 64px;
+  --tf: 28px;
 }
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; overflow: hidden; background: #1a0f08; font-family: Inter, system-ui, sans-serif; color: var(--cream); user-select: none; }
@@ -92,15 +95,17 @@ h1, h2, h3 { margin: 0 0 10px; }
 /* Istaka */
 .istaka-wrap { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; align-items: center; gap: 8px; padding-bottom: 10px; }
 .istaka { padding: 10px 12px 14px; border-radius: 12px 12px 6px 6px; background: linear-gradient(#a4703c, #7a4b2a 60%, #5a3a22); box-shadow: 0 10px 30px rgba(0,0,0,0.6), inset 0 2px 0 rgba(255,255,255,0.2); }
-.istaka .rowslots { display: grid; grid-template-columns: repeat(16, 46px); gap: 3px; height: 66px; margin-bottom: 6px; border-bottom: 5px solid #4a2e18; }
-.slot { width: 46px; height: 64px; border-radius: 6px; }
+.istaka { touch-action: none; }
+.istaka .rowslots { display: grid; grid-template-columns: repeat(16, var(--tw)); gap: 3px; height: calc(var(--th) + 2px); margin-bottom: 6px; border-bottom: 5px solid #4a2e18; }
+.slot { width: var(--tw); height: var(--th); border-radius: 6px; }
+.slot.cursor { outline: 3px solid #7fd0ff; outline-offset: 1px; background: rgba(127,208,255,0.18); }
 .slot.over { background: rgba(255,230,160,0.25); }
-.tile { width: 46px; height: 64px; border-radius: 6px; background: linear-gradient(#fffaf0, #efe3c8); box-shadow: 0 3px 0 #c9b48a, 0 4px 6px rgba(0,0,0,0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: grab; position: relative; transition: transform 0.12s; }
+.tile { touch-action: none; width: var(--tw); height: var(--th); border-radius: 6px; background: linear-gradient(#fffaf0, #efe3c8); box-shadow: 0 3px 0 #c9b48a, 0 4px 6px rgba(0,0,0,0.35); display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: grab; position: relative; transition: transform 0.12s; }
 .tile:hover { transform: translateY(-3px); }
 .tile.sel { transform: translateY(-10px); box-shadow: 0 3px 0 #c9b48a, 0 0 0 3px var(--gold), 0 8px 12px rgba(0,0,0,0.4); }
 .tile.dragging { opacity: 0.3; }
 .tile.okey::after { content: 'OKEY'; position: absolute; bottom: 2px; font-size: 7px; font-weight: 800; color: #2e7d32; letter-spacing: 0.5px; }
-.tile .num { font-family: Georgia, serif; font-weight: 800; font-size: 28px; line-height: 1; }
+.tile .num { font-family: Georgia, serif; font-weight: 800; font-size: var(--tf); line-height: 1; }
 .tile .num.fake { color: #2e7d32; }
 .tile .heart { font-size: 12px; line-height: 1; margin-top: 2px; }
 .tile.new { animation: drop 0.4s ease-out; }
@@ -173,3 +178,72 @@ h1, h2, h3 { margin: 0 0 10px; }
 @keyframes wide { 0% { box-shadow: inset 0 0 220px 120px rgba(0,0,0,0.85); } 25% { box-shadow: inset 0 0 40px 10px rgba(0,0,0,0.35); background: rgba(255,255,255,0.08); } 100% { box-shadow: inset 0 0 0 0 rgba(0,0,0,0); } }
 .selfflash { position: fixed; left: 50%; top: 38%; transform: translateX(-50%); padding: 8px 16px; border-radius: 12px; background: rgba(20,12,8,0.75); color: var(--gold); font-weight: 800; pointer-events: none; z-index: 71; animation: flash 1.6s ease-out forwards; }
 @keyframes flash { 0% { opacity: 0; transform: translate(-50%, 10px); } 15% { opacity: 1; transform: translate(-50%, 0); } 75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -14px); } }
+
+#world { touch-action: none; }
+
+/* Auswahl-Menü (Çaycı, Sprüche, Emotes) */
+.popmenu { position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%); min-width: 300px; display: flex; flex-direction: column; gap: 6px; z-index: 45; }
+.popmenu .pm-title { font-weight: 800; color: var(--gold); margin-bottom: 4px; }
+.popmenu .pm-item { text-align: left; display: flex; gap: 10px; align-items: center; background: rgba(255,255,255,0.07); box-shadow: none; }
+.popmenu .pm-item.hl { background: rgba(227,176,75,0.35); }
+.popmenu .pm-num { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 6px; background: rgba(0,0,0,0.35); font-size: 13px; }
+.popmenu .pm-foot { margin-top: 4px; }
+
+/* Tastenbelegung */
+.keybinds .kb-group { margin-top: 10px; font-weight: 800; color: var(--gold); font-size: 14px; }
+.keybinds label { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+button.dup { outline: 2px solid #e05050; }
+.small { font-size: 12px; }
+.padhelp { font-size: 13px; border-collapse: collapse; }
+.padhelp td { padding: 2px 8px 2px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.padhelp td:first-child { color: var(--gold); white-space: nowrap; font-weight: 700; }
+.focusbadge .keyline { margin-top: 3px; font-size: 11px; opacity: 0.75; }
+
+/* Touch-Steuerung */
+.touch-ui { position: fixed; inset: 0; pointer-events: none; z-index: 30; }
+.touch-ui > * { pointer-events: auto; }
+.joystick { position: absolute; left: 24px; bottom: 24px; width: 120px; height: 120px; border-radius: 50%; background: rgba(20,12,8,0.45); border: 2px solid rgba(255,230,180,0.35); touch-action: none; display: grid; place-items: center; }
+.joystick .knob { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,230,180,0.75); box-shadow: 0 2px 8px rgba(0,0,0,0.5); }
+.touch-ui.seated .joystick { display: none; }
+.tbtns { position: absolute; right: 10px; top: 64px; bottom: 10px; display: flex; flex-direction: column; flex-wrap: wrap-reverse; align-content: flex-start; justify-content: center; gap: 8px; }
+.tbtn { width: 52px; height: 52px; border-radius: 50%; padding: 0; font-size: 22px; background: rgba(32,20,12,0.75); border: 2px solid rgba(227,176,75,0.5); touch-action: none; }
+.touch-ui:not(.seated) .seated-only { display: none; }
+body.touch .chat { display: none; }
+body.touch .chat.open { display: flex; z-index: 35; }
+body.touch .hint { bottom: 160px; font-size: 13px; }
+body.touch .crosshair { display: none; }
+
+/* Kleine Bildschirme (Handy quer, kleines Tablet) */
+@media (max-height: 620px), (max-width: 980px) {
+  :root { --tw: 36px; --th: 50px; --tf: 21px; }
+  .tile .heart { font-size: 9px; }
+  .hud-left { width: 210px; font-size: 12px; padding: 10px; }
+  .hud-right { max-width: 340px; }
+  .hud-right button.small { padding: 4px 7px; font-size: 12px; }
+  .chat { width: 250px; }
+  .chat .log { height: 110px; }
+  .dropzones { bottom: 140px; right: 74px; }
+  .zone { width: 96px; height: 58px; font-size: 12px; }
+  .focusbadge { top: 60px; font-size: 11px; }
+  .sheet { width: 260px; font-size: 19px; }
+  .lobby { max-height: 92vh; padding: 12px; }
+  .actions-bar button.small { padding: 4px 7px; font-size: 12px; }
+  .istaka { padding: 6px 8px 8px; }
+  .istaka-wrap { gap: 4px; padding-bottom: 4px; }
+}
+@media (max-height: 430px), (max-width: 720px) {
+  :root { --tw: 29px; --th: 41px; --tf: 17px; }
+  .istaka .rowslots { gap: 2px; margin-bottom: 3px; border-bottom-width: 3px; }
+  .hud-left { display: none; }
+  .hud-top { top: 4px; gap: 4px; transform: translateX(-50%) scale(0.8); }
+  .focusbadge { display: none; }
+  .tbtn { width: 44px; height: 44px; font-size: 19px; }
+  .joystick { width: 104px; height: 104px; }
+  .menu .card { grid-template-columns: 1fr; overflow: auto; max-height: 96vh; }
+  .menu .preview { height: 180px; }
+  .logo { font-size: 40px; }
+}
+/* Handy hochkant: Hinweis zum Drehen */
+@media (orientation: portrait) and (max-width: 700px) {
+  body.touch::after { content: '↻  Für Okey das Handy quer halten · Okey için telefonu yan çevir'; position: fixed; left: 8px; right: 8px; top: 50%; padding: 12px; text-align: center; background: rgba(20,12,8,0.9); border-radius: 12px; font-weight: 700; z-index: 90; pointer-events: none; }
+}

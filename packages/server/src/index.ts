@@ -48,6 +48,8 @@ interface Table {
   turnDeadline: number | null;
   signatures: Record<number, string>;
   recorded: boolean;
+  /** an welchem Tisch im Kahvehane gespielt wird (0 = Mitte, 1 = Fenster, 2/3 = Garten) */
+  spot: number;
 }
 
 const tables = new Map<string, Table>();
@@ -80,7 +82,8 @@ function broadcast(t: Table, msg: unknown, except?: Client) {
   for (const c of members(t)) if (c !== except) send(c, msg);
 }
 
-const BOT_NAMES = ['Hasan Abi', 'Kemal Usta', 'Rıza Dayı', 'Cemil', 'Nuri Bey', 'Selami'];
+const BOT_NAMES = ['Hasan Abi', 'Kemal Usta', 'Rıza Dayı', 'Cemil', 'Nuri Bey', 'Selami', 'Fatma Teyze', 'Hatice Abla', 'Emine Hanım'];
+const FEMALE_BOTS = new Set(['Fatma Teyze', 'Hatice Abla', 'Emine Hanım']);
 function botInfo(seat: number, taken: string[] = []): PlayerInfo {
   const skins = ['#e0b48f', '#c99068', '#a26e4a', '#f1c9a5'];
   const avatar: Avatar = {
@@ -100,6 +103,25 @@ function botInfo(seat: number, taken: string[] = []): PlayerInfo {
   };
   const free = BOT_NAMES.filter((n) => !taken.includes(n));
   const name = free[Math.floor(Math.random() * free.length)] ?? BOT_NAMES[seat];
+  if (FEMALE_BOTS.has(name)) {
+    const i = BOT_NAMES.indexOf(name);
+    Object.assign(avatar, {
+      body: 'f',
+      beard: 'none',
+      mustache: 'none',
+      hat: 'none',
+      hair: 'bun',
+      eyebrows: 'thin',
+      scarf: (['tulbent', 'basortu', 'esarp'] as const)[i % 3],
+      scarfColor: ['#5a2d6a', '#2f4f6f', '#7a3b2e'][i % 3],
+      shirt: (['hirka', 'elbise', 'bluz'] as const)[i % 3],
+      shirtColor: ['#7a5a3a', '#2d5a3a', '#8e1b1b'][i % 3],
+      makeup: i % 3 === 2 ? 'light' : 'none',
+      jewelry: 'bilezik',
+      accessory: i % 3 === 0 ? 'tespih' : 'none',
+      glasses: i % 3 === 0 ? 'reading' : 'none',
+    });
+  }
   return { id: 'bot-' + seat, name, avatar, signature: null, bot: true };
 }
 
@@ -119,6 +141,7 @@ function tableSummary(t: Table) {
     tv: t.tv,
     music: t.music,
     signatures: t.signatures,
+    spot: t.spot,
   };
 }
 
@@ -278,6 +301,7 @@ function handle(c: Client, m: Msg) {
         turnDeadline: null,
         signatures: {},
         recorded: false,
+        spot: Math.max(0, Math.min(3, Number(m.spot) || 0)),
       };
       tables.set(table.code, table);
       table.seats[0].client = c;
@@ -450,6 +474,20 @@ function handle(c: Client, m: Msg) {
       case 'eye':
         if (c.seat !== null) broadcast(t, { type: 'eye', seat: c.seat, key: m.key });
         return;
+      case 'order': {
+        // Çaycı-Bestellung (rein kosmetisch)
+        const items = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep'];
+        if (c.seat === null || !items.includes(m.item)) return;
+        broadcast(t, { type: 'order', seat: c.seat, item: m.item, from: c.info.name });
+        return;
+      }
+      case 'setSpot': {
+        // anderen Tisch wählen – nur vor dem Spielstart
+        if (t.started) throw new GameError('Spiel läuft schon');
+        t.spot = Math.max(0, Math.min(3, Number(m.spot) || 0));
+        pushTable(t);
+        return;
+      }
       case 'tv':
       case 'music': {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');

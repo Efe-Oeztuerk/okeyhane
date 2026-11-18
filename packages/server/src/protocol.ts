@@ -1,19 +1,27 @@
 // Gemeinsame Nachrichtentypen zwischen Client und Server.
 
 export interface Avatar {
+  /** Körperbau: m = Amca, f = Teyze */
+  body?: 'm' | 'f';
   skin: string;
   face: 'round' | 'long' | 'square';
-  hair: 'none' | 'short' | 'curly' | 'slick' | 'long';
+  hair: 'none' | 'short' | 'curly' | 'slick' | 'long' | 'bun' | 'wavy';
   hairColor: string;
   eyebrows: 'thin' | 'thick';
   beard: 'none' | 'stubble' | 'full';
   mustache: 'none' | 'classic' | 'thick';
-  shirt: 'gomlek' | 'takim' | 'esofman' | 'trikot' | 'hirka';
+  shirt: 'gomlek' | 'takim' | 'esofman' | 'trikot' | 'hirka' | 'elbise' | 'bluz' | 'yelek';
   shirtColor: string;
   hat: 'none' | 'kasket' | 'takke' | 'bere';
+  /** Kopftuch */
+  scarf?: 'none' | 'basortu' | 'tulbent' | 'esarp';
+  scarfColor?: string;
+  /** Schminke */
+  makeup?: 'none' | 'light' | 'full';
+  lipColor?: string;
   glasses: 'none' | 'reading' | 'sun';
   accessory: 'none' | 'tespih' | 'cigar' | 'toothpick';
-  jewelry: 'none' | 'chain' | 'ring' | 'watch';
+  jewelry: 'none' | 'chain' | 'ring' | 'watch' | 'earrings' | 'bilezik';
   /** Retro-Trikot-Variante (nur bei shirt = trikot) */
   kit?: 'aYildiz' | 'sariKirmizi' | 'sariLacivert' | 'siyahBeyaz' | 'duz';
   /** eigene Nargile neben dem Stuhl */

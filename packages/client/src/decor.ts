@@ -325,3 +325,103 @@ export function tvStandby() {
     g.fillText('Tischbesitzer kann einen YouTube-Link starten', 320, 256);
   });
 }
+
+// ------------------------------------------------------------------ Garten / Außenbereich
+
+/** Kopfsteinpflaster */
+export function cobble() {
+  const t = tex(512, 512, (g) => {
+    g.fillStyle = '#6e665c';
+    g.fillRect(0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 32) {
+      const off = (y / 32) % 2 ? 16 : 0;
+      for (let x = -32; x < 544; x += 32) {
+        const v = 120 + Math.random() * 50;
+        g.fillStyle = `rgb(${v},${v - 6},${v - 14})`;
+        g.beginPath();
+        g.roundRect(x + off + 2, y + 2, 28, 28, 7);
+        g.fill();
+      }
+    }
+  });
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(5, 2.5);
+  return t;
+}
+
+/** gestreifte Markise */
+export function awning() {
+  const t = tex(512, 256, (g) => {
+    for (let i = 0; i < 16; i++) {
+      g.fillStyle = i % 2 ? '#f3ede0' : '#b3261e';
+      g.fillRect(i * 32, 0, 32, 256);
+    }
+    g.fillStyle = 'rgba(0,0,0,0.12)';
+    g.fillRect(0, 230, 512, 26);
+  });
+  t.wrapS = THREE.RepeatWrapping;
+  t.repeat.set(3, 1);
+  return t;
+}
+
+/** Himmel je nach Tageszeit */
+export function sky(mode: 'day' | 'evening' | 'night') {
+  return tex(64, 512, (g) => {
+    const gr = g.createLinearGradient(0, 0, 0, 512);
+    if (mode === 'day') {
+      gr.addColorStop(0, '#2f6fb8');
+      gr.addColorStop(0.5, '#8cc0ea');
+      gr.addColorStop(1, '#e8f1f6');
+    } else if (mode === 'evening') {
+      gr.addColorStop(0, '#2b2f6b');
+      gr.addColorStop(0.45, '#c8577a');
+      gr.addColorStop(0.62, '#f2a35a');
+      gr.addColorStop(1, '#f7d39a');
+    } else {
+      gr.addColorStop(0, '#05081a');
+      gr.addColorStop(0.6, '#13204a');
+      gr.addColorStop(1, '#2a3560');
+    }
+    g.fillStyle = gr;
+    g.fillRect(0, 0, 64, 512);
+    if (mode === 'night') {
+      for (let i = 0; i < 60; i++) {
+        g.fillStyle = `rgba(255,255,255,${0.4 + Math.random() * 0.6})`;
+        g.fillRect(Math.random() * 64, Math.random() * 220, 1, 1);
+      }
+    }
+  });
+}
+
+/** Hausfassade gegenüber (Istanbul-Altbau: Erker, Fenster, Putzfarbe) */
+export function houseFacade(seed: number, night: boolean) {
+  const cols = ['#d9a066', '#c9b79a', '#9fb3a8', '#e0c48a', '#b57a62', '#d6cfc0'];
+  return tex(256, 512, (g) => {
+    g.fillStyle = cols[seed % cols.length];
+    g.fillRect(0, 0, 256, 512);
+    g.fillStyle = 'rgba(0,0,0,0.08)';
+    for (let y = 0; y < 512; y += 4) g.fillRect(0, y, 256, 1);
+    for (let fl = 0; fl < 4; fl++) {
+      for (let k = 0; k < 3; k++) {
+        const x = 24 + k * 78;
+        const y = 40 + fl * 115;
+        const lit = night && (seed * 7 + fl * 3 + k) % 3 === 0;
+        g.fillStyle = '#ece6d8';
+        g.fillRect(x - 5, y - 5, 54, 78);
+        g.fillStyle = lit ? '#ffd27a' : night ? '#1b2238' : '#5d7387';
+        g.fillRect(x, y, 44, 68);
+        g.fillStyle = '#ece6d8';
+        g.fillRect(x + 20, y, 4, 68);
+        g.fillStyle = '#6b4a2a';
+        g.fillRect(x - 8, y + 70, 60, 6);
+      }
+    }
+    // Erdgeschoss: Ladentür
+    g.fillStyle = '#4a3020';
+    g.fillRect(100, 450, 56, 62);
+  });
+}
+
+function tex(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void) {
+  return canvasTex(w, h, draw);
+}
