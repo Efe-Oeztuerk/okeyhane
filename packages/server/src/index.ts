@@ -764,15 +764,17 @@ function handle(c: Client, m: Msg) {
       case 'order': {
         // Çaycı-Bestellung (rein kosmetisch)
         const items = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep', 'icecek'];
-        if (c.seat === null || !items.includes(m.item)) return;
+        // bis zu 3 Sachen auf einmal (alte Clients schicken nur „item“)
+        const list: string[] = (Array.isArray(m.items) ? m.items : [m.item]).filter((x: unknown) => typeof x === 'string' && items.includes(x)).slice(0, 3);
+        if (c.seat === null || !list.length) return;
         // nicht dauernd bestellen: Abstand pro Spieler
         const now = Date.now();
         const wait = ORDER_GAP_MS - (now - ((c as any).lastOrder ?? 0));
         if (wait > 0) return send(c, { type: 'error', key: 'orderWait', secs: Math.ceil(wait / 1000) });
         (c as any).lastOrder = now;
         // İçecek: Ahmet bringt eine zufällige Dose (für alle dieselbe)
-        const variant = m.item === 'icecek' ? Math.floor(Math.random() * 7) : 0;
-        broadcast(t, { type: 'order', seat: c.seat, item: m.item, from: c.info.name, variant });
+        const variants = list.map((x) => (x === 'icecek' ? Math.floor(Math.random() * 7) : 0));
+        broadcast(t, { type: 'order', seat: c.seat, items: list, item: list[0], from: c.info.name, variants, variant: variants[0] });
         return;
       }
       case 'setSpot': {

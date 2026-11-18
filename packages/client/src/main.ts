@@ -195,6 +195,8 @@ on('state', (m) => {
     sheetOpen = true;
     if (m.lastResult?.note) toast(m.lastResult.note, '#2d5a3a');
   }
+  // neue Runde beginnt → Zettel wieder zu
+  if (!ended && wasEnded) sheetOpen = false;
   if (v.current === you.seat && prev?.view.current !== you.seat && v.phase === 'draw') sfx.bell();
   renderAll();
 });
@@ -216,14 +218,15 @@ on('emote', (m) => {
 const ahmetCall = new Audio('/sfx/ahmet.mp3');
 ahmetCall.preload = 'auto';
 on('order', (m) => {
-  const item = m.item as OrderItem;
+  const items: OrderItem[] = (m.items ?? [m.item]) as OrderItem[];
+  const variants: number[] = m.variants ?? [m.variant ?? 0];
   try {
     const a = ahmetCall.cloneNode(true) as HTMLAudioElement;
     a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
     void a.play().catch(() => {});
   } catch {}
-  world.order(m.seat, item, m.variant ?? 0);
-  addLog(h('div', { class: 'sys' }, `${m.from}: ${orderLabel(item)} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
+  items.forEach((item, k) => world.order(m.seat, item, variants[k] ?? 0));
+  addLog(h('div', { class: 'sys' }, `${m.from}: ${items.map(orderLabel).join(', ')} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
   if (m.seat === you.seat) sfx.bell();
 });
 // Mitspieler, die im Kahvehane herumlaufen
@@ -1616,7 +1619,36 @@ function openCayci() {
   sfx.spoon();
   popupMenu(
     CAYCI_TITLE(),
-    ORDER_ITEMS.map((i) => ({ label: orderLabel(i), fn: () => ((lastOrderAt = Date.now()), send({ type: 'order', item: i })) })),
+    (() => {
+      // bis zu 3 Sachen für sich selbst ankreuzen, dann bestellen
+      const pick: OrderItem[] = [];
+      const de = getLang() === 'de';
+      return [
+        ...ORDER_ITEMS.map((i) => ({
+          label: orderLabel(i),
+          keep: true,
+          on: () => pick.includes(i),
+          dyn: () => (pick.includes(i) ? '✅ ' : '') + orderLabel(i),
+          fn: () => {
+            const k = pick.indexOf(i);
+            if (k >= 0) pick.splice(k, 1);
+            else if (pick.length >= 3) toast(de ? 'Höchstens 3 Sachen pro Bestellung' : 'Bir seferde en fazla 3 şey');
+            else pick.push(i);
+          },
+        })),
+        {
+          label: '',
+          keep: true,
+          dyn: () => (pick.length ? `🛎️ ${de ? 'Bestellen' : 'Sipariş ver'} (${pick.length}/3)` : `🛎️ ${de ? 'Bis zu 3 Sachen ankreuzen' : 'En fazla 3 şey seç'}`),
+          fn: () => {
+            if (!pick.length) return;
+            lastOrderAt = Date.now();
+            send({ type: 'order', items: [...pick] });
+            closeMenu();
+          },
+        },
+      ];
+    })(),
   );
 }
 

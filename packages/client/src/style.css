@@ -513,3 +513,10 @@ body.phone .hud-top { transform: translateX(calc(-50% + 46px)) scale(0.68) !impo
 .rotate-cover .rc-icon { font-size: 64px; animation: rc-turn 1.8s ease-in-out infinite; }
 .rotate-cover .rc-text { font-size: 20px; font-weight: 700; max-width: 260px; line-height: 1.3; }
 @keyframes rc-turn { 0%, 20% { transform: rotate(0deg); } 50%, 80% { transform: rotate(-90deg); } 100% { transform: rotate(0deg); } }
+.touch-ui:not(.started) .started-only { display: none; }
+/* Handy: Zettel links neben der Knopfspalte, ganz sichtbar, scrollt bei vielen Runden */
+body.phone .sheet { top: calc(max(10px, env(safe-area-inset-top)) + 46px); right: calc(max(6px, env(safe-area-inset-right)) + 54px); width: min(300px, 46vw); max-height: calc(100dvh - 70px - env(safe-area-inset-top)); font-size: 18px; padding: 14px 10px 14px; z-index: 46; transform: rotate(0.6deg); overscroll-behavior: contain; }
+body.phone .sheet th { font-size: 17px; line-height: 1.1; }
+body.phone .sheet .total td { font-size: 21px; }
+body.phone .sheet td.note { font-size: 13px; }
+.popmenu .pm-item.on { background: rgba(70,160,90,0.35); outline: 1px solid rgba(120,220,140,0.5); }

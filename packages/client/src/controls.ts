@@ -38,6 +38,12 @@ const de = () => getLang() === 'de';
 interface MenuItem {
   label: string;
   fn: () => void;
+  /** Menü bleibt nach dem Tippen offen (Mehrfachauswahl) */
+  keep?: boolean;
+  /** angehakt? */
+  on?: () => boolean;
+  /** Beschriftung neu berechnen (z. B. „Bestellen (2)“) */
+  dyn?: () => string;
 }
 let openMenu: { el: HTMLElement; items: MenuItem[]; idx: number ; bg?: HTMLElement; title?: string } | null = null;
 
@@ -61,12 +67,13 @@ export function popupMenu(title: string, items: MenuItem[]) {
       {
         class: 'pm-item' + (i === 0 ? ' hl' : ''),
         onclick: () => {
-          closeMenu();
+          if (!it.keep) closeMenu();
           it.fn();
+          if (it.keep) refreshMenu();
         },
       },
       h('span', { class: 'pm-num' }, String(i + 1)),
-      it.label,
+      h('span', { class: 'pm-label' }, it.dyn?.() ?? it.label),
     ),
   );
   el.append(...rows, h('div', { class: 'pm-foot muted' }, de() ? '1–9 wählen · Esc schließen' : '1–9 seç · Esc kapat'));
@@ -74,6 +81,17 @@ export function popupMenu(title: string, items: MenuItem[]) {
   const bg = h('div', { class: 'pm-bg', onclick: () => closeMenu() });
   document.getElementById('ui')!.append(bg, el);
   openMenu = { el, bg, items, idx: 0, title };
+  refreshMenu();
+}
+/** Haken und dynamische Beschriftungen im offenen Menü aktualisieren */
+function refreshMenu() {
+  if (!openMenu) return;
+  const rows = openMenu.el.querySelectorAll('.pm-item');
+  openMenu.items.forEach((it, i) => {
+    rows[i]?.classList.toggle('on', !!it.on?.());
+    const l = rows[i]?.querySelector('.pm-label');
+    if (l && it.dyn) l.textContent = it.dyn();
+  });
 }
 
 function menuMove(d: number) {
@@ -85,8 +103,9 @@ function menuMove(d: number) {
 function menuPick(i = openMenu?.idx ?? 0) {
   if (!openMenu) return;
   const it = openMenu.items[i];
-  closeMenu();
+  if (!it?.keep) closeMenu();
   it?.fn();
+  if (it?.keep) refreshMenu();
 }
 
 // ------------------------------------------------------------------ Emote-Rad
@@ -463,6 +482,7 @@ function setupTouch(world: World, api: ControlApi) {
     hold('🪞', 'Von vorne', () => world.setThird('front'), () => world.setThird(null)),
     tap('☕', 'Ahmet (Çaycı)', () => api.openCayci()),
     tap('💨', 'Nargile', () => api.emote('nargile'), 'seated-only'),
+    tap('📝', 'Zettel / Puan', () => api.toggleSheet(), 'started-only'),
     tap('💬', 'Chat', () => api.toggleChat()),
   );
   const sitBtn = h('button', { class: 'sitbtn hidden', onclick: () => world.interact() }, '🪑 ' + (de() ? 'Hinsetzen' : 'Otur'));
@@ -475,6 +495,7 @@ function setupTouch(world: World, api: ControlApi) {
     document.body.classList.toggle('phone', touchActive() && Math.min(innerWidth, innerHeight) <= 540);
     root.classList.toggle('seated', world.seated !== null);
     lookBtn.classList.toggle('on', !world.focus && world.freeLook);
+    root.classList.toggle('started', !!api.started());
     sitBtn.classList.toggle('hidden', !on || !world.chairAhead());
   };
   setInterval(sync, 300);
