@@ -60,7 +60,7 @@ export type EyeKey = 'wink' | 'blink' | 'wide';
 
 export interface MediaState {
   /** YouTube-Video-ID oder Stream-URL */
-  source: { kind: 'youtube'; id: string } | { kind: 'stream'; url: string } | null;
+  source: { kind: 'youtube'; id: string } | { kind: 'twitch'; channel: string } | { kind: 'stream'; url: string } | null;
   playing: boolean;
   /** Position in Sekunden zum Zeitpunkt `at` */
   position: number;

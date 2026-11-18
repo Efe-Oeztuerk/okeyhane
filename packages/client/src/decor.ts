@@ -321,8 +321,8 @@ export function tvStandby() {
     g.fillText('📺 OKEYHANE TV', 320, 160);
     g.fillStyle = '#b8c4d8';
     g.font = '26px Inter, sans-serif';
-    g.fillText('Masa sahibi YouTube linki açabilir', 320, 220);
-    g.fillText('Tischbesitzer kann einen YouTube-Link starten', 320, 256);
+    g.fillText('Masa sahibi YouTube / Twitch açabilir', 320, 220);
+    g.fillText('Tischbesitzer startet YouTube / Twitch', 320, 256);
   });
 }
 

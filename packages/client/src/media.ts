@@ -6,6 +6,7 @@ import { settings, vol } from './settings.ts';
 declare global {
   interface Window {
     YT: any;
+    Twitch: any;
     onYouTubeIframeAPIReady: () => void;
   }
 }
@@ -21,6 +22,36 @@ export function loadYT(): Promise<void> {
     document.head.append(s);
   });
   return ytReady;
+}
+
+let twReady: Promise<void> | null = null;
+function loadTwitch(): Promise<void> {
+  if (twReady) return twReady;
+  twReady = new Promise((res, rej) => {
+    if (window.Twitch?.Player) return res();
+    const s = document.createElement('script');
+    s.src = 'https://player.twitch.tv/js/embed/v1.js';
+    s.onload = () => res();
+    s.onerror = () => {
+      twReady = null;
+      rej(new Error('twitch'));
+    };
+    document.head.append(s);
+  });
+  return twReady;
+}
+
+/** Twitch-Link → Kanalname (twitch.tv/papaplatte) */
+export function parseTwitch(url: string): string | null {
+  try {
+    const u = new URL(url.trim());
+    if (!/(^|\.)twitch\.tv$/.test(u.hostname)) return null;
+    const ch = u.pathname.split('/').filter(Boolean)[0];
+    if (!ch || ['videos', 'directory', 'search', 'settings', 'p'].includes(ch)) return null;
+    return /^\w{2,25}$/.test(ch) ? ch.toLowerCase() : null;
+  } catch {
+    return null;
+  }
 }
 
 /** YouTube-Link → Video-ID (auch Live, Shorts, youtu.be) */
@@ -39,6 +70,8 @@ export function parseYouTube(url: string): string | null {
 
 export class MediaPlayer {
   private yt: any = null;
+  private tw: any = null;
+  private twChannel: string | null = null;
   private ytId: string | null = null;
   private audio: HTMLAudioElement | null = null;
   private state: MediaState | null = null;
@@ -72,6 +105,32 @@ export class MediaPlayer {
       this.stopAll();
       return;
     }
+    if (src.kind === 'twitch') {
+      this.stopAudio();
+      this.stopYT();
+      if (this.twChannel !== src.channel) {
+        this.stopTwitch();
+        try {
+          await loadTwitch();
+        } catch {
+          return;
+        }
+        this.twChannel = src.channel;
+        this.tw = new window.Twitch.Player(this.mount, {
+          channel: src.channel,
+          parent: [location.hostname],
+          width: '100%',
+          height: '100%',
+          autoplay: true,
+          muted: false,
+        });
+        this.tw.addEventListener?.(window.Twitch.Player.READY, () => this.syncTwitch());
+      }
+      this.host.classList.toggle('active', this.visible);
+      this.syncTwitch();
+      return;
+    }
+    this.stopTwitch();
     if (src.kind === 'youtube') {
       this.stopAudio();
       await loadYT();
@@ -120,7 +179,31 @@ export class MediaPlayer {
     } catch {}
   }
 
+  private syncTwitch() {
+    const st = this.state;
+    if (!this.tw || !st) return;
+    try {
+      const v = this.volume(st) / 100;
+      this.tw.setMuted(v <= 0.001);
+      this.tw.setVolume(v);
+      if (st.playing && this.tw.isPaused?.()) this.tw.play();
+      else if (!st.playing && !this.tw.isPaused?.()) this.tw.pause();
+    } catch {}
+  }
+
+  private stopTwitch() {
+    if (!this.tw && !this.twChannel) return;
+    this.tw = null;
+    this.twChannel = null;
+    this.mount = document.createElement('div');
+    this.mount.className = 'yt-mount';
+    this.host.innerHTML = '';
+    this.host.append(this.mount);
+    this.host.classList.remove('active');
+  }
+
   refreshVolume() {
+    this.syncTwitch();
     if (this.audio) this.audio.volume = this.volume(this.state) / 100;
     try {
       this.yt?.setVolume(this.volume(this.state));
@@ -157,17 +240,19 @@ export class MediaPlayer {
     }
   }
   stopAll() {
+    this.stopTwitch();
     this.stopYT();
     this.stopAudio();
   }
 
   isActive() {
-    return !!this.yt;
+    return !!this.yt || !!this.tw;
   }
 
   tick() {
     // alle paar Sekunden nachsynchronisieren
     this.syncYT();
+    this.syncTwitch();
   }
 }
 

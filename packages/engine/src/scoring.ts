@@ -80,6 +80,8 @@ export function scorePerisanFinish(
   const winTeam = teamOf(f.winner);
   const delta: [number, number] = [0, 0];
   delta[winTeam] = -M * W;
+  const playerDelta = [0, 0, 0, 0];
+  playerDelta[f.winner] = -M * W;
   const caught: number[] = [];
   for (let seat = 0; seat < 4; seat++) {
     if (teamOf(seat) === winTeam) continue;
@@ -90,10 +92,11 @@ export function scorePerisanFinish(
     if (okeyBirBy === seat || wasReady) {
       // Okey yakalanmak: alle Steine × M + M × 100
       caught.push(seat);
-      delta[1 - winTeam] += handSum(hand, okey) * M + M * 100;
+      playerDelta[seat] = handSum(hand, okey) * M + M * 100;
     } else {
-      delta[1 - winTeam] += looseSum(hand, okey) * M * F;
+      playerDelta[seat] = looseSum(hand, okey) * M * F;
     }
+    delta[1 - winTeam] += playerDelta[seat];
   }
   const parts = [
     f.withPairs ? 'Çift' : null,
@@ -104,6 +107,7 @@ export function scorePerisanFinish(
     .join(' + ');
   return {
     teamDelta: delta,
+    playerDelta,
     note: `Bitti ×${M}${parts ? ' (' + parts + ')' : ''}${caught.length ? ' · yakalandı' : ''}`,
     caught,
   };

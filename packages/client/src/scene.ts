@@ -87,9 +87,43 @@ export class World {
   private ambient!: THREE.HemisphereLight;
   private lamps: THREE.PointLight[] = [];
   /** mehrere Fernseher, alle zeigen dasselbe (vom Tisch gesteuert) */
-  private tvs: { host: HTMLDivElement; css: CSS3DObject; screen: THREE.Mesh; hole: THREE.Mesh; pos: THREE.Vector3 }[] = [];
+  private tvs: { host: HTMLDivElement; css: CSS3DObject; screen: THREE.Mesh; hole: THREE.Mesh; pos: THREE.Vector3; rotY: number; w: number; h: number; group: THREE.Group }[] = [];
   get tvHosts() {
     return this.tvs.map((t) => t.host);
+  }
+  /** Fernseh-Modus: Kamera vor einen Fernseher, Bild füllt den Schirm */
+  tvWatch: number | null = null;
+  onTvWatch: ((i: number | null) => void) | null = null;
+  watchTv(i: number | null) {
+    if (i === this.tvWatch) return;
+    if (i !== null && this.tvWatch === null) {
+      // Blickpunkt dort starten, wo die Kamera gerade hinschaut (weicher Schwenk)
+      const fwd = this.camera.getWorldDirection(new THREE.Vector3());
+      this.camLook.copy(this.camera.position).addScaledVector(fwd, this.camera.position.distanceTo(this.tvs[i].pos));
+    }
+    this.tvWatch = i;
+    if (i !== null) document.exitPointerLock?.();
+    this.onTvWatch?.(i);
+  }
+  /** Fernseher unter dem Zeiger (nicht zu weit weg) */
+  private tvAt(ndc: THREE.Vector2): number | null {
+    this.raycaster.setFromCamera(ndc, this.camera);
+    const hit = this.raycaster.intersectObjects(this.tvs.map((t) => t.group), true)[0];
+    if (!hit || hit.distance > 16) return null;
+    // nichts dazwischen (Wand, Säule …)?
+    let o: THREE.Object3D | null = hit.object;
+    while (o && !this.tvs.some((t) => t.group === o)) o = o.parent;
+    const idx = this.tvs.findIndex((t) => t.group === o);
+    return idx >= 0 ? idx : null;
+  }
+  /** Kamera-Ziel für den Fernseh-Modus: so weit weg, dass der Schirm gerade das Bild füllt */
+  private tvView(i: number) {
+    const tv = this.tvs[i];
+    const half = THREE.MathUtils.degToRad(this.camera.fov) / 2;
+    const tan = Math.tan(half);
+    const d = Math.max(tv.h / 2 / tan, tv.w / 2 / (tan * this.camera.aspect)) * 1.06;
+    const n = new THREE.Vector3(Math.sin(tv.rotY), 0, Math.cos(tv.rotY));
+    return { pos: tv.pos.clone().addScaledVector(n, d), look: tv.pos.clone() };
   }
   private dayMode = '';
   // Bewegung
@@ -723,6 +757,7 @@ export class World {
     hole.visible = false;
     g.add(hole);
     this.scene.add(g);
+    g.traverse((o) => (o.userData.tv = true));
     const host = document.createElement('div');
     host.className = 'tv-host';
     host.style.width = '960px';
@@ -733,7 +768,7 @@ export class World {
     css.scale.setScalar(tvW / 960);
     css.visible = false;
     this.scene.add(css);
-    this.tvs.push({ host, css, screen, hole, pos: pos.clone() });
+    this.tvs.push({ host, css, screen, hole, pos: pos.clone(), rotY, w: tvW, h: tvH, group: g });
   }
 
   /** Index des Fernsehers, der der Kamera am nächsten ist (nur der hat Ton) */
@@ -1298,6 +1333,10 @@ export class World {
     };
     addEventListener('keydown', (e) => {
       if (typing(e)) return;
+      if (this.tvWatch !== null && (e.code === 'Escape' || ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowDown', settings.keys.forward, settings.keys.back, settings.keys.left, settings.keys.right].includes(e.code))) {
+        this.watchTv(null);
+        if (e.code === 'Escape') return;
+      }
       this.keys.add(e.code);
       if (e.code === settings.keys.look && this.seated !== null) {
         e.preventDefault();
@@ -1495,6 +1534,23 @@ export class World {
       return;
     }
     const touch = this.pointerType !== 'mouse';
+    // Fernseh-Modus: Tippen/Klicken irgendwo = zurück
+    if (this.tvWatch !== null) {
+      this.watchTv(null);
+      return;
+    }
+    {
+      // Fernseher antippen/anklicken → davor setzen und schauen
+      const lockedWalk = this.seated === null && !touch;
+      const aim = touch ? this.ndcOf(e) : lockedWalk || !this.focus ? new THREE.Vector2(0, 0) : this.ndcOf(e);
+      if (!lockedWalk || this.isLooking()) {
+        const i = this.tvAt(aim);
+        if (i !== null) {
+          this.watchTv(i);
+          return;
+        }
+      }
+    }
     const at = touch ? this.ndcOf(e) : new THREE.Vector2(0, 0);
     if (this.seated === null) {
       if (!touch && !this.isLooking()) {
@@ -1926,7 +1982,14 @@ export class World {
 
     // Kamera
     this.pollPad(dt);
-    if (this.camTarget) {
+    if (this.tvWatch !== null && this.tvs[this.tvWatch]) {
+      const v = this.tvView(this.tvWatch);
+      this.camera.position.lerp(v.pos, 1 - Math.pow(0.002, dt));
+      this.camLook.lerp(v.look, 1 - Math.pow(0.0005, dt));
+      this.camera.lookAt(this.camLook);
+      if (this.selfAvatar) this.selfAvatar.root.visible = false;
+      if (this.moveInput.x || this.moveInput.y) this.watchTv(null);
+    } else if (this.camTarget) {
       const pos = this.camTarget.pos;
       let look: THREE.Vector3;
       if (this.focus) look = this.camTarget.look.clone();

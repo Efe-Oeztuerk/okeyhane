@@ -106,16 +106,18 @@ export class Istaka {
     const sx = e.clientX;
     const sy = e.clientY;
     let moved = false;
+    const lift = fingerLift(e);
     const place = (x: number, y: number) => {
       ghost.style.left = x - 23 + 'px';
-      ghost.style.top = y - 32 - fingerLift() + 'px';
+      ghost.style.top = y - 32 - lift + 'px';
     };
     place(sx, sy);
     const move = (ev: PointerEvent) => {
       if (Math.hypot(ev.clientX - sx, ev.clientY - sy) > 6) moved = true;
       place(ev.clientX, ev.clientY);
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
-      const t = this.targetAt(ev.clientX, ev.clientY);
+      // Ziel = dort, wo der schwebende Stein ist, nicht unter dem Finger
+      const t = this.targetAt(ev.clientX, ev.clientY - lift);
       if (t?.dataset.slot !== undefined) t.classList.add('over');
     };
     const up = (ev: PointerEvent) => {
@@ -124,9 +126,9 @@ export class Istaka {
       removeEventListener('pointercancel', up);
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
       ghost.remove();
-      const t = this.targetAt(ev.clientX, ev.clientY);
+      const t = this.targetAt(ev.clientX, ev.clientY - lift);
       const slot = t?.dataset.slot !== undefined ? Number(t.dataset.slot) : null;
-      onDrop(moved && slot !== null && this.slots[slot] === null ? slot : moved && slot !== null ? this.nearestFree(slot) : null, moved, ev.clientX, ev.clientY);
+      onDrop(moved && slot !== null && this.slots[slot] === null ? slot : moved && slot !== null ? this.nearestFree(slot) : null, moved, ev.clientX, ev.clientY - lift);
     };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
@@ -315,6 +317,7 @@ export class Istaka {
     let moved = false;
     // Wird ein markierter Stein gezogen, wandern alle markierten mit
     const group = this.selected.has(id) && this.selected.size > 1 ? this.orderedSelection() : [id];
+    const lift = fingerLift(e);
     const move = (ev: PointerEvent) => {
       if (!moved && Math.hypot(ev.clientX - startX, ev.clientY - startY) > 6) {
         moved = true;
@@ -332,12 +335,13 @@ export class Istaka {
       }
       if (moved && this.ghost) {
         this.ghost.style.left = ev.clientX - 23 + 'px';
-        this.ghost.style.top = ev.clientY - 32 - fingerLift(ev) + 'px';
+        this.ghost.style.top = ev.clientY - 32 - lift + 'px';
         document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
-        const target = this.targetAt(ev.clientX, ev.clientY);
+        // Ziel = dort, wo der schwebende Stein ist, nicht unter dem Finger
+        const target = this.targetAt(ev.clientX, ev.clientY - lift);
         target?.classList.add('over');
         const canThrow = group.length === 1 && !!this.canDiscard?.();
-        const zone = canThrow && !target ? this.zoneAt?.(ev.clientX, ev.clientY) ?? null : null;
+        const zone = canThrow && !target ? this.zoneAt?.(ev.clientX, ev.clientY - lift) ?? null : null;
         if (canThrow) this.onZoneHover?.(zone);
         this.ghost.classList.toggle('throw', zone === 'discard');
         this.ghost.classList.toggle('finishing', zone === 'finish');
@@ -378,7 +382,7 @@ export class Istaka {
       this.ghost = null;
       buzz(8);
       this.dragId = null;
-      const target = this.targetAt(ev.clientX, ev.clientY);
+      const target = this.targetAt(ev.clientX, ev.clientY - lift);
       if (target?.dataset.slot !== undefined) {
         if (group.length > 1) {
           this.moveGroup(group, Number(target.dataset.slot));
@@ -391,7 +395,7 @@ export class Istaka {
         this.onDropZone?.(target.dataset.zone, id);
       } else if (group.length === 1 && this.canDiscard?.()) {
         // rechts auf den eigenen Stapel = abwerfen, in die Mitte = beenden; sonst zurück
-        const zone = this.zoneAt?.(ev.clientX, ev.clientY) ?? null;
+        const zone = this.zoneAt?.(ev.clientX, ev.clientY - lift) ?? null;
         if (zone) this.onDropZone?.(zone, id);
       }
       this.onZoneHover?.(false);

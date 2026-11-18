@@ -9,12 +9,12 @@ import { t, setLang, getLang } from './i18n.ts';
 import { World, type GameVisual } from './scene.ts';
 import { Istaka } from './istaka.ts';
 import { openEditor } from './editor.ts';
-import { MediaPlayer, parseYouTube } from './media.ts';
+import { MediaPlayer, parseTwitch, parseYouTube } from './media.ts';
 import { Voice } from './voice.ts';
 import { sfx, unlockAudio } from './sound.ts';
 import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
-import { isCompleteMelds, isCompletePairs } from '@okeyhane/engine';
+import { isCompleteMelds, isCompletePairs, looseSum, rackIsFinished } from '@okeyhane/engine';
 import { CREDITS } from './models.ts';
 import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP, openWheel, closeWheel, wheelIsOpen, menuIsOpen } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
@@ -315,8 +315,65 @@ on('error', (m) => {
     }
     return;
   }
-  toast(m.text ?? (m.key === 'noTable' ? 'Masa bulunamadı / Tisch nicht gefunden' : 'Hata'));
+  const de = getLang() === 'de';
+  if (m.key === 'noTable') return toast(de ? 'Tisch nicht gefunden' : 'Masa bulunamadı');
+  if (m.text === 'Erst richtig umstellen') return toast(de ? '✋ Erst das Brett richtig umstellen (Perler mit Lücke trennen)' : '✋ Önce istakayı doğru diz (perler arası boşluk)', '#7a4a1a');
+  toast(m.text ? (de ? m.text : errTr(m.text)) : de ? 'Fehler' : 'Hata');
 });
+
+/** Server-Meldungen kommen auf Deutsch → für Türkisch übersetzen */
+const ERR_TR: Record<string, string> = {
+  'Alle 4 Plätze müssen besetzt sein': '4 yerin hepsi dolu olmalı',
+  'Bots sind aus': 'Botlar kapalı',
+  'Das ist kein Okey': 'Bu okey değil',
+  'Du hast die Gösterge nicht': 'Gösterge sende değil',
+  'Du sitzt am Tisch': 'Zaten masada oturuyorsun',
+  'Ein Stein muss zum Abwerfen bleiben': 'Atmak için bir taş kalmalı',
+  'Erst nach der Hand': 'El bitince',
+  'Erst öffnen': 'Önce açmalısın',
+  'Falsche Steinanzahl': 'Taş sayısı yanlış',
+  'Hand ist nicht fertig': 'El bitmemiş',
+  'Hand ist vorbei': 'El bitti',
+  'Hand läuft noch': 'El devam ediyor',
+  'Hier kann nicht angelegt werden': 'Buraya işlenemez',
+  'Kein Abwurf da': 'Yanda taş yok',
+  'Kein Spiel': 'Oyun yok',
+  'Kein gültiges Paar': 'Geçerli çift değil',
+  'Keine Versuche mehr': 'Hakkın kalmadı',
+  'Mitte ist leer': 'Ortada taş kalmadı',
+  'Nach Okey bir nur aus der Mitte ziehen': 'Okey birden sonra sadece ortadan çekilir',
+  'Nicht dein Zug': 'Sıra sende değil',
+  'Nicht erlaubt': 'İzin yok',
+  'Nicht geöffnet': 'Açılmadı',
+  'Noch Steine auf der Hand': 'Elinde hâlâ taş var',
+  'Nur der Tischbesitzer': 'Sadece masa sahibi',
+  'Nur in 101': 'Sadece 101’de',
+  'Nur in Perişan': 'Sadece Perişan’da',
+  'Nur vor dem ersten Abwurf': 'Sadece ilk taş atılmadan önce',
+  'Okey bir wurde schon gemacht': 'Okey bir zaten yapıldı',
+  'Passt nicht': 'Uymuyor',
+  'Platz besetzt': 'Yer dolu',
+  'Schon gezeigt': 'Zaten gösterildi',
+  'Spiel ist vorbei': 'Oyun bitti',
+  'Spiel läuft noch': 'Oyun devam ediyor',
+  'Spiel läuft schon': 'Oyun zaten başladı',
+  'Stein doppelt': 'Taş iki kere seçilmiş',
+  'Stein nicht auf der Hand': 'Taş elinde değil',
+  'Taş Çalma ist aus': 'Taş çalma kapalı',
+  'Unbekannte Aktion': 'Bilinmeyen hamle',
+  'Ungültig': 'Geçersiz',
+  'Ungültige Kombination': 'Geçersiz per',
+  'Zuschauer können nicht spielen': 'İzleyiciler oynayamaz',
+  Serverfehler: 'Sunucu hatası',
+};
+function errTr(x: string) {
+  if (ERR_TR[x]) return ERR_TR[x];
+  let m = x.match(/^Mindestens (\d+) Paare$/);
+  if (m) return `En az ${m[1]} çift`;
+  m = x.match(/^Summe (\d+) < (\d+)$/);
+  if (m) return `Toplam ${m[1]} < ${m[2]}`;
+  return x;
+}
 on('kicked', () => leaveCafe());
 on('left', () => leaveCafe());
 on('lobby', () => {
@@ -602,9 +659,9 @@ function openStats() {
 function openCredits() {
   modal(
     h('h2', {}, '© Credits'),
-    h('div', { class: 'muted', style: { marginBottom: '8px' } }, '3D-Modelle unter CC BY 4.0 (creativecommons.org/licenses/by/4.0):'),
+    h('div', { class: 'muted', style: { marginBottom: '8px' } }, getLang() === 'de' ? '3D-Modelle und Lizenzen:' : '3D modeller ve lisanslar:'),
     h('ul', {}, CREDITS.map((c) => h('li', {}, h('a', { href: c.url, target: '_blank', rel: 'noopener', style: { color: '#e3b04b' } }, c.what), ' – ', c.author))),
-    h('div', { class: 'muted' }, 'Größe/Detailgrad für das Spiel angepasst. Alles andere: Okeyhane.'),
+    h('div', { class: 'muted' }, getLang() === 'de' ? 'Größe/Detailgrad für das Spiel angepasst. Alles andere: Okeyhane.' : 'Boyut/detay oyun için uyarlandı. Geri kalan her şey: Okeyhane.'),
   );
 }
 
@@ -794,7 +851,7 @@ setInterval(() => {
 let radioEl: HTMLElement | null = null;
 function radioChip() {
   const label = h('span', { class: 'rc-text' });
-  const next = h('button', { class: 'small ghost', title: 'nächster Titel', onclick: (e: Event) => (e.stopPropagation(), bgm.nextTrack()) }, '⏭');
+  const next = h('button', { class: 'small ghost', title: getLang() === 'de' ? 'nächster Titel' : 'sonraki parça', onclick: (e: Event) => (e.stopPropagation(), bgm.nextTrack()) }, '⏭');
   radioEl = h('div', { class: 'radiochip', onclick: () => (bgm.status().state === 'blocked' ? bgm.unlock() : openMedia()) }, label, next);
   updateRadioChip();
   return radioEl;
@@ -1017,6 +1074,15 @@ function enterCafe() {
   istaka.onZoneHover = (z) => world.showZones(z);
   istaka.canDiscard = () => myTurn('discard');
   world.onFocusChange = () => renderFocusBadge();
+  world.onTvWatch = (i) => {
+    document.body.classList.toggle('tv-watch', i !== null);
+    document.querySelector('.tv-exit')?.remove();
+    if (i === null) return;
+    closeOverlays();
+    const de = getLang() === 'de';
+    const b = h('button', { class: 'tv-exit', onclick: (e: Event) => (e.stopPropagation(), world.watchTv(null)) }, de ? '✕ Zurück (Esc)' : '✕ Geri (Esc)');
+    document.body.append(b);
+  };
   world.onLookChange = () => renderHint();
   istaka.onDropZone = (zone, id) => {
     if (zone === 'discard') act({ action: 'discard', tileId: id });
@@ -1072,10 +1138,20 @@ function tryFinish(id: number) {
     toast(de ? '✋ Deine Hand ist noch nicht fertig – der Stein bleibt bei dir.' : '✋ Elin henüz bitmedi – taş sende kalıyor.');
     return;
   }
+  // wie am echten Tisch: Brett muss richtig umgestellt sein (Lücken zwischen den Perlern)
+  if (r.mode !== 'okey101' && !rackIsFinished(istaka.slots, rest, st.okey, v.indicator, r.indicatorPairsAnything)) {
+    toast(
+      de
+        ? '✋ Deine Hand ist fertig, aber noch nicht richtig umgestellt: lege jede Reihe/Gruppe (oder die Paare) mit Lücke getrennt aufs Brett.'
+        : '✋ Elin bitti ama dizilmemiş: her perini (ya da çiftleri) istakaya aralıklı diz.',
+      '#7a4a1a',
+    );
+    return;
+  }
   const tile = v.myHand.find((x: any) => x.id === id);
   const label = tile ? (tile.fake ? '★' : `${tile.value}`) : '';
   popupMenu(de ? `🏁 Mit diesem Stein (${label}) beenden?` : `🏁 Bu taşla (${label}) bitiriyor musun?`, [
-    { label: de ? '✓ Ja, beenden!' : '✓ Evet, bitir!', fn: () => act({ action: 'finish', tileId: id }) },
+    { label: de ? '✓ Ja, beenden!' : '✓ Evet, bitir!', fn: () => act({ action: 'finish', tileId: id, slots: [...istaka.slots] }) },
     { label: de ? '✗ Nein, weiterspielen' : '✗ Hayır, devam', fn: () => {} },
   ]);
 }
@@ -1746,7 +1822,16 @@ function handsPanel(v: any): HTMLElement {
       slots[free] = x.id;
     }
     const row = h('div', { class: 'handrow' + (s === finisher ? ' winner' : '') + (s % 2 === 0 ? ' tA' : ' tB') });
-    row.append(h('div', { class: 'hn' }, (s === finisher ? '🏁 ' : '') + nameOf(s)));
+    // nur am Ende der Hand: was hatte jeder selbst noch auf der Hand?
+    const pd: number[] | undefined = st?.lastResult?.playerDelta;
+    const loser = finisher === undefined || finisher === null ? true : s % 2 !== finisher % 2;
+    let handInfo: HTMLElement | string = '';
+    if (s !== finisher && loser && tiles.length && st?.okey) {
+      const ls = looseSum(tiles as any, st.okey);
+      const pts = pd?.[s];
+      handInfo = h('div', { class: 'hn-pts' }, (de ? 'Rest: ' : 'Elde: ') + ls, pts ? h('b', {}, ` → +${pts}`) : '');
+    }
+    row.append(h('div', { class: 'hn' }, h('div', {}, (s === finisher ? '🏁 ' : '') + nameOf(s)), handInfo));
     const board = h('div', { class: 'miniboard' });
     for (let r = 0; r < 2; r++) {
       const line = h('div', { class: 'mb-row' });
@@ -1859,7 +1944,10 @@ function openMedia() {
   const ownInput = h('input', { placeholder: 'YouTube / Spotify / Radio-Stream', value: settings.ownMusicUrl, style: { flex: '1' } });
   const loadSrc = (kind: 'tv' | 'music', url: string) => {
     const id = parseYouTube(url);
+    const ch = kind === 'tv' ? parseTwitch(url) : null;
     if (id) send({ type: kind, action: 'load', source: { kind: 'youtube', id } });
+    else if (ch) send({ type: kind, action: 'load', source: { kind: 'twitch', channel: ch } });
+    else if (kind === 'tv' && /^https?:\/\//.test(url)) toast(getLang() === 'de' ? 'Der Fernseher spielt YouTube- und Twitch-Links' : 'Televizyon YouTube ve Twitch linklerini oynatır');
     else if (/^https?:\/\//.test(url)) send({ type: kind, action: 'load', source: { kind: 'stream', url } });
     else toast('Link?');
   };

@@ -100,7 +100,7 @@ export class City {
     }
     // Mittellinie (gestrichelt) + Zebrastreifen
     const paint = new THREE.MeshBasicMaterial({ color: '#e9e4d4' });
-    for (let x = -68; x < 68; x += 4) {
+    for (let x = -50; x < 50; x += 4) {
       const d = new THREE.Mesh(new THREE.PlaneGeometry(2, 0.14), paint);
       d.rotation.x = -Math.PI / 2;
       d.position.set(x, 0, (roadZ0 + roadZ1) / 2);
@@ -119,15 +119,16 @@ export class City {
     G.add(ground);
 
     // ---------- Gebäude-Helfer
-    const building = (x: number, z: number, w: number, h: number, d: number, faceDir: 1 | -1, color: string, shop: boolean, rot = 0) => {
+    // far = weit weg / kaum sichtbar → ohne Schatten und Kleinteile (spart Leistung)
+    const building = (x: number, z: number, w: number, h: number, d: number, faceDir: 1 | -1, color: string, shop: boolean, rot = 0, far = false) => {
       const b = new THREE.Group();
       // leichtes Eigenleuchten, damit die Pastellfarben auch im Schatten freundlich bleiben
       const bodyM = std(color).clone();
       bodyM.emissive = new THREE.Color(color).multiplyScalar(0.18);
       const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), bodyM);
       body.position.y = h / 2;
-      body.castShadow = true;
-      body.receiveShadow = true;
+      body.castShadow = !far;
+      body.receiveShadow = !far;
       b.add(body);
       const trim = std(new THREE.Color(color).multiplyScalar(0.78).getStyle(), 0.9);
       // Dachgesims + Stockwerksbänder
@@ -137,7 +138,7 @@ export class City {
       const floors = Math.max(2, Math.floor(h / 3));
       const fh = h / floors;
       const fz = (d / 2) * faceDir;
-      for (let f = 1; f < floors; f++) {
+      for (let f = 1; f < floors && !far; f++) {
         const band = new THREE.Mesh(new THREE.BoxGeometry(w + 0.04, 0.12, 0.1), trim);
         band.position.set(0, f * fh, fz + 0.03 * faceDir);
         b.add(band);
@@ -153,7 +154,7 @@ export class City {
           winM.push(new THREE.Matrix4().makeTranslation(x, 0, z).multiply(new THREE.Matrix4().makeRotationY(rot)).multiply(m));
           this.litMask.push(r() < 0.38);
           // Balkon manchmal
-          if (f >= 1 && r() < 0.18) {
+          if (!far && f >= 1 && r() < 0.18) {
             const slab = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.1, 0.6), trim);
             slab.position.set(wx, f * fh + 0.05, fz + 0.3 * faceDir);
             const rail = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.55, 0.05), std('#2b2b2b', 0.6));
@@ -187,12 +188,12 @@ export class City {
         b.add(sign);
       }
       // Dachaufbauten
-      if (r() < 0.5) {
+      if (!far && r() < 0.5) {
         const tank = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.45, 0.9, 10), std('#c9c9c9', 0.5));
         tank.position.set((r() - 0.5) * (w - 1), h + 0.75, 0);
         b.add(tank);
       }
-      if (r() < 0.4) {
+      if (!far && r() < 0.4) {
         const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6, 4), std('#333', 0.5));
         ant.position.set((r() - 0.5) * (w - 1), h + 1.1, (r() - 0.5) * (d - 1));
         const dish = new THREE.Mesh(new THREE.SphereGeometry(0.3, 10, 6, 0, Math.PI * 2, 0, Math.PI / 2.5), std('#e8e8e8', 0.4));
@@ -207,40 +208,41 @@ export class City {
 
     // ---------- Häuserzeile gegenüber (Front zur Straße = -Z)
     {
-      let x = -60;
-      while (x < 60) {
+      let x = -44;
+      while (x < 44) {
         const w = 4 + Math.floor(r() * 4);
         const h = 7 + Math.floor(r() * 8);
-        building(x + w / 2, z1 + 10 + 4, w, h, 8, -1, FACADES[Math.floor(r() * FACADES.length)], r() < 0.7);
+        const xc = x + w / 2;
+        building(xc, z1 + 10 + 4, w, h, 8, -1, FACADES[Math.floor(r() * FACADES.length)], Math.abs(xc) < 30 && r() < 0.7, 0, Math.abs(xc) > 30);
         x += w + (r() < 0.15 ? 2.5 : 0);
       }
     }
     // ---------- Nachbarhäuser links/rechts vom Kahvehane (Front = +Z, bündig mit der Fassade)
     for (const side of [-1, 1]) {
       let x = cafeHalfW + 0.4;
-      while (x < 60) {
+      while (x < cafeHalfW + 24) {
         const w = 4 + Math.floor(r() * 4);
         const h = 7 + Math.floor(r() * 7);
-        building(side * (x + w / 2), facadeZ - 5, w, h, 10, 1, FACADES[Math.floor(r() * FACADES.length)], r() < 0.6);
+        building(side * (x + w / 2), facadeZ - 5, w, h, 10, 1, FACADES[Math.floor(r() * FACADES.length)], x < cafeHalfW + 12 && r() < 0.6, 0, x > cafeHalfW + 12);
         x += w;
       }
       // Gehweg vor den Nachbarn (bis zur Straße)
-      const s = new THREE.Mesh(new THREE.BoxGeometry(60, 0.12, z1 - facadeZ), walk);
-      s.position.set(side * (cafeHalfW + 30.4), 0.04, (z1 + facadeZ) / 2);
+      const s = new THREE.Mesh(new THREE.BoxGeometry(40, 0.12, z1 - facadeZ), walk);
+      s.position.set(side * (cafeHalfW + 20.4), 0.04, (z1 + facadeZ) / 2);
       G.add(s);
     }
     // ---------- Hochhäuser dahinter (Skyline, pastell)
-    for (let i = 0; i < 16; i++) {
-      const w = 7 + r() * 6;
-      const h = 18 + r() * 22;
-      const x = -70 + i * 9.5 + r() * 3;
-      if (Math.abs(x + 22) < 8) continue; // Platz für die Moschee
-      building(x, z1 + 30 + r() * 10, w, h, 9, -1, TOWERS[Math.floor(r() * TOWERS.length)], false);
-    }
-    // dahinter auch im Rücken des Kahvehane
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 9; i++) {
       const w = 8 + r() * 6;
-      building(-45 + i * 10 + r() * 3, facadeZ - 28 - r() * 8, w, 14 + r() * 20, 9, 1, TOWERS[Math.floor(r() * TOWERS.length)], false);
+      const h = 18 + r() * 22;
+      const x = -48 + i * 12 + r() * 3;
+      if (Math.abs(x + 22) < 8) continue; // Platz für die Moschee
+      building(x, z1 + 30 + r() * 10, w, h, 9, -1, TOWERS[Math.floor(r() * TOWERS.length)], false, 0, true);
+    }
+    // dahinter im Rücken des Kahvehane nur ein paar hohe, die übers Dach schauen
+    for (let i = 0; i < 4; i++) {
+      const w = 9 + r() * 6;
+      building(-30 + i * 20 + r() * 3, facadeZ - 28 - r() * 8, w, 24 + r() * 14, 9, 1, TOWERS[Math.floor(r() * TOWERS.length)], false, 0, true);
     }
 
     // Fenster als eine einzige Instanz-Mesh (schnell)
@@ -315,12 +317,12 @@ export class City {
 
     // ---------- fahrende Autos
     const colors = ['#d23b2f', '#f2c230', '#3b7bd2', '#2e8b57', '#e8e8e8', '#6c3483', '#f39c12'];
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < 4; i++) {
       const dir = i % 2 ? -1 : 1;
       const lane = dir > 0 ? roadZ0 + 1.6 : roadZ1 - 1.6;
       const car = this.makeCar(colors[i % colors.length], i === 1 || i === 4);
       car.model = [5, 0, 7, 15, 9, 3, 11, 16, 13, 2][i % 10];
-      car.g.position.set(-60 + i * 19 + r() * 6, 0, lane);
+      car.g.position.set(-45 + i * 24 + r() * 6, 0, lane);
       car.g.rotation.y = dir > 0 ? 0 : Math.PI;
       car.speed = (6 + r() * 4) * dir;
       G.add(car.g);
@@ -520,8 +522,8 @@ export class City {
       const atCross = car.speed > 0 ? x > -16 && x < -11.5 : x < -1 && x > -5.5;
       const v = redForCars && atCross ? 0 : car.speed;
       car.g.position.x += v * dt;
-      if (car.g.position.x > 70) car.g.position.x = -70;
-      if (car.g.position.x < -70) car.g.position.x = 70;
+      if (car.g.position.x > 50) car.g.position.x = -50;
+      if (car.g.position.x < -50) car.g.position.x = 50;
       // Räder drehen
       car.g.children.forEach((ch) => {
         if ((ch as THREE.Mesh).geometry?.type === 'CylinderGeometry') ch.rotation.y -= (v * dt) / 0.34;

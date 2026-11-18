@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { OkeyGame, GameError, botTurn, defaultRules, type TableRules, type Mode } from '@okeyhane/engine';
+import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, type TableRules, type Mode } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from './protocol.ts';
 import { loadStats, recordResult, getStats } from './stats.ts';
 import { accounts, AccountError, type UserRow, type FriendRow } from './accounts.ts';
@@ -238,6 +238,12 @@ function scheduleBots(t: Table) {
   if (g.hand.phase === 'handOver') {
     // nächste Hand erst, wenn alle Menschen bereit sind (Bots sind es sofort) oder der Tischbesitzer startet
     t.seats.forEach((s, i) => s.bot && t.ready.add(i));
+    // Bots legen ihr Brett sichtbar geordnet hin (wie ein Mensch, der umgestellt hat)
+    t.seats.forEach((s, i) => {
+      if (!s.bot) return;
+      const hp = g.hand.players[i];
+      t.layouts[i] = autoLayout(hp.hand, g.hand.okey, g.hand.indicator, t.rules.indicatorPairsAnything);
+    });
     if (!t.seats.some((s) => s.client)) {
       // nur Bots/Zuschauer: kurz warten, dann weiter
       t.botTimer = setTimeout(() => maybeNextHand(t, true), 6000);
@@ -805,6 +811,14 @@ function doAction(t: Table, g: OkeyGame, seat: number, m: Msg) {
       broadcast(t, { type: 'sfx', kind: 'discard', seat });
       break;
     case 'finish': {
+      if (t.rules.mode !== 'okey101') {
+        // wie am echten Tisch: nur mit richtig umgestelltem Brett
+        const pl = g.hand.players[seat];
+        const rest = pl.hand.filter((x) => x.id !== Number(m.tileId));
+        if (Array.isArray(m.slots) && m.slots.length === 32) t.layouts[seat] = m.slots.map((x: unknown) => (typeof x === 'number' ? x : null));
+        const complete = rest.length === 14 && (isCompleteMelds(rest, g.hand.okey) || isCompletePairs(rest, g.hand.okey, g.hand.indicator, t.rules.indicatorPairsAnything));
+        if (complete && !rackIsFinished(t.layouts[seat], rest, g.hand.okey, g.hand.indicator, t.rules.indicatorPairsAnything)) throw new GameError('Erst richtig umstellen');
+      }
       const r = g.finish(seat, Number(m.tileId));
       broadcast(t, { type: 'sfx', kind: 'finish', seat, note: r.note });
       break;

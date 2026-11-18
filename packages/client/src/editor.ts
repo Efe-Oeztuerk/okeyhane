@@ -2,7 +2,13 @@
 
 import type { Avatar } from '../../server/src/protocol.ts';
 import { h } from './dom.ts';
-import { t } from './i18n.ts';
+import { getLang, t } from './i18n.ts';
+
+/** „Türkisch · Deutsch“ → passende Hälfte zur eingestellten Sprache */
+const bi = (x: string) => {
+  const p = x.split(' · ');
+  return p.length === 2 ? p[getLang() === 'de' ? 1 : 0] : x;
+};
 import { World } from './scene.ts';
 import { KITS } from './avatar.ts';
 import { REAL_BASES, REAL_HAIR } from './realbody.ts';
@@ -80,7 +86,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
     opts.append(h('label', {}, t('yourName')), nameInput);
     const swatchRow = (label: string, key: keyof Avatar, colors: string[]) => {
       opts.append(
-        h('label', {}, label),
+        h('label', {}, bi(label)),
         h(
           'div',
           { class: 'swatches' },
@@ -107,19 +113,19 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
     };
     const chipRow = (label: string, items: [string, string][], cur: string, set: (v: string) => void) =>
       opts.append(
-        h('label', {}, label),
+        h('label', {}, bi(label)),
         h(
           'div',
           { class: 'chips' },
-          items.map(([v, l]) => h('div', { class: 'chip' + (cur === v ? ' on' : ''), onclick: () => (set(v), refresh()) }, l)),
+          items.map(([v, l]) => h('div', { class: 'chip' + (cur === v ? ' on' : ''), onclick: () => (set(v), refresh()) }, bi(l))),
         ),
       );
     const real = p.avatar.style === 'real';
     chipRow(
-      'Stil · Tarz',
+      'Tarz · Stil',
       [
         ['cartoon', '🎨 Cartoon'],
-        ['real', '🧍 Realistisch · Gerçekçi'],
+        ['real', '🧍 Gerçekçi · Realistisch'],
       ],
       real ? 'real' : 'cartoon',
       (v) => {
@@ -130,7 +136,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
     if (real) {
       const base = REAL_BASES.find((b) => b.id === p.avatar.realBase) ?? REAL_BASES[0];
       chipRow(
-        'Figur · Karakter',
+        'Karakter · Figur',
         REAL_BASES.map((b) => [b.id, b.label]),
         base.id,
         (v) => {
@@ -139,24 +145,24 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
         },
       );
       if (base.kind === 'q') {
-        swatchRow('Hautton · Ten', 'realSkin', ['#f1cfb0', '#e6b896', '#d4a07a', '#b98058', '#9a6a45', '#7a4f32', '#5a3a24']);
+        swatchRow('Ten · Hautton', 'realSkin', ['#f1cfb0', '#e6b896', '#d4a07a', '#b98058', '#9a6a45', '#7a4f32', '#5a3a24']);
         const hairs = base.fem ? ['long', 'buns', 'buzzedfemale', 'simpleparted', 'none'] : ['simpleparted', 'buzzed', 'long', 'none'];
-        chipRow('Frisur · Saç', hairs.map((k) => [k, REAL_HAIR[k]]), p.avatar.realHair ?? hairs[0], (v) => (p.avatar.realHair = v));
+        chipRow('Saç · Frisur', hairs.map((k) => [k, REAL_HAIR[k]]), p.avatar.realHair ?? hairs[0], (v) => (p.avatar.realHair = v));
         if (!base.fem)
           chipRow(
-            'Bart · Sakal',
+            'Sakal · Bart',
             [
-              ['0', 'Ohne · Yok'],
-              ['1', 'Vollbart · Sakal'],
+              ['0', 'Yok · Ohne'],
+              ['1', 'Sakal · Vollbart'],
             ],
             p.avatar.realBeard ? '1' : '0',
             (v) => (p.avatar.realBeard = v === '1'),
           );
         swatchRow(t('char_hairColor'), 'hairColor', HAIR);
         swatchRow(t('char_shirtColor'), 'shirtColor', CLOTH);
-        swatchRow('Hose · Pantolon', 'pantsColor', ['#3a342e', '#1a1a1a', '#2f3e5c', '#5a4632', '#6b6b6b', '#e8e2d4', '#2d5a3a']);
+        swatchRow('Pantolon · Hose', 'pantsColor', ['#3a342e', '#1a1a1a', '#2f3e5c', '#5a4632', '#6b6b6b', '#e8e2d4', '#2d5a3a']);
       } else {
-        opts.append(h('div', { class: 'muted', style: { fontSize: '12px' } }, 'Diese Figur trägt feste Kleidung. · Bu karakterin kıyafeti sabit.'));
+        opts.append(h('div', { class: 'muted', style: { fontSize: '12px' } }, bi('Bu karakterin kıyafeti sabit. · Diese Figur trägt feste Kleidung.')));
       }
       const sh = OPTIONS.find((o) => o.key === 'shisha')!;
       chipRow(t('char_shisha'), sh.values.map((v) => [v, sh.labels[v]]), p.avatar.shisha ?? 'classic', (v) => ((p.avatar as any).shisha = v));
@@ -169,7 +175,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
     }
     const fem = p.avatar.body === 'f';
     opts.append(
-      h('label', {}, 'Tip · Typ'),
+      h('label', {}, bi('Tip · Typ')),
       h(
         'div',
         { class: 'chips' },
@@ -195,7 +201,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
                 refresh();
               },
             },
-            l,
+            bi(l),
           ),
         ),
       ),
@@ -218,7 +224,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
                   refresh();
                 },
               },
-              o.labels[v],
+              bi(o.labels[v]),
             ),
           ),
         ),
@@ -228,7 +234,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
       if (o.key === 'makeup' && p.avatar.makeup && p.avatar.makeup !== 'none') swatchRow('Ruj · Lippenstift', 'lipColor', LIPS);
       if (o.key === 'shirt' && p.avatar.shirt === 'trikot') {
         opts.append(
-          h('label', {}, 'Retro Forma · Retro-Trikot'),
+          h('label', {}, bi('Retro Forma · Retro-Trikot')),
           h(
             'div',
             { class: 'chips' },

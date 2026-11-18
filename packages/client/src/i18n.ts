@@ -79,7 +79,7 @@ const dict = {
     send: 'Gönder',
     tv: 'Televizyon',
     music: 'Müzik',
-    linkPlaceholder: 'YouTube linki',
+    linkPlaceholder: 'YouTube / Twitch linki',
     streamPlaceholder: 'Radyo yayın linki (mp3/aac)',
     load: 'Aç',
     pause: 'Durdur',
@@ -228,7 +228,7 @@ const dict = {
     send: 'Senden',
     tv: 'Fernseher',
     music: 'Musik',
-    linkPlaceholder: 'YouTube-Link',
+    linkPlaceholder: 'YouTube-/Twitch-Link',
     streamPlaceholder: 'Radio-Stream-Link (mp3/aac)',
     load: 'Abspielen',
     pause: 'Pause',
@@ -304,7 +304,8 @@ const dict = {
 } as const;
 
 export type Key = keyof (typeof dict)['tr'];
-let lang: Lang = (localStorage.getItem('lang') as Lang) || (navigator.language?.toLowerCase().startsWith('de') ? 'de' : 'tr');
+// Hauptsprache ist Türkisch; Deutsch nur, wenn man es selbst umstellt
+let lang: Lang = localStorage.getItem('lang') === 'de' ? 'de' : 'tr';
 
 export function t(k: Key | string): string {
   return (dict[lang] as any)[k] ?? (dict.tr as any)[k] ?? k;
