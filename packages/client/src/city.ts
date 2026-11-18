@@ -3,6 +3,8 @@
 
 import * as THREE from 'three';
 import * as D from './decor.ts';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
 
 type Mode = 'day' | 'evening' | 'night';
 
@@ -47,6 +49,8 @@ interface Car {
   g: THREE.Group;
   speed: number;
   lights: THREE.MeshBasicMaterial[];
+  /** Index des Modells aus cars.glb */
+  model: number;
 }
 
 export class City {
@@ -315,6 +319,7 @@ export class City {
       const dir = i % 2 ? -1 : 1;
       const lane = dir > 0 ? roadZ0 + 1.6 : roadZ1 - 1.6;
       const car = this.makeCar(colors[i % colors.length], i === 1 || i === 4);
+      car.model = [5, 0, 7, 15, 9, 3, 11, 16, 13, 2][i % 10];
       car.g.position.set(-60 + i * 19 + r() * 6, 0, lane);
       car.g.rotation.y = dir > 0 ? 0 : Math.PI;
       car.speed = (6 + r() * 4) * dir;
@@ -345,6 +350,69 @@ export class City {
     this.stars = new THREE.Points(sg, new THREE.PointsMaterial({ color: '#ffffff', size: 0.6, fog: false, transparent: true, opacity: 0 }));
     G.add(this.stars);
     this.setMode('day', 13);
+    void this.loadCars();
+  }
+
+  /** echte Auto-Modelle (low poly cars vol 01, ilkhom23) nachladen und die Platzhalter ersetzen */
+  private async loadCars() {
+    const loader = new GLTFLoader();
+    loader.setMeshoptDecoder(MeshoptDecoder);
+    let gltf;
+    try {
+      gltf = await loader.loadAsync('/models/cars.glb');
+    } catch {
+      return;
+    }
+    const models = gltf.scene.children.slice();
+    if (!models.length) return;
+    for (const car of this.cars) {
+      const src = models[car.model % models.length];
+      const m = src.clone(true);
+      m.position.set(0, 0, 0);
+      const wrap = new THREE.Group();
+      wrap.add(m);
+      // längste waagerechte Seite = Fahrtrichtung (+X), auf 4.6 m Länge bringen, Räder auf den Boden
+      let box = new THREE.Box3().setFromObject(wrap);
+      let size = box.getSize(new THREE.Vector3());
+      // flachste Seite = Höhe → nach oben drehen
+      if (size.z < size.y && size.z < size.x) m.rotation.x = -Math.PI / 2;
+      else if (size.x < size.y && size.x < size.z) m.rotation.z = Math.PI / 2;
+      m.updateMatrixWorld(true);
+      box = new THREE.Box3().setFromObject(wrap);
+      size = box.getSize(new THREE.Vector3());
+      if (size.z > size.x) {
+        const r = new THREE.Group();
+        wrap.remove(m);
+        r.add(m);
+        r.rotation.y = Math.PI / 2;
+        wrap.add(r);
+      }
+      if ((window as any).__carFlip) m.rotation.y += Math.PI;
+      box = new THREE.Box3().setFromObject(wrap);
+      size = box.getSize(new THREE.Vector3());
+      const sc = 4.6 / Math.max(size.x, 0.1);
+      wrap.scale.setScalar(sc);
+      box = new THREE.Box3().setFromObject(wrap);
+      const c = box.getCenter(new THREE.Vector3());
+      wrap.position.set(-c.x, -box.min.y, -c.z);
+      m.traverse((o) => {
+        const mm = o as THREE.Mesh;
+        if (mm.isMesh) {
+          mm.castShadow = true;
+          // Metall-Wert aus dem Export macht ohne Umgebungs-Map schwarz
+          const mt = (mm.material as THREE.MeshStandardMaterial).clone();
+          mt.metalness = 0;
+          mt.roughness = 0.5;
+          mm.material = mt;
+        }
+      });
+      // Platzhalter-Karosserie ausblenden, Lichter (Scheinwerfer/Rücklichter) bleiben
+      car.g.children.forEach((ch) => {
+        const mat = (ch as THREE.Mesh).material as THREE.Material | undefined;
+        if (!mat || !car.lights.includes(mat as THREE.MeshBasicMaterial)) ch.visible = false;
+      });
+      car.g.add(wrap);
+    }
   }
 
   private makeCar(color: string, taxi: boolean): Car {
@@ -385,7 +453,7 @@ export class City {
       g.add(sign);
     }
     g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
-    return { g, speed: 7, lights };
+    return { g, speed: 7, lights, model: 0 };
   }
 
   /** Tageszeit setzen; hour = Uhrzeit (0–24) für den Stand von Sonne/Mond */
