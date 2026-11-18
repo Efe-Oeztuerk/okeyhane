@@ -458,12 +458,10 @@ function setupTouch(world: World, api: ControlApi) {
   const btns = h(
     'div',
     { class: 'tbtns' },
-    lookBtn,
     hold('🔍', 'Zoom', () => world.setZoom(true), () => world.setZoom(false)),
     hold('🎥', '3rd Person', () => world.setThird('back'), () => world.setThird(null)),
     hold('🪞', 'Von vorne', () => world.setThird('front'), () => world.setThird(null)),
     tap('☕', 'Ahmet (Çaycı)', () => api.openCayci()),
-    tap('😊', 'Emotes', () => (wheelIsOpen() ? closeWheel() : api.openEmotes()), 'seated-only'),
     tap('💨', 'Nargile', () => api.emote('nargile'), 'seated-only'),
     tap('💬', 'Chat', () => api.toggleChat()),
   );

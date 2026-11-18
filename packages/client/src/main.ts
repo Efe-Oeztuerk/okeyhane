@@ -1355,6 +1355,10 @@ function renderRight() {
   const L = (icon: string, _text: string) => icon;
   const de = getLang() === 'de';
   appendAll(el,
+    // Touch am Platz: frei umschauen (früher eigener Knopf rechts)
+    touch && you.seat !== null && world.seated !== null
+      ? h('button', { class: 'small' + (!world.focus && world.freeLook ? ' primary' : ''), title: de ? 'Frei umschauen' : 'Serbest bak', onclick: () => ((world.focus || !world.freeLook ? world.setFocus(false, true) : world.setFocus(true)), renderRight()) }, '👁')
+      : null,
     h('button', { class: 'small', title: t('tv') + ' / ' + t('music'), onclick: () => openMedia() }, '📺'),
     radioChip(),
     muteButton(),

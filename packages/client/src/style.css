@@ -486,3 +486,21 @@ body.phone .okeyinfo .ok-meta { display: none !important; }
 .cd-menu > .radiochip { width: auto !important; max-width: none !important; justify-content: space-between; }
 .cd-menu > .radiochip .rc-text { max-width: none !important; overflow: visible; white-space: normal; flex: 1; }
 .cd-menu > .radiochip .rc-text::before { content: none !important; }
+
+/* ---------- Handy: Kopfzeile + Pfeile + Spielerliste (Nov) ---------- */
+/* Pfeile zum Auf-/Zuklappen größer und gut treffbar */
+.hud-left .fold, .hud-top .toptoggle { min-width: 34px; min-height: 30px; font-size: 16px; display: inline-flex; align-items: center; justify-content: center; }
+body.touch .hud-left .fold, body.touch .hud-top .toptoggle { min-width: 46px; min-height: 40px; font-size: 22px; border-radius: 12px; }
+body.phone .hud-top .toptoggle { min-width: 58px; min-height: 52px; font-size: 28px; } /* Kopfzeile ist ×0.68 skaliert */
+/* Linkes Fenster liegt immer über der Kopfzeile (sein Pfeil wird nie verdeckt) */
+.hud-left { z-index: 44; }
+/* Handy: Okey + letzter Abwurf in der Mitte, Punkte rechts daneben, Zug-Hinweis links */
+body.phone .hud-top > .turn { order: 1; }
+body.phone .hud-top > .okeyinfo { order: 2; }
+body.phone .hud-top > .score { order: 3; }
+body.phone .hud-top > .score + .score, body.phone .hud-top > .score ~ .score { order: 4; }
+body.phone .hud-top > .toptoggle { order: 5; }
+/* Spielerliste: bleibt über der Istaka und scrollt, wenn sie zu lang ist */
+body.touch .hud-left:not(.compact) { max-height: calc(100dvh - 24px - env(safe-area-inset-top) - env(safe-area-inset-bottom)); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; }
+body.touch .hud-left:not(.compact) .people { max-height: none; }
+body.touch .hud-left:not(.compact) > .muted:first-of-type { padding-right: 44px; }
