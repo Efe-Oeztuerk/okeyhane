@@ -12,7 +12,7 @@ import { openEditor } from './editor.ts';
 import { MediaPlayer, parseTwitch, parseYouTube } from './media.ts';
 import { Voice } from './voice.ts';
 import { sfx, unlockAudio } from './sound.ts';
-import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
+import { settings, saveSettings, vol, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
 import { isCompleteMelds, isCompletePairs, looseSum, rackIsFinished } from '@okeyhane/engine';
 import { CREDITS } from './models.ts';
@@ -212,9 +212,17 @@ on('emote', (m) => {
     addLog(h('div', { class: 'sys' }, `${nameOf(m.seat)} 💨`));
   }
 });
+/** Ruf nach Ahmet (bei jeder Bestellung, für alle am Tisch) */
+const ahmetCall = new Audio('/sfx/ahmet.mp3');
+ahmetCall.preload = 'auto';
 on('order', (m) => {
   const item = m.item as OrderItem;
-  world.order(m.seat, item);
+  try {
+    const a = ahmetCall.cloneNode(true) as HTMLAudioElement;
+    a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
+    void a.play().catch(() => {});
+  } catch {}
+  world.order(m.seat, item, m.variant ?? 0);
   addLog(h('div', { class: 'sys' }, `${m.from}: ${orderLabel(item)} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
   if (m.seat === you.seat) sfx.bell();
 });
@@ -317,6 +325,7 @@ on('error', (m) => {
   }
   const de = getLang() === 'de';
   if (m.key === 'noTable') return toast(de ? 'Tisch nicht gefunden' : 'Masa bulunamadı');
+  if (m.key === 'orderWait') return orderWaitToast(m.secs ?? 30);
   if (m.text === 'Erst richtig umstellen') return toast(de ? '✋ Erst das Brett richtig umstellen (Perler mit Lücke trennen)' : '✋ Önce istakayı doğru diz (perler arası boşluk)', '#7a4a1a');
   toast(m.text ? (de ? m.text : errTr(m.text)) : de ? 'Fehler' : 'Hata');
 });
@@ -942,7 +951,7 @@ function keybindSection() {
         ['wink', 'Zwinkern', 'Göz kırp'],
         ['blink', 'Blinzeln', 'Göz kırpıştır'],
         ['wide', 'Große Augen', 'Göz aç'],
-        ['cayci', 'Çaycı rufen / bestellen', 'Çaycıyı çağır'],
+        ['cayci', 'Ahmet (Çaycı) rufen', 'Ahmet’i (çaycı) çağır'],
         ['quick', 'Sprüche-Menü', 'Hazır sözler'],
         ['chat', 'Chat schreiben', 'Sohbet yaz'],
         ['sheet', 'Punktezettel', 'Puan kağıdı'],
@@ -1381,7 +1390,7 @@ function renderRight() {
     table!.started ? h('button', { class: 'small', title: t('sheet'), onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, L('📝', t('sheet'))) : null,
     // am PC gibt es keine Touch-Knöpfe rechts → Chat, Çaycı, Emotes hier
     !touch ? h('button', { class: 'small', title: 'Chat (Enter)', onclick: () => setChatOpen(!els.chat?.classList.contains('open')) }, '💬') : null,
-    !touch && you.seat !== null ? h('button', { class: 'small', title: de ? 'Çaycı rufen (K)' : 'Çaycı (K)', onclick: () => openCayci() }, '☕') : null,
+    !touch && you.seat !== null ? h('button', { class: 'small', title: de ? 'Ahmet rufen (K)' : 'Ahmet (K)', onclick: () => openCayci() }, '☕') : null,
     !touch && you.seat !== null ? h('button', { class: 'small', title: 'Emotes (E)', onclick: () => openWheelEmotes() }, '😊') : null,
     !touch && you.seat !== null ? h('button', { class: 'small', title: 'Nargile', onclick: () => sendEmote('nargile') }, '💨') : null,
     h('button', { class: 'small ghost', title: de ? 'Einstellungen' : 'Ayarlar', onclick: () => openSettings() }, '⚙️'),
@@ -1483,6 +1492,7 @@ function closeOverlays(keep?: 'chat' | 'menu' | 'wheel' | 'left' | 'modal') {
 // Steuerung ohne Maus: Tastenkürzel, Controller, Touch
 const ORDER_LABELS: Record<OrderItem, [string, string]> = {
   cay: ['🫖 Çay', '🫖 Çay (Tee)'],
+  icecek: ['🥤 İçecek (sürpriz)', '🥤 Softdrink (zufällig)'],
   kahve: ['☕ Türk kahvesi', '☕ Türkischer Kaffee'],
   kuruyemis: ['🥜 Kuruyemiş', '🥜 Kuruyemiş (Nüsse)'],
   su: ['💧 Su', '💧 Su (Wasser)'],
@@ -1545,7 +1555,7 @@ const controlsApi: any = {
       y('😉', 'wink'),
       y('😵', 'blink'),
       y('😳', 'wide'),
-      { icon: '☕', label: de ? 'Çaycı rufen' : 'Çaycıyı çağır', fn: () => openCayci() },
+      { icon: '☕', label: de ? 'Ahmet rufen' : 'Ahmet’i çağır', fn: () => openCayci() },
     ]);
   },
   focusChat: () => {
@@ -1575,18 +1585,26 @@ setupControls(world, istaka, controlsApi);
 function openWheelEmotes() {
   controlsApi.openEmotes();
 }
-const CAYCI_TITLE = () => '🫖 ' + (getLang() === 'de' ? 'Çaycı rufen – was darf es sein?' : 'Çaycı! Ne alırsın?');
+const CAYCI_TITLE = () => '🫖 ' + (getLang() === 'de' ? 'Ahmet rufen – was darf es sein?' : 'Ahmet! Ne alırsın?');
+/** gleicher Abstand wie auf dem Server */
+const ORDER_GAP_MS = 45_000;
+let lastOrderAt = 0;
+function orderWaitToast(secs: number) {
+  toast(getLang() === 'de' ? `🫖 Ahmet ist noch unterwegs – in ${secs} s kannst du wieder bestellen` : `🫖 Ahmet yolda – ${secs} sn sonra tekrar söyleyebilirsin`);
+}
 function openCayci() {
   // nochmal drücken = wieder zu (ohne zu bestellen)
   if (menuIsOpen(CAYCI_TITLE())) return closeMenu();
   closeOverlays('menu');
   if (you.seat === null) {
-    return toast(getLang() === 'de' ? 'Setz dich erst an den Tisch – der Çaycı bringt es dann' : 'Önce masaya otur – çaycı getirsin');
+    return toast(getLang() === 'de' ? 'Setz dich erst an den Tisch – Ahmet bringt es dann' : 'Önce masaya otur – Ahmet getirsin');
   }
+  const left = ORDER_GAP_MS - (Date.now() - lastOrderAt);
+  if (left > 0) return orderWaitToast(Math.ceil(left / 1000));
   sfx.spoon();
   popupMenu(
     CAYCI_TITLE(),
-    ORDER_ITEMS.map((i) => ({ label: orderLabel(i), fn: () => send({ type: 'order', item: i }) })),
+    ORDER_ITEMS.map((i) => ({ label: orderLabel(i), fn: () => ((lastOrderAt = Date.now()), send({ type: 'order', item: i })) })),
   );
 }
 

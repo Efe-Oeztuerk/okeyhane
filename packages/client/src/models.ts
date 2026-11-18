@@ -80,5 +80,10 @@ export const CREDITS = [
   { what: 'Antique Turkish Runner Carpet', author: 'mfb64', url: 'https://sketchfab.com/3d-models/antique-turkish-runner-carpet-8509133148294571a5ac062a6bdf6d98' },
   { what: 'Universal Base Characters (realistische Figuren, CC0)', author: 'Quaternius', url: 'https://quaternius.com' },
   { what: 'low poly cars vol 01 (Autos, Royalty Free)', author: 'ilkhom23', url: 'https://www.cgtrader.com/free-3d-models/car/concept-car/cars-pack-41-objects-cars-tyres-trucks-lowpoly' },
+  { what: 'Glass of water (CC BY)', author: 'Hoshi_Takase_Moppy', url: 'https://sketchfab.com/3d-models/glass-of-water-90a9fc57892e4811aca10922fec6f084' },
+  { what: 'Bowl of nuts (CC BY)', author: 'Bastian_01', url: 'https://sketchfab.com/3d-models/bowl-of-nuts-fa80b79d252740b4a2d1d3dfa915c515' },
+  { what: 'Red Bull Energy Drink Can (CC BY)', author: 'martin_dalm', url: 'https://sketchfab.com/3d-models/red-bull-energy-drink-can-2a29aa47ffd74b6395d07cd270db4735' },
+  { what: 'Soda Cans – 500ml (CC BY-NC)', author: 'Mark Peters', url: 'https://sketchfab.com/3d-models/soda-cans-500ml-free-download-84452c6420a44ea4be84c49fc6b2df6c' },
+  { what: 'Çay-Untertasse (Textur aus „Tea“, 3dexport)', author: '3dexport', url: 'https://3dexport.com' },
   { what: 'Vocations and Uniforms (Gäste & Berufsfiguren, CC BY-SA – angepasst)', author: 'itch.io-Asset „Vocations and Uniforms“', url: 'https://itch.io' },
 ];

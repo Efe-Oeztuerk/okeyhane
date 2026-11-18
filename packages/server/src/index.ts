@@ -193,6 +193,9 @@ function pushState(t: Table) {
   }
 }
 
+/** Mindestabstand zwischen zwei Bestellungen desselben Spielers */
+const ORDER_GAP_MS = 45_000;
+
 function humanCount(t: Table) {
   return t.seats.filter((s) => s.client).length;
 }
@@ -760,9 +763,16 @@ function handle(c: Client, m: Msg) {
       }
       case 'order': {
         // Çaycı-Bestellung (rein kosmetisch)
-        const items = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep'];
+        const items = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep', 'icecek'];
         if (c.seat === null || !items.includes(m.item)) return;
-        broadcast(t, { type: 'order', seat: c.seat, item: m.item, from: c.info.name });
+        // nicht dauernd bestellen: Abstand pro Spieler
+        const now = Date.now();
+        const wait = ORDER_GAP_MS - (now - ((c as any).lastOrder ?? 0));
+        if (wait > 0) return send(c, { type: 'error', key: 'orderWait', secs: Math.ceil(wait / 1000) });
+        (c as any).lastOrder = now;
+        // İçecek: Ahmet bringt eine zufällige Dose (für alle dieselbe)
+        const variant = m.item === 'icecek' ? Math.floor(Math.random() * 7) : 0;
+        broadcast(t, { type: 'order', seat: c.seat, item: m.item, from: c.info.name, variant });
         return;
       }
       case 'setSpot': {

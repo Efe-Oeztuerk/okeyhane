@@ -11,7 +11,7 @@ import * as D from './decor.ts';
 import { settings, onSettings } from './settings.ts';
 import { sfx } from './sound.ts';
 import { makeShisha, animateShisha, type ShishaStyle } from './props.ts';
-import { placeModel } from './models.ts';
+import { placeModel, loadModel } from './models.ts';
 
 const TABLE_Y = 0.74;
 const FLAT = 1.7;
@@ -41,7 +41,9 @@ export const SPOTS = [
   { x: 2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sağ', de: 'Garten rechts' },
 ];
 /** Bestellbares beim Çaycı (rein kosmetisch) */
-export const ORDER_ITEMS = ['cay', 'kahve', 'kuruyemis', 'su', 'oralet', 'sahlep'] as const;
+export const ORDER_ITEMS = ['cay', 'kahve', 'kuruyemis', 'su', 'icecek', 'oralet', 'sahlep'] as const;
+/** Dosen in /models/items/drinks.glb (Reihenfolge = variant vom Server) */
+const DRINKS = ['redbull', 'cola', 'colazero', 'drpepper', 'pepsi', 'pepsizero', 'sprite'];
 export type OrderItem = (typeof ORDER_ITEMS)[number];
 
 export interface GameVisual {
@@ -80,7 +82,7 @@ export class World {
   private smokeTex = D.smokeSprite();
   private npcs: Avatar3D[] = [];
   private cayci!: Avatar3D;
-  private cayciState = { t: 20, phase: 'idle' as 'idle' | 'go' | 'serve' | 'back', pos: new THREE.Vector3(3.6, 0, -3.2) };
+  private cayciState = { t: 20, phase: 'idle' as 'idle' | 'go' | 'serve' | 'back', pos: new THREE.Vector3(3.6, 0, -3.2), clearSeat: null as number | null, clearCheck: 30 };
   private fan!: THREE.Object3D;
   private clockHands: { h: THREE.Object3D; m: THREE.Object3D } | null = null;
   private windowMesh!: THREE.Mesh;
@@ -980,10 +982,12 @@ export class World {
     // Çaycı
     this.cayci = new Avatar3D(
       { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none' },
-      'Çaycı',
+      'Ahmet',
       { showName: true, standing: true },
     );
     this.cayci.root.scale.setScalar(0.88);
+    // Bestell-Modelle vorladen, damit die erste Bestellung sofort echt aussieht
+    for (const f of ['cay', 'su', 'kuruyemis', 'drinks']) void loadModel('items/' + f).catch(() => {});
     this.cayci.root.position.copy(this.cayciState.pos);
     this.scene.add(this.cayci.root);
     // Tablett
@@ -2224,7 +2228,7 @@ export class World {
 
   // ------------------------------------------------------------ Çaycı + Bestellungen
 
-  private cayciQueue: { seat: number; item: OrderItem }[] = [];
+  private cayciQueue: { seat: number; item: OrderItem; variant: number }[] = [];
   private cayciPath: THREE.Vector3[] = [];
   private cayciHome = new THREE.Vector3(3.6, 0, -3.6);
 
@@ -2259,20 +2263,21 @@ export class World {
   }
 
   /** Bestellung als 3D-Objekt auf die Sehpa stellen (max. 3 pro Platz) */
-  private placeOrder(seat: number, item: OrderItem) {
+  private placeOrder(seat: number, item: OrderItem, variant = 0) {
     const list = this.orders[seat];
     const sehpa = this.sehpas[seat];
     if (list.length >= 3) sehpa.remove(list.shift()!);
     const slots = [new THREE.Vector3(0, 0, 0.02), new THREE.Vector3(0.085, 0, -0.06), new THREE.Vector3(-0.085, 0, -0.06)];
-    const m = this.orderMesh(item);
+    const m = this.orderMesh(item, variant);
+    m.userData.placed = performance.now();
     list.push(m);
     list.forEach((o, k) => o.position.copy(slots[k]).setY(0.54));
     sehpa.add(m);
   }
 
   /** Çaycı rufen: kommt an den Tisch und bringt die Bestellung */
-  order(seat: number, item: OrderItem) {
-    this.cayciQueue.push({ seat, item });
+  order(seat: number, item: OrderItem, variant = 0) {
+    this.cayciQueue.push({ seat, item, variant });
     if (this.cayciState.phase === 'idle') this.cayciState.t = 0;
     this.cayci.say(['Geliyor abi!', 'Hemen!', 'Tamam usta!', 'Baş üstüne!'][Math.floor(Math.random() * 4)]);
   }
@@ -2340,22 +2345,43 @@ export class World {
       return new THREE.Vector3(p.x, 0, p.z).addScaledVector(out, 0.42);
     };
     if (st.phase === 'idle' && st.t <= 0) {
-      // kommt nur, wenn jemand bestellt hat
+      // kommt, wenn jemand bestellt hat – oder ab und zu zum Abräumen
       if (this.cayciQueue.length) {
         st.phase = 'go';
+        st.clearSeat = null;
         this.routeTo(tableP(this.cayciQueue[0].seat));
-      } else st.t = 0.5;
+      } else {
+        st.t = 0.5;
+        st.clearCheck -= 0.5;
+        if (st.clearCheck <= 0) {
+          st.clearCheck = 25 + Math.random() * 35;
+          const seat = this.oldOrderSeat(90_000);
+          if (seat !== null) {
+            st.phase = 'go';
+            st.clearSeat = seat;
+            this.routeTo(tableP(seat));
+          }
+        }
+      }
     } else if (st.phase === 'go' && step()) {
       st.phase = 'serve';
       st.t = 1.4;
       const c = this.tableRoot.position;
       facing(this.cayci.root, st.pos.x - c.x, st.pos.z - c.z);
       this.cayci.emote('rubhands');
-      // alle Bestellungen für diesen Tisch abstellen
-      for (const o of this.cayciQueue) this.placeOrder(o.seat, o.item);
-      this.cayciQueue = [];
-      sfx.spoon();
-      this.cayci.say(['Afiyet olsun!', 'Buyrun!', 'Taze demledim!'][Math.floor(Math.random() * 3)]);
+      // leere Gläser von vorhin mitnehmen
+      const cleared = this.clearOld(60_000);
+      if (st.clearSeat !== null && !this.cayciQueue.length) {
+        st.clearSeat = null;
+        sfx.spoon();
+        if (cleared) this.cayci.say(['Boşları alayım', 'Müsaadenizle…', 'Bir tazesini getireyim mi?'][Math.floor(Math.random() * 3)]);
+      } else {
+        // alle Bestellungen für diesen Tisch abstellen
+        for (const o of this.cayciQueue) this.placeOrder(o.seat, o.item, o.variant);
+        this.cayciQueue = [];
+        sfx.spoon();
+        this.cayci.say(['Afiyet olsun!', 'Buyrun!', 'Taze demledim!'][Math.floor(Math.random() * 3)]);
+      }
     } else if (st.phase === 'serve' && st.t <= 0) {
       st.phase = 'back';
       this.routeTo(this.cayciHome.clone());
@@ -2369,7 +2395,49 @@ export class World {
     this.cayci.update(dt);
   }
 
-  private orderMesh(item: OrderItem) {
+  /** Platz, an dem etwas schon länger steht (zum Abräumen) */
+  private oldOrderSeat(ageMs: number): number | null {
+    const now = performance.now();
+    for (let s = 0; s < 4; s++) if (this.orders[s].some((o) => now - (o.userData.placed ?? now) > ageMs)) return s;
+    return null;
+  }
+  /** Ahmet räumt alles weg, was älter ist (an allen Plätzen des Tisches) */
+  private clearOld(ageMs: number) {
+    const now = performance.now();
+    let n = 0;
+    for (let s = 0; s < 4; s++) {
+      const keep: THREE.Object3D[] = [];
+      for (const o of this.orders[s]) {
+        if (now - (o.userData.placed ?? now) > ageMs) {
+          o.parent?.remove(o);
+          n++;
+        } else keep.push(o);
+      }
+      this.orders[s] = keep;
+    }
+    return n;
+  }
+
+  /** echtes 3D-Modell (Sketchfab / selbst gebaut) in die Gruppe laden */
+  private itemModel(g: THREE.Group, file: string, pick?: string) {
+    void loadModel('items/' + file)
+      .then((root) => {
+        let obj: THREE.Object3D = root;
+        if (pick) {
+          const found = root.getObjectByName(pick);
+          if (!found) return console.warn('item fehlt', pick, root.children.map((c) => c.name));
+          obj = found;
+          obj.position.set(0, 0, 0);
+        }
+        // Modelle sind in echten Metern; die Gruppe wird unten × 1.4 skaliert
+        obj.scale.multiplyScalar(0.82);
+        g.clear();
+        g.add(obj);
+      })
+      .catch((e) => console.warn('item', file, e));
+  }
+
+  private orderMesh(item: OrderItem, variant = 0) {
     const g = new THREE.Group();
     const saucer = (col: string) => {
       const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.045, 0.008, 20), new THREE.MeshStandardMaterial({ color: col, roughness: 0.4 }));
@@ -2390,7 +2458,15 @@ export class World {
       case 'cay':
         saucer('#d33');
         glassTea('#a8331a');
+        this.itemModel(g, 'cay');
         break;
+      case 'icecek': {
+        const can = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.09, 14), new THREE.MeshStandardMaterial({ color: '#b22', metalness: 0.6, roughness: 0.3 }));
+        can.position.y = 0.045;
+        g.add(can);
+        this.itemModel(g, 'drinks', DRINKS[variant % DRINKS.length]);
+        break;
+      }
       case 'oralet':
         saucer('#f2f2f2');
         glassTea('#e8862a');
@@ -2415,6 +2491,7 @@ export class World {
         const w = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.019, 0.09, 14), new THREE.MeshStandardMaterial({ color: '#dff0f6', transparent: true, opacity: 0.45, roughness: 0.05 }));
         w.position.y = 0.045;
         g.add(w);
+        this.itemModel(g, 'su');
         break;
       }
       case 'sahlep': {
@@ -2442,6 +2519,7 @@ export class World {
           n.scale.set(1, 0.7, 1.3);
           g.add(n);
         }
+        this.itemModel(g, 'kuruyemis');
         break;
       }
     }
