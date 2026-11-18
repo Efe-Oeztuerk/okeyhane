@@ -16,7 +16,7 @@ import { settings, saveSettings, defaultAvatar, loadProfile, saveProfile, keyLab
 import { tileElement } from './tileArt.ts';
 import { isCompleteMelds, isCompletePairs } from '@okeyhane/engine';
 import { CREDITS } from './models.ts';
-import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP, openWheel } from './controls.ts';
+import { setupControls, popupMenu, closeMenu, keyHintLine, touchActive, PAD_HELP, openWheel, closeWheel, wheelIsOpen, menuIsOpen } from './controls.ts';
 import { SPOTS, ORDER_ITEMS, type OrderItem } from './scene.ts';
 import { music as bgm, STATIONS } from './menuMusic.ts';
 import { spotify, parseSpotify } from './spotify.ts';
@@ -609,6 +609,11 @@ function openCredits() {
 }
 
 function modal(...children: (HTMLElement | string)[]) {
+  // Fenster schließt Chat, Menüs und das Emote-Rad
+  els.chat?.classList.remove('open');
+  document.body.classList.remove('chat-open');
+  closeMenu();
+  closeWheel();
   const m = h('div', { class: 'modal', onclick: (e: MouseEvent) => e.target === m && m.remove() }, h('div', { class: 'panel' }, ...children, h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '12px' } }, h('button', { onclick: () => m.remove() }, 'OK'))));
   m.addEventListener('keydown', (e) => {
     const ke = e as KeyboardEvent;
@@ -1154,6 +1159,7 @@ function renderLeft() {
       class: 'small ghost fold',
       title: getLang() === 'de' ? 'ein-/ausklappen' : 'aç/kapa',
       onclick: () => {
+        if (settings.hudCompact) closeOverlays('left');
         settings.hudCompact = !settings.hudCompact;
         saveSettings();
         renderLeft();
@@ -1233,11 +1239,13 @@ function renderLeft() {
 function renderRight() {
   const el = slot('right', 'hud-right');
   el.innerHTML = '';
-  // Handy: nur Symbole, als Spalte links (siehe CSS)
+  // PC und Handy gleich: Symbol-Spalte links (Text als Tooltip)
   const ph = document.body.classList.contains('phone');
-  const L = (icon: string, text: string) => (ph ? icon : icon + ' ' + text);
+  const touch = document.body.classList.contains('touch');
+  const L = (icon: string, _text: string) => icon;
+  const de = getLang() === 'de';
   appendAll(el,
-    h('button', { class: 'small', onclick: () => openMedia() }, ph ? '📺' : '📺 ' + t('tv') + ' / 🎵 ' + t('music')),
+    h('button', { class: 'small', title: t('tv') + ' / ' + t('music'), onclick: () => openMedia() }, '📺'),
     radioChip(),
     muteButton(),
     h(
@@ -1270,7 +1278,11 @@ function renderRight() {
       L('🎙️', voice.micOn ? t('voiceOn') : t('voiceOff')),
     ),
     table!.started ? h('button', { class: 'small', onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, L('📝', t('sheet'))) : null,
-    h('button', { class: 'small ghost', onclick: () => openSettings() }, '⚙️'),
+    // am PC gibt es keine Touch-Knöpfe rechts → Chat, Çaycı, Emotes hier
+    !touch ? h('button', { class: 'small', title: 'Chat (Enter)', onclick: () => setChatOpen(!els.chat?.classList.contains('open')) }, '💬') : null,
+    !touch && you.seat !== null ? h('button', { class: 'small', title: de ? 'Çaycı rufen (K)' : 'Çaycı (K)', onclick: () => openCayci() }, '☕') : null,
+    !touch && you.seat !== null ? h('button', { class: 'small', title: 'Emotes (E)', onclick: () => openWheelEmotes() }, '😊') : null,
+    h('button', { class: 'small ghost', title: de ? 'Einstellungen' : 'Ayarlar', onclick: () => openSettings() }, '⚙️'),
     ph && !isApp() ? h('button', { class: 'small ghost', onclick: () => (document.querySelector('.fsbtn') as HTMLButtonElement | null)?.click() }, '⛶') : null,
   );
 }
@@ -1278,7 +1290,8 @@ function renderRight() {
 function renderChat() {
   let el = els.chat;
   if (el && el.isConnected) return;
-  el = slot('chat', 'chat');
+  el = slot('chat', 'chat drawer');
+  const de = getLang() === 'de';
   const log = h('div', { class: 'log' }, chatLog);
   const input = h('input', { placeholder: t('chat') + '…', maxLength: 200 });
   const sendChat = () => {
@@ -1291,24 +1304,66 @@ function renderChat() {
       if (!input.value.trim()) return input.blur();
       sendChat();
     }
-    if (e.key === 'Escape') input.blur();
+    if (e.key === 'Escape') {
+      input.blur();
+      setChatOpen(false);
+    }
   });
-  const chatToggle = () => {
-    settings.hideChat = !settings.hideChat;
-    saveSettings();
-    el.classList.toggle('collapsed', settings.hideChat);
-  };
-  el.classList.toggle('collapsed', settings.hideChat);
-  el.append(
-    h('button', { class: 'small ghost chat-open', onclick: chatToggle }, '💬 Chat'),
-    h('button', { class: 'small ghost chat-close', title: getLang() === 'de' ? 'Chat ausblenden' : 'Sohbeti gizle', onclick: chatToggle }, '▾'),
-    log,
-    h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, input, h('button', { class: 'small', onclick: sendChat }, t('send'))),
-    h('div', { class: 'quick' }, ['hadi', 'okeyBende', 'caylar', 'buElBizim', 'yazik', 'helal', 'tesekkur', 'gecmisOlsun'].map((k) => h('button', { class: 'ghost', onclick: () => send({ type: 'quick', key: k }) }, t('q_' + k)))),
-    h('div', { class: 'emotes' }, ['slam', 'tea', 'nargile', 'headshake', 'rubhands', 'tespih'].map((k) => h('button', { class: 'small ghost', onclick: () => send({ type: 'emote', key: k }) }, t('e_' + k)))),
-    h('div', { class: 'emotes' }, ['wink', 'blink', 'wide'].map((k) => h('button', { class: 'small ghost', onclick: () => send({ type: 'eye', key: k }) }, '👁 ' + t('eye_' + k)))),
+  const quick = h(
+    'div',
+    { class: 'quick' },
+    ['hadi', 'okeyBende', 'caylar', 'buElBizim', 'yazik', 'helal', 'tesekkur', 'gecmisOlsun'].map((k) => h('button', { onclick: () => send({ type: 'quick', key: k }) }, t('q_' + k))),
   );
+  const emotes = h(
+    'div',
+    { class: 'emotegrid' },
+    ['slam', 'tea', 'nargile', 'headshake', 'rubhands', 'tespih'].map((k) => h('button', { onclick: () => send({ type: 'emote', key: k }) }, t('e_' + k))),
+    ['wink', 'blink', 'wide'].map((k) => h('button', { onclick: () => send({ type: 'eye', key: k }) }, '👁 ' + t('eye_' + k).replace(/ \(\d\)/, ''))),
+  );
+  const chatPane = h('div', { class: 'cd-pane' }, h('div', { class: 'cd-main' }, log, quick), h('div', { class: 'cd-input' }, input, h('button', { class: 'primary', onclick: sendChat }, t('send'))));
+  const emotePane = h('div', { class: 'cd-pane hidden' }, emotes);
+  const tabBtn = (label: string, pane: HTMLElement, other: HTMLElement) => {
+    const b = h('button', {
+      class: 'cd-tab',
+      onclick: () => {
+        pane.classList.remove('hidden');
+        other.classList.add('hidden');
+        el!.querySelectorAll('.cd-tab').forEach((x) => x.classList.toggle('on', x === b));
+      },
+    }, label);
+    return b;
+  };
+  const t1 = tabBtn('💬 ' + (de ? 'CHAT' : 'SOHBET'), chatPane, emotePane);
+  const t2 = tabBtn('😊 ' + (de ? 'EMOTES' : 'HAREKETLER'), emotePane, chatPane);
+  t1.classList.add('on');
+  el.append(h('div', { class: 'cd-head' }, t1, t2, h('button', { class: 'cd-close', title: 'Esc', onclick: () => setChatOpen(false) }, '✕')), chatPane, emotePane);
   log.scrollTop = log.scrollHeight;
+}
+
+/** Chat-Seitenleiste öffnen/schließen (schließt andere Fenster) */
+function setChatOpen(open: boolean) {
+  if (open) closeOverlays('chat');
+  els.chat?.classList.toggle('open', open);
+  document.body.classList.toggle('chat-open', open);
+  const log = els.chat?.querySelector('.log');
+  if (open && log) log.scrollTop = log.scrollHeight;
+  if (!open) (els.chat?.querySelector('input') as HTMLInputElement | null)?.blur();
+}
+
+/** Immer nur ein Fenster/Menü gleichzeitig: alles andere zu */
+function closeOverlays(keep?: 'chat' | 'menu' | 'wheel' | 'left' | 'modal') {
+  if (keep !== 'chat') {
+    els.chat?.classList.remove('open');
+    document.body.classList.remove('chat-open');
+  }
+  if (keep !== 'menu') closeMenu();
+  if (keep !== 'wheel') closeWheel();
+  if (keep !== 'modal') ui.querySelectorAll(':scope > .modal').forEach((m) => m.remove());
+  if (keep !== 'left' && !settings.hudCompact && inCafe && table) {
+    settings.hudCompact = true;
+    saveSettings();
+    renderLeft();
+  }
 }
 
 // Steuerung ohne Maus: Tastenkürzel, Controller, Touch
@@ -1328,7 +1383,7 @@ function needTile(): number | null {
   if (id === null) toast(getLang() === 'de' ? 'Erst einen Stein wählen (Pfeiltasten / Klick)' : 'Önce bir taş seç (ok tuşları / tık)');
   return id;
 }
-setupControls(world, istaka, {
+const controlsApi: any = {
   inCafe: () => inCafe,
   seated: () => you.seat !== null && world.seated === you.seat,
   started: () => !!table?.started && !!st,
@@ -1361,6 +1416,8 @@ setupControls(world, istaka, {
       ['hadi', 'okeyBende', 'caylar', 'buElBizim', 'yazik', 'helal', 'tesekkur', 'gecmisOlsun'].map((k) => ({ label: t('q_' + k), fn: () => send({ type: 'quick', key: k }) })),
     ),
   openEmotes: () => {
+    if (wheelIsOpen()) return closeWheel();
+    closeOverlays('wheel');
     const de = getLang() === 'de';
     const e = (icon: string, k: string) => ({ icon, label: t('e_' + k), fn: () => send({ type: 'emote', key: k }) });
     const y = (icon: string, k: string) => ({ icon, label: t('eye_' + k).replace(/ \(\d\)/, ''), fn: () => send({ type: 'eye', key: k }) });
@@ -1378,23 +1435,13 @@ setupControls(world, istaka, {
     ]);
   },
   focusChat: () => {
+    setChatOpen(true);
     settings.hideChat = false;
     saveSettings();
     els.chat?.classList.remove('collapsed');
     (els.chat?.querySelector('input') as HTMLInputElement | null)?.focus();
   },
-  toggleChat: () => {
-    // Touch: Chat als Fenster auf/zu (Knopf 💬)
-    if (document.body.classList.contains('touch')) {
-      const open = !els.chat?.classList.contains('open');
-      els.chat?.classList.toggle('open', open);
-      if (open) els.chat?.classList.remove('collapsed');
-      return;
-    }
-    settings.hideChat = !settings.hideChat;
-    saveSettings();
-    els.chat?.classList.toggle('collapsed', settings.hideChat);
-  },
+  toggleChat: () => setChatOpen(!els.chat?.classList.contains('open')),
   toggleSheet: () => {
     if (!table?.started) return;
     sheetOpen = !sheetOpen;
@@ -1408,15 +1455,23 @@ setupControls(world, istaka, {
       renderAll();
     }
   },
-});
+};
+setupControls(world, istaka, controlsApi);
 
+function openWheelEmotes() {
+  controlsApi.openEmotes();
+}
+const CAYCI_TITLE = () => '🫖 ' + (getLang() === 'de' ? 'Çaycı rufen – was darf es sein?' : 'Çaycı! Ne alırsın?');
 function openCayci() {
+  // nochmal drücken = wieder zu (ohne zu bestellen)
+  if (menuIsOpen(CAYCI_TITLE())) return closeMenu();
+  closeOverlays('menu');
   if (you.seat === null) {
     return toast(getLang() === 'de' ? 'Setz dich erst an den Tisch – der Çaycı bringt es dann' : 'Önce masaya otur – çaycı getirsin');
   }
   sfx.spoon();
   popupMenu(
-    '🫖 ' + (getLang() === 'de' ? 'Çaycı rufen – was darf es sein?' : 'Çaycı! Ne alırsın?'),
+    CAYCI_TITLE(),
     ORDER_ITEMS.map((i) => ({ label: orderLabel(i), fn: () => send({ type: 'order', item: i }) })),
   );
 }

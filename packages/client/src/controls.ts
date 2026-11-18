@@ -39,11 +39,16 @@ interface MenuItem {
   label: string;
   fn: () => void;
 }
-let openMenu: { el: HTMLElement; items: MenuItem[]; idx: number } | null = null;
+let openMenu: { el: HTMLElement; items: MenuItem[]; idx: number ; bg?: HTMLElement; title?: string } | null = null;
 
 export function closeMenu() {
   openMenu?.el.remove();
+  openMenu?.bg?.remove();
   openMenu = null;
+}
+/** ist gerade ein Menü mit diesem Titel offen? (für An/Aus-Knöpfe) */
+export function menuIsOpen(title?: string) {
+  return !!openMenu && (title === undefined || openMenu.title === title);
 }
 
 /** Nummeriertes Menü: Ziffern, Controller (Steuerkreuz + A) oder Tippen */
@@ -65,8 +70,10 @@ export function popupMenu(title: string, items: MenuItem[]) {
     ),
   );
   el.append(...rows, h('div', { class: 'pm-foot muted' }, de() ? '1–9 wählen · Esc schließen' : '1–9 seç · Esc kapat'));
-  document.getElementById('ui')!.append(el);
-  openMenu = { el, items, idx: 0 };
+  // Hintergrund: daneben tippen/klicken schließt das Menü
+  const bg = h('div', { class: 'pm-bg', onclick: () => closeMenu() });
+  document.getElementById('ui')!.append(bg, el);
+  openMenu = { el, bg, items, idx: 0, title };
 }
 
 function menuMove(d: number) {
