@@ -26,6 +26,14 @@ export interface Avatar {
   kit?: 'aYildiz' | 'sariKirmizi' | 'sariLacivert' | 'siyahBeyaz' | 'duz';
   /** eigene Nargile neben dem Stuhl */
   shisha?: 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black' | 'saray' | 'usta' | 'sultan';
+  /** 'real' = realistische Figur statt Cartoon */
+  style?: 'cartoon' | 'real';
+  /** realistische Figur: Basis (qm/qf oder Berufsfigur) */
+  realBase?: string;
+  realSkin?: 'light' | 'dark';
+  realHair?: string;
+  realBeard?: boolean;
+  pantsColor?: string;
 }
 
 export interface PlayerInfo {

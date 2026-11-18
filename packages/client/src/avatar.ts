@@ -1,5 +1,6 @@
 // Cartoon-Charakter: sauber modelliert, Kleidung als Textur, weiche Animationen mit IK.
 
+import { RealBody } from './realbody.ts';
 import * as THREE from 'three';
 import type { Avatar } from '../../server/src/protocol.ts';
 
@@ -616,6 +617,8 @@ type Anim = { key: string; t: number; dur: number; fired?: boolean };
 
 export class Avatar3D {
   root = new THREE.Group();
+  /** realistische Figur (falls gewählt) – folgt den Bewegungen dieses Avatars */
+  real: RealBody | null = null;
   private body = new THREE.Group();
   private head = new THREE.Group();
   private skull = new THREE.Group();
@@ -1211,6 +1214,27 @@ export class Avatar3D {
     this.root.add(this.name);
     this.applyArm(this.arms[0], REST);
     this.applyArm(this.arms[1], REST);
+
+    // Realistische Figur: Cartoon-Körper unsichtbar (bewegt sich aber weiter), Requisiten bleiben
+    if (a.style === 'real') {
+      const props = new Set<THREE.Object3D>([this.teaGlass, this.hose]);
+      if (this.tespih) props.add(this.tespih);
+      const isProp = (o: THREE.Object3D | null) => {
+        for (let p = o; p; p = p.parent) if (props.has(p)) return true;
+        return false;
+      };
+      this.body.traverse((o) => {
+        if ((o as THREE.Mesh).isMesh && !isProp(o)) o.visible = false;
+      });
+      if (this.tespih) this.tespih.visible = false;
+      this.real = new RealBody(a);
+      this.root.add(this.real.group);
+      this.name.position.y = 1.24;
+    }
+  }
+
+  dispose() {
+    this.real?.dispose();
   }
 
   /** Başörtüsü / Tülbent / Eşarp: Kopf und Hals bedeckt, Gesicht frei, Tuch fällt über die Schultern */
@@ -1308,7 +1332,7 @@ export class Avatar3D {
   say(text: string) {
     if (this.bubble) this.root.remove(this.bubble);
     this.bubble = bubbleSprite(text);
-    this.bubble.position.y = 1.58;
+    this.bubble.position.y = this.real ? 1.3 : 1.58;
     this.root.add(this.bubble);
     this.bubbleT = 4;
   }
@@ -1489,6 +1513,8 @@ export class Avatar3D {
       lid.rotation.x += (target - lid.rotation.x) * (frozen ? 1 : Math.min(1, dt * 35));
     });
     this.eyes.forEach((e) => e.scale.setScalar(1 + (wide - 1) * 0.6));
+
+    if (this.real) this.real.sync({ root: this.root, body: this.body, head: this.head, arms: this.arms, legs: this.legs });
 
     if (this.bubble) {
       this.bubbleT -= dt;

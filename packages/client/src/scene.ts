@@ -1020,7 +1020,12 @@ export class World {
         chair.position.set(sp.x + side * 0.65, 0, sp.z);
         facing(chair, side, 0);
         this.scene.add(chair);
-        const a = new Avatar3D(this.randomSpec(ti * 2 + k + 3), '', { showName: false });
+        // jeder zweite Gast ist eine realistische Figur
+        const gi = ti * 2 + k;
+        const guests = ['TeacherM', 'Businessman', 'TeacherF', 'Worker', 'StudentM', 'Mechanic', 'StudentF', 'Engineer'];
+        const spec = this.randomSpec(gi + 3);
+        if (gi % 2 === 0 && settings.quality !== 'low') Object.assign(spec, { style: 'real', realBase: guests[(gi / 2) % guests.length] });
+        const a = new Avatar3D(spec, '', { showName: false });
         a.root.position.set(sp.x + side * 0.62, 0.45, sp.z);
         facing(a.root, side, 0);
         a.root.scale.setScalar(1);

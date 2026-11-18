@@ -16,7 +16,14 @@ dl.position.set(1, 2, 3);
 scene.add(dl);
 const base: Avatar = { skin: '#d9a77c', face: 'round', hair: 'short', hairColor: '#2b1d14', eyebrows: 'thick', beard: 'none', mustache: 'classic', shirt: 'gomlek', shirtColor: '#7a3b2e', hat: 'none', glasses: 'none', accessory: 'tespih', jewelry: 'chain' };
 const F: Partial<Avatar> = { body: 'f', beard: 'none', mustache: 'none', eyebrows: 'thin', accessory: 'none', jewelry: 'bilezik' };
-const specs: Partial<Avatar>[] = q.get('fem') ? [
+const R = (x: Partial<Avatar>): Partial<Avatar> => ({ style: 'real', ...x });
+const specs: Partial<Avatar>[] = q.get('real') ? [
+  R({ realBase: 'qm', realSkin: 'light', realHair: 'simpleparted', realBeard: true, shirtColor: '#e8e2d4', pantsColor: '#3a342e', hairColor: '#2b1d14' }),
+  R({ realBase: 'qf', realSkin: 'dark', realHair: 'long', shirtColor: '#8e1b1b', pantsColor: '#1a1a1a', hairColor: '#1a1a1a' }),
+  R({ realBase: 'TeacherM' }),
+  R({ realBase: 'Businessman' }),
+  R({ realBase: 'TeacherF' }),
+] : q.get('fem') ? [
   { ...F, scarf: 'basortu', scarfColor: '#2f4f6f', shirt: 'hirka', shirtColor: '#7a5a3a', makeup: 'light' },
   { ...F, scarf: 'tulbent', shirt: 'elbise', shirtColor: '#2d5a3a', glasses: 'reading', accessory: 'tespih', skin: '#e8b991' },
   { ...F, scarf: 'esarp', scarfColor: '#7a3b2e', shirt: 'bluz', shirtColor: '#e8e2d4', makeup: 'full' },
@@ -35,7 +42,7 @@ const specs: Partial<Avatar>[] = q.get('fem') ? [
   { hair: 'long', face: 'square', shirt: 'hirka', shirtColor: '#5a6a3a', hat: 'takke', mustache: 'none', jewelry: 'watch' },
   { hair: 'none', shirt: 'esofman', shirtColor: '#1a3a8a', hat: 'bere', beard: 'full', hairColor: '#888' },
 ];
-const avatars = specs.map((s, i) => {
+const avatars: Avatar3D[] = (window as any).__av = specs.map((s, i) => {
   const a = new Avatar3D({ ...base, ...s }, 'Test ' + (i + 1), { standing: !!q.get('stand') });
   if (q.get('stand')) {
     a.root.position.y = 0.82 * 0.88 - 0.45;
@@ -55,6 +62,7 @@ else if (view === 'back') cam.position.set(0, 1.0, -3.3);
 else if (view === 'close') cam.position.set(Number(q.get('x') ?? 0), 0.95, 1.1);
 cam.lookAt(view === 'close' ? Number(q.get('x') ?? 0) : 0, 0.8, 0);
 if (q.get('emote')) for (const a of avatars) a.update(0, true);
+if (q.get('emote') && q.get('real')) setTimeout(() => avatars.forEach((a) => a.pose(q.get('emote')!, Number(q.get('p') ?? 0.5))), 5000);
 if (q.get('shisha')) {
   ['classic', 'gold', 'crystal', 'ruby', 'emerald', 'black'].forEach((st, i) => {
     const sh = makeShisha(st as any);

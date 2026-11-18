@@ -79,4 +79,6 @@ export const CREDITS = [
   { what: 'Atatürk Büste', author: 'metdiu3dprint', url: 'https://www.printables.com/' },
   { what: 'Antique Turkish Runner Carpet', author: 'mfb64', url: 'https://sketchfab.com/3d-models/antique-turkish-runner-carpet-8509133148294571a5ac062a6bdf6d98' },
   { what: 'Straßen-Panorama (Illustration)', author: 'Freepik', url: 'https://www.freepik.com' },
+  { what: 'Universal Base Characters (realistische Figuren, CC0)', author: 'Quaternius', url: 'https://quaternius.com' },
+  { what: 'Vocations and Uniforms (Gäste & Berufsfiguren, CC BY-SA – angepasst)', author: 'itch.io-Asset „Vocations and Uniforms“', url: 'https://itch.io' },
 ];
