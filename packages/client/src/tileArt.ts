@@ -13,11 +13,12 @@ export const TILE_COLORS: Record<string, string> = {
 const cache = new Map<string, THREE.Texture>();
 
 /** kräftigere Farben + dunkler Rand nur für die 3D-Steine auf dem Tisch */
+// klar unterscheidbar, auch klein und von weitem: Rot, Schwarz, Gelb-Orange, Blau
 const TABLE_INK: Record<string, [string, string]> = {
-  red: ['#e0261f', '#5a0a08'],
-  black: ['#111111', '#000000'],
-  yellow: ['#f29a00', '#5a3500'],
-  blue: ['#1667d9', '#06224d'],
+  red: ['#e8141b', '#4a0000'],
+  black: ['#0b0b0b', '#000000'],
+  yellow: ['#ffa400', '#6b3c00'],
+  blue: ['#0a5cff', '#001a4d'],
 };
 
 function drawFace(g: CanvasRenderingContext2D, w: number, h: number, tile: Tile | null) {
@@ -40,17 +41,26 @@ function drawFace(g: CanvasRenderingContext2D, w: number, h: number, tile: Tile 
   }
   const [col, dark] = TABLE_INK[tile.color!];
   // große, fette Zahl mit dunklem Rand → auch klein auf dem Tisch gut lesbar
-  g.font = `900 ${h * (tile.value >= 10 ? 0.48 : 0.56)}px Georgia, serif`;
+  // sehr große, fette Zahl (breiter bei 10–13), dunkler Rand
+  const two = tile.value >= 10;
+  g.font = `900 ${h * (two ? 0.5 : 0.6)}px Arial Black, Arial, sans-serif`;
   g.lineJoin = 'round';
-  g.lineWidth = w * 0.05;
+  g.lineWidth = w * 0.06;
   g.strokeStyle = dark;
+  g.save();
+  if (two) {
+    g.translate(w / 2, h * 0.4);
+    g.scale(0.82, 1);
+    g.translate(-w / 2, -h * 0.4);
+  }
   g.strokeText(String(tile.value), w / 2, h * 0.4);
   g.fillStyle = col;
   g.fillText(String(tile.value), w / 2, h * 0.4);
-  // Farbbalken unten (Farbe auf einen Blick)
+  g.restore();
+  // breiter Farbbalken unten → Farbe auch von weitem auf einen Blick
   g.fillStyle = col;
   g.beginPath();
-  g.roundRect(w * 0.18, h * 0.76, w * 0.64, h * 0.11, h * 0.05);
+  g.roundRect(w * 0.12, h * 0.74, w * 0.76, h * 0.15, h * 0.05);
   g.fill();
 }
 
@@ -59,12 +69,12 @@ export function tileTexture(tile: Tile | null): THREE.Texture {
   const hit = cache.get(key);
   if (hit) return hit;
   const c = document.createElement('canvas');
-  c.width = 256;
-  c.height = 360;
+  c.width = 320;
+  c.height = 448;
   drawFace(c.getContext('2d')!, c.width, c.height, tile);
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 8;
+  tex.anisotropy = 16;
   cache.set(key, tex);
   return tex;
 }
@@ -75,7 +85,9 @@ const backMat = new THREE.MeshStandardMaterial({ color: '#e6d8b8', roughness: 0.
 
 /** Ein Stein als 3D-Objekt. Vorderseite +Z. */
 export function tileMesh(tile: Tile | null, faceUp = true): THREE.Mesh {
-  const faceMat = new THREE.MeshStandardMaterial({ map: tileTexture(faceUp ? tile : null), roughness: 0.45 });
+  // Gesicht leuchtet leicht selbst → im dunklen Café nicht matschig, Farben bleiben kräftig
+  const map = tileTexture(faceUp ? tile : null);
+  const faceMat = new THREE.MeshStandardMaterial({ map, roughness: 0.6, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.45 });
   const mats = [sideMat, sideMat, sideMat, sideMat, faceUp ? faceMat : backMat, backMat];
   const m = new THREE.Mesh(tileGeo, mats);
   m.castShadow = true;

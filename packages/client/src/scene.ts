@@ -981,8 +981,8 @@ export class World {
     });
     // Çaycı
     this.cayci = new Avatar3D(
-      // Ahmet: eigene Avaturn-Figur (immer, auch bei „niedrig“ – nur eine Figur)
-      { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none', style: 'real' as const, realBase: 'ahmet' },
+      // Ahmet: „hoch“ = Avaturn-Figur, „niedrig“ = leichter Cartoon-Çaycı
+      { ...this.randomSpec(11), shirt: 'gomlek', shirtColor: '#f2efe6', hat: 'none', mustache: 'thick', accessory: 'none', ...(settings.quality === 'high' ? { style: 'real' as const, realBase: 'ahmet' } : {}) },
       'Ahmet',
       { showName: true, standing: true },
     );
@@ -1963,9 +1963,25 @@ export class World {
 
   setTvVisible(v: boolean) {
     for (const t of this.tvs) {
-      t.css.visible = v;
-      t.hole.visible = v;
-      t.screen.visible = !v;
+      t.css.visible = v && !this.tvPowerOff;
+      t.hole.visible = v && !this.tvPowerOff;
+      t.screen.visible = !(v && !this.tvPowerOff);
+    }
+  }
+  /** Fernseher ganz aus: schwarzer Bildschirm, kein Standbild, kein Video */
+  private tvPowerOff = false;
+  private tvBlack = new THREE.MeshBasicMaterial({ color: '#050506' });
+  private tvStandbyMat: THREE.Material | null = null;
+  setTvPower(on: boolean) {
+    this.tvPowerOff = !on;
+    for (const t of this.tvs) {
+      if (!this.tvStandbyMat) this.tvStandbyMat = t.screen.material as THREE.Material;
+      t.screen.material = on ? this.tvStandbyMat : this.tvBlack;
+      if (!on) {
+        t.css.visible = false;
+        t.hole.visible = false;
+        t.screen.visible = true;
+      }
     }
   }
 

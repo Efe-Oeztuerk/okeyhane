@@ -416,6 +416,7 @@ function applyMedia() {
   if (!table) {
     tv.stopAll();
     music.stopAll();
+    world.setTvPower(settings.tvMode === 'table');
     world.setTvVisible(false);
     spotify.close();
     bgm.setBusy(false);
@@ -423,6 +424,7 @@ function applyMedia() {
   }
   tv.enabled = settings.tvMode === 'table';
   tv.apply(table.tv);
+  world.setTvPower(tv.enabled);
   world.setTvVisible(tv.enabled && !!table.tv.source);
   music.enabled = settings.musicMode === 'table';
   music.apply(table.music);
@@ -780,6 +782,10 @@ function openSettings() {
       check('menuMusic', getLang() === 'de' ? '🎶 Musik im Menü' : '🎶 Menüde müzik'),
       check('musicMuted', getLang() === 'de' ? '🔇 Menümusik & Radio stumm' : '🔇 Menü müziği & radyo sessiz'),
       h('label', {}, '📻 Radio', radioSelect()),
+      select('tvMode', getLang() === 'de' ? '📺 Fernseher' : '📺 Televizyon', [
+        ['table', getLang() === 'de' ? 'An' : 'Açık'],
+        ['off', getLang() === 'de' ? 'Ganz aus' : 'Tamamen kapalı'],
+      ], () => applyMedia()),
       select('quality', t('quality'), [
         ['high', 'High'],
         ['low', 'Low'],
