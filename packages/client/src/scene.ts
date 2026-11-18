@@ -1243,7 +1243,9 @@ export class World {
     const pos = new THREE.Vector3(dir.x * 1.18, 1.5, dir.z * 1.18).add(off);
     // klassischer Blick aufs Brett; „Blick heben“ schiebt den Zielpunkt Richtung Gegenüber
     const lift = Math.max(0, Math.min(1, settings.camTilt / 25));
-    const look = new THREE.Vector3(dir.x * (0.12 - lift * 0.9), TABLE_Y - 0.12 + lift * 0.45, dir.z * (0.12 - lift * 0.9)).add(off);
+    // Handy: auf die Tischmitte zielen (der Bereich unten ist von der Istaka verdeckt)
+    const base = document.body.classList.contains('phone') ? -0.02 : 0.12;
+    const look = new THREE.Vector3(dir.x * (base - lift * 0.9), TABLE_Y - 0.12 + lift * 0.45, dir.z * (base - lift * 0.9)).add(off);
     return { pos, look };
   }
 
@@ -1417,9 +1419,18 @@ export class World {
       this.lookDelta(e.movementX, e.movementY);
     });
     // Touch / Stift: Wischen = Umschauen, Tippen = Klick (siehe handleClick)
-    let drag: { id: number; x: number; y: number } | null = null;
+    let drag: { id: number; x: number; y: number; sx: number; sy: number } | null = null;
+    let springT: ReturnType<typeof setTimeout> | null = null;
+    let lastTap = 0;
     el.addEventListener('pointerdown', (e) => {
       this.pointerType = e.pointerType || 'mouse';
+      if (springT) clearTimeout(springT);
+      springT = null;
+      if (e.pointerType !== 'mouse' && this.seated !== null) {
+        const now = performance.now();
+        if (now - lastTap < 320 && !this.focus) this.setFocus(true);
+        lastTap = now;
+      }
       if (this.seated !== null && this.focus && !this.isLooking() && e.button === 0) {
         const hit = this.pick(e, this.clickables);
         const kind = hit?.userData.pile ? 'pile' : hit?.userData.side ? 'side' : null;
@@ -1429,7 +1440,7 @@ export class World {
         }
       }
       if (e.pointerType === 'mouse') return;
-      drag = { id: e.pointerId, x: e.clientX, y: e.clientY };
+      drag = { id: e.pointerId, x: e.clientX, y: e.clientY, sx: e.clientX, sy: e.clientY };
     });
     el.addEventListener('pointermove', (e) => {
       if (!drag || e.pointerId !== drag.id) return;
@@ -1437,10 +1448,17 @@ export class World {
       const dy = e.clientY - drag.y;
       drag.x = e.clientX;
       drag.y = e.clientY;
+      // im Sitzen: erst nach deutlichem Wischen umschauen (Tippen bleibt Tippen)
+      if (this.seated !== null && this.focus && Math.hypot(e.clientX - drag.sx, e.clientY - drag.sy) > 14) this.setFocus(false);
       if (this.seated === null || !this.focus) this.lookDelta(dx * 1.6, dy * 1.6);
     });
     const end = (e: PointerEvent) => {
       if (drag && e.pointerId === drag.id) drag = null;
+      // nach dem Umschauen federt der Blick zurück aufs Brett
+      if (e.pointerType !== 'mouse' && this.seated !== null && !this.focus) {
+        if (springT) clearTimeout(springT);
+        springT = setTimeout(() => this.seated !== null && this.setFocus(true), 1100);
+      }
     };
     el.addEventListener('pointerup', end);
     el.addEventListener('pointercancel', end);
@@ -1952,10 +1970,37 @@ export class World {
   private resize() {
     const w = this.container.clientWidth || innerWidth;
     const h = this.container.clientHeight || innerHeight;
-    this.camera.aspect = w / h;
-    this.camera.updateProjectionMatrix();
+    this.viewKey = '';
+    this.applyView(w, h);
     this.renderer.setSize(w, h);
     this.css.setSize(w, h);
+  }
+
+  /** Handy: unten verdeckt die Istaka den Bildschirm → Tisch in den freien Bereich darüber rücken */
+  bottomInset = 0;
+  private viewKey = '';
+  private insetCheck = 0;
+  private applyView(w = this.container.clientWidth || innerWidth, h = this.container.clientHeight || innerHeight) {
+    const inset = this.seated !== null && !this.third && document.body.classList.contains('phone') ? this.bottomInset : 0;
+    const key = `${w}x${h}:${Math.round(inset)}`;
+    if (key === this.viewKey) return;
+    this.viewKey = key;
+    if (inset > 40 && inset < h * 0.6) {
+      const hv = h - inset;
+      this.camera.aspect = w / hv;
+      this.camera.setViewOffset(w, hv, 0, 0, w, h);
+    } else {
+      this.camera.aspect = w / h;
+      this.camera.clearViewOffset();
+    }
+    this.camera.updateProjectionMatrix();
+  }
+  /** steht beim Laufen ein Stuhl vor einem? (für den „Hinsetzen“-Knopf) */
+  chairAhead() {
+    if (this.seated !== null) return false;
+    this.raycaster.setFromCamera(new THREE.Vector2(0, 0), this.camera);
+    const hit = this.raycaster.intersectObjects(this.chairs, true)[0];
+    return !!hit && hit.distance < 2.6;
   }
 
   private frame() {
@@ -2067,8 +2112,26 @@ export class World {
         mm.emissive?.set(boardHover ? '#3a2a00' : '#000000');
       }
     }
+    // Handy: freien Bereich über der Istaka messen (alle ~0,4 s)
+    this.insetCheck -= dt;
+    if (this.insetCheck <= 0) {
+      this.insetCheck = 0.4;
+      const wrap = document.querySelector('.istaka-wrap') as HTMLElement | null;
+      const r = wrap?.getBoundingClientRect();
+      this.bottomInset = r && r.height > 0 ? Math.max(0, innerHeight - r.top) : 0;
+    }
+    this.applyView();
     // Zoom
     let fov = this.zooming ? 30 : this.seated !== null && !this.third ? settings.fovTable : settings.fovWalk;
+    // sehr breites Bild (Handy quer): horizontales Sichtfeld wie bei 16:9 halten → Tisch wird größer
+    const fullAspect = (this.container.clientWidth || innerWidth) / (this.container.clientHeight || innerHeight);
+    if (this.seated !== null && !this.third && !this.zooming && fullAspect > 1.9)
+      fov = (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (1.9 / fullAspect)) * 180) / Math.PI;
+    // Bild über der Istaka: etwas weiter als Vollbild, damit der ganze Tisch reinpasst
+    if (this.camera.view?.enabled && !this.zooming) {
+      const k = this.camera.view.fullHeight / (this.container.clientHeight || innerHeight);
+      fov = (2 * Math.atan((Math.tan((fov * Math.PI) / 360) * k) / 0.9) * 180) / Math.PI;
+    }
     // Hochformat (Handy): horizontales Sichtfeld erhalten
     if (this.camera.aspect < 1.4 && !this.zooming) fov = Math.min(105, (2 * Math.atan(Math.tan((fov * Math.PI) / 360) * (1.4 / this.camera.aspect)) * 180) / Math.PI);
     if (Math.abs(this.camera.fov - fov) > 0.05) {

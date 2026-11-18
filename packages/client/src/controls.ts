@@ -97,6 +97,7 @@ export function wheelIsOpen() {
 export function openWheel(items: WheelItem[]) {
   closeWheel();
   closeMenu();
+  const bg = h('div', { class: 'wheel-bg', onclick: (e: MouseEvent) => (e.target === bg || (e.target as HTMLElement).closest('.wheel-close')) && closeWheel() });
   const el = h('div', { class: 'wheel' });
   const ring = h('div', { class: 'wheel-ring' });
   const center = h('div', { class: 'wheel-center' });
@@ -120,10 +121,22 @@ export function openWheel(items: WheelItem[]) {
     h('div', { class: 'wheel-title' }, de() ? 'EMOTES' : 'HAREKETLER'),
     ring,
     center,
-    h('div', { class: 'wheel-foot' }, de() ? '← → wählen · Enter/E auslösen · Esc schließen' : '← → seç · Enter/E yap · Esc kapat'),
+    h('button', { class: 'wheel-close', title: 'Esc' }, '✕'),
+    h(
+      'div',
+      { class: 'wheel-foot' },
+      document.body.classList.contains('touch')
+        ? de()
+          ? 'Emote antippen · daneben tippen = schließen'
+          : 'Harekete dokun · boşluğa dokun = kapat'
+        : de()
+          ? '← → wählen · Enter/E auslösen · Esc schließen'
+          : '← → seç · Enter/E yap · Esc kapat',
+    ),
   );
-  document.getElementById('ui')!.append(el);
-  wheel = { el, items, idx: 0, openedAt: performance.now(), vx: 0, vy: 0 };
+  bg.append(el);
+  document.getElementById('ui')!.append(bg);
+  wheel = { el: bg, items, idx: 0, openedAt: performance.now(), vx: 0, vy: 0 };
   (window as any).__wheelOpen = true;
   selWheel(0);
 }
@@ -442,16 +455,19 @@ function setupTouch(world: World, api: ControlApi) {
     hold('🎥', '3rd Person', () => world.setThird('back'), () => world.setThird(null)),
     hold('🪞', 'Von vorne', () => world.setThird('front'), () => world.setThird(null)),
     tap('☕', 'Çaycı', () => api.openCayci()),
-    tap('😊', 'Emotes', () => api.openEmotes(), 'seated-only'),
+    tap('😊', 'Emotes', () => (wheelIsOpen() ? closeWheel() : api.openEmotes()), 'seated-only'),
     tap('💬', 'Chat', () => api.toggleChat()),
   );
-  root.append(stick, btns);
+  const sitBtn = h('button', { class: 'sitbtn hidden', onclick: () => world.interact() }, '🪑 ' + (de() ? 'Hinsetzen' : 'Otur'));
+  root.append(stick, btns, sitBtn);
   document.body.append(root);
   const sync = () => {
     const on = touchActive() && api.inCafe();
     root.classList.toggle('hidden', !on);
     document.body.classList.toggle('touch', touchActive());
+    document.body.classList.toggle('phone', touchActive() && Math.min(innerWidth, innerHeight) <= 540);
     root.classList.toggle('seated', world.seated !== null);
+    sitBtn.classList.toggle('hidden', !on || !world.chairAhead());
   };
   setInterval(sync, 300);
   sync();

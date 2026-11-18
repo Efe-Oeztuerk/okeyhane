@@ -108,7 +108,7 @@ export class Istaka {
     let moved = false;
     const place = (x: number, y: number) => {
       ghost.style.left = x - 23 + 'px';
-      ghost.style.top = y - 32 + 'px';
+      ghost.style.top = y - 32 - fingerLift() + 'px';
     };
     place(sx, sy);
     const move = (ev: PointerEvent) => {
@@ -328,10 +328,11 @@ export class Istaka {
           }
         }
         document.body.append(this.ghost);
+        buzz();
       }
       if (moved && this.ghost) {
         this.ghost.style.left = ev.clientX - 23 + 'px';
-        this.ghost.style.top = ev.clientY - 32 + 'px';
+        this.ghost.style.top = ev.clientY - 32 - fingerLift(ev) + 'px';
         document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
         const target = this.targetAt(ev.clientX, ev.clientY);
         target?.classList.add('over');
@@ -375,6 +376,7 @@ export class Istaka {
       }
       this.ghost?.remove();
       this.ghost = null;
+      buzz(8);
       this.dragId = null;
       const target = this.targetAt(ev.clientX, ev.clientY);
       if (target?.dataset.slot !== undefined) {
@@ -564,4 +566,14 @@ export class Istaka {
     this.selected.clear();
     this.render();
   }
+}
+
+/** Am Handy schwebt der gezogene Stein über dem Finger, damit man sieht, wo er landet */
+function fingerLift(e?: PointerEvent) {
+  if (e && e.pointerType === 'mouse') return 0;
+  return document.body.classList.contains('phone') ? 46 : document.body.classList.contains('touch') ? 30 : 0;
+}
+/** kurzes Vibrieren (Android) */
+export function buzz(ms = 12) {
+  if (document.body.classList.contains('touch')) navigator.vibrate?.(ms);
 }
