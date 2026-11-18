@@ -136,6 +136,7 @@ export class World {
     this.buildNpcs();
     this.scene.add(this.tableRoot);
     this.tableRoot.add(this.gameGroup, this.itemsGroup);
+    for (let s = 0; s < 4; s++) this.buildSehpa(s);
     this.applyTimeOfDay();
     onSettings(() => {
       this.applyTimeOfDay();
@@ -768,11 +769,11 @@ export class World {
     }
     for (const x of [-0.18, 0.18]) {
       const post = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.018, 0.5), wood);
-      post.position.set(x, 0.7, 0.19);
+      post.position.set(x, 0.7, -0.19);
       g.add(post);
     }
     const back = new THREE.Mesh(new THREE.BoxGeometry(0.38, 0.12, 0.02), wood);
-    back.position.set(0, 0.85, 0.19);
+    back.position.set(0, 0.85, -0.19);
     g.add(back);
     g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
     return g;
@@ -1050,9 +1051,10 @@ export class World {
   private seatCam(seat: number) {
     const dir = seatPos(seat);
     const off = this.tableRoot.position;
-    const pos = new THREE.Vector3(dir.x * 1.28, 1.56, dir.z * 1.28).add(off);
-    const pitch = (-settings.camTilt * Math.PI) / 180;
-    const look = pos.clone().add(new THREE.Vector3(-dir.x * Math.cos(pitch), Math.sin(pitch), -dir.z * Math.cos(pitch)).multiplyScalar(1.5));
+    const pos = new THREE.Vector3(dir.x * 1.18, 1.5, dir.z * 1.18).add(off);
+    // klassischer Blick aufs Brett; „Blick heben“ schiebt den Zielpunkt Richtung Gegenüber
+    const lift = Math.max(0, Math.min(1, settings.camTilt / 25));
+    const look = new THREE.Vector3(dir.x * (0.12 - lift * 0.9), TABLE_Y - 0.12 + lift * 0.45, dir.z * (0.12 - lift * 0.9)).add(off);
     return { pos, look };
   }
 
@@ -1316,7 +1318,9 @@ export class World {
     return o;
   }
 
-  private tableMeshes: THREE.Object3D[] = [];
+  private get tableMeshes(): THREE.Object3D[] {
+    return this.spotMeshes[this.spot] ?? [];
+  }
   private raycaster = new THREE.Raycaster();
   private pick(e: { clientX: number; clientY: number }, targets: THREE.Object3D[]): THREE.Object3D | null {
     const r = this.renderer.domElement.getBoundingClientRect();
@@ -1690,11 +1694,46 @@ export class World {
   private cayciPath: THREE.Vector3[] = [];
   private cayciHome = new THREE.Vector3(3.6, 0, -3.6);
 
-  /** Wo am Tisch die Bestellung für einen Platz steht (lokal im tableRoot) */
-  private orderSpot(seat: number, k: number) {
-    const a = seatPos(seat);
-    const b = seatPos((seat + 3) % 4);
-    return a.clone().multiplyScalar(0.42).add(b.clone().multiplyScalar(0.34 - k * 0.09));
+  /** kleiner Beistelltisch (Sehpa) links neben jedem Platz – dort landet der Çay */
+  private sehpas: THREE.Group[] = [];
+  private buildSehpa(seat: number) {
+    const frame = new THREE.Group();
+    const dir = seatPos(seat);
+    frame.position.set(dir.x * 1.04, 0.45, dir.z * 1.04);
+    facing(frame, dir.x, dir.z);
+    const g = new THREE.Group();
+    g.position.set(-0.56, -0.45, 0.08);
+    const wood = new THREE.MeshStandardMaterial({ color: '#6b4226', roughness: 0.6 });
+    const brass = new THREE.MeshStandardMaterial({ color: '#c9a04a', metalness: 0.8, roughness: 0.3 });
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.04, 0.5, 10), wood);
+    leg.position.y = 0.25;
+    const foot = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.15, 0.03, 16), wood);
+    foot.position.y = 0.015;
+    const top = new THREE.Mesh(new THREE.CylinderGeometry(0.19, 0.17, 0.03, 24), wood);
+    top.position.y = 0.515;
+    // Messingtablett (Sini)
+    const tray = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.17, 0.008, 28), brass);
+    tray.position.y = 0.534;
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.006, 6, 28), brass);
+    rim.rotation.x = Math.PI / 2;
+    rim.position.y = 0.538;
+    g.add(leg, foot, top, tray, rim);
+    g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
+    frame.add(g);
+    this.tableRoot.add(frame);
+    this.sehpas[seat] = g;
+  }
+
+  /** Bestellung als 3D-Objekt auf die Sehpa stellen (max. 3 pro Platz) */
+  private placeOrder(seat: number, item: OrderItem) {
+    const list = this.orders[seat];
+    const sehpa = this.sehpas[seat];
+    if (list.length >= 3) sehpa.remove(list.shift()!);
+    const slots = [new THREE.Vector3(0, 0, 0.02), new THREE.Vector3(0.085, 0, -0.06), new THREE.Vector3(-0.085, 0, -0.06)];
+    const m = this.orderMesh(item);
+    list.push(m);
+    list.forEach((o, k) => o.position.copy(slots[k]).setY(0.54));
+    sehpa.add(m);
   }
 
   /** Çaycı rufen: kommt an den Tisch und bringt die Bestellung */
@@ -1713,7 +1752,31 @@ export class World {
     const path: THREE.Vector3[] = [];
     if (out(from) !== out(target)) path.push(out(from) ? doorOut : doorIn, out(from) ? doorIn : doorOut);
     path.push(target);
-    this.cayciPath = path;
+    // nie über den Tisch: Strecken, die zu nah an der Tischmitte vorbeiführen, im Bogen umgehen
+    const c = this.tableRoot.position;
+    const R = 1.72;
+    const res: THREE.Vector3[] = [];
+    let prev = from.clone();
+    for (const p of path) {
+      const ab = p.clone().sub(prev).setY(0);
+      const t = ab.lengthSq() > 0 ? Math.max(0, Math.min(1, new THREE.Vector3(c.x - prev.x, 0, c.z - prev.z).dot(ab) / ab.lengthSq())) : 0;
+      const closest = prev.clone().addScaledVector(ab, t);
+      if (Math.hypot(closest.x - c.x, closest.z - c.z) < R - 0.05) {
+        let a0 = Math.atan2(prev.z - c.z, prev.x - c.x);
+        const a1 = Math.atan2(p.z - c.z, p.x - c.x);
+        let d = a1 - a0;
+        while (d > Math.PI) d -= Math.PI * 2;
+        while (d < -Math.PI) d += Math.PI * 2;
+        const steps = Math.max(2, Math.ceil(Math.abs(d) / 0.35));
+        for (let k = 0; k <= steps; k++) {
+          const a = a0 + (d * k) / steps;
+          res.push(new THREE.Vector3(c.x + Math.cos(a) * R, 0, c.z + Math.sin(a) * R));
+        }
+      }
+      res.push(p.clone());
+      prev = p;
+    }
+    this.cayciPath = res;
   }
 
   private updateCaycı(dt: number) {
@@ -1737,9 +1800,10 @@ export class World {
       return false;
     };
     const tableP = (seat: number) => {
-      const dir = seatPos(seat);
-      const side = new THREE.Vector3(-dir.z, 0, dir.x);
-      return dir.clone().multiplyScalar(1.15).add(side.multiplyScalar(0.62)).add(this.tableRoot.position);
+      const p = this.sehpas[seat].getWorldPosition(new THREE.Vector3());
+      const c = this.tableRoot.position;
+      const out = new THREE.Vector3(p.x - c.x, 0, p.z - c.z).normalize();
+      return new THREE.Vector3(p.x, 0, p.z).addScaledVector(out, 0.42);
     };
     if (st.phase === 'idle' && st.t <= 0) {
       // nächste Bestellung oder Runde Tee für alle
@@ -1755,6 +1819,7 @@ export class World {
       st.t = 1.4;
       const c = this.tableRoot.position;
       facing(this.cayci.root, st.pos.x - c.x, st.pos.z - c.z);
+      this.cayci.emote('rubhands');
       // alle Bestellungen für diesen Tisch abstellen
       for (const o of this.cayciQueue) this.placeOrder(o.seat, o.item);
       this.cayciQueue = [];
@@ -1771,17 +1836,6 @@ export class World {
     this.cayci.setWalking(walking ? 1.25 : 0);
     this.cayci.root.position.set(st.pos.x, 0.72, st.pos.z);
     this.cayci.update(dt);
-  }
-
-  /** Bestellung als 3D-Objekt neben den Platz stellen (max. 3 pro Platz) */
-  private placeOrder(seat: number, item: OrderItem) {
-    const list = this.orders[seat];
-    if (list.length >= 3) this.itemsGroup.remove(list.shift()!);
-    list.forEach((o, k) => o.position.copy(this.orderSpot(seat, k)).setY(TABLE_Y));
-    const m = this.orderMesh(item);
-    m.position.copy(this.orderSpot(seat, list.length)).setY(TABLE_Y);
-    list.push(m);
-    this.itemsGroup.add(m);
   }
 
   private orderMesh(item: OrderItem) {

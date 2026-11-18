@@ -136,9 +136,9 @@ const defaults: Settings = {
   ownMusicUrl: '',
   pushToTalk: false,
   keys: { ...defaultKeys },
-  fovTable: 70,
+  fovTable: 62,
   fovWalk: 66,
-  camTilt: 20,
+  camTilt: 0,
   sensitivity: 100,
   invertY: false,
   touchUi: 'auto',
@@ -153,6 +153,12 @@ if (isTouch) defaults.quality = 'low';
 
 const stored = JSON.parse(localStorage.getItem('settings') || '{}');
 export const settings: Settings = { ...defaults, ...stored, keys: { ...defaultKeys, ...(stored.keys ?? {}) } };
+// Migration: Kamera am Tisch wieder klassisch (v2)
+if ((stored.v ?? 1) < 2) {
+  settings.fovTable = 62;
+  settings.camTilt = 0;
+}
+(settings as any).v = 2;
 const listeners = new Set<() => void>();
 
 export function saveSettings() {

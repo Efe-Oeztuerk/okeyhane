@@ -34,6 +34,7 @@ class TrackPlayer {
   private idx = 0;
   level = 0;
   target = 0;
+  blocked = false;
   constructor(private tracks: () => string[], private gain: () => number, start = 0) {
     this.idx = start;
     this.a.forEach((el) => (el.preload = 'auto'));
@@ -46,7 +47,22 @@ class TrackPlayer {
     const el = this.a[this.cur];
     if (!this.tracks().length) return;
     if (!el.src || !el.src.endsWith(this.src(this.idx))) el.src = this.src(this.idx);
-    if (el.paused) el.play().catch(() => {});
+    if (el.paused)
+      el.play().then(
+        () => (this.blocked = false),
+        () => (this.blocked = true),
+      );
+  }
+  title() {
+    const t = this.tracks();
+    return t.length ? `Melodi ${((this.idx % t.length) + t.length) % t.length + 1}` : '';
+  }
+  isPlaying() {
+    return this.a.some((e) => !e.paused);
+  }
+  skip() {
+    const el = this.a[this.cur];
+    if (el.duration) el.currentTime = Math.max(0, el.duration - XFADE - 0.1);
   }
   stop() {
     this.a.forEach((e) => {
@@ -132,6 +148,20 @@ class YtListPlayer {
       this.yt?.nextVideo();
     } catch {}
   }
+  title(): string {
+    try {
+      return this.yt?.getVideoData?.()?.title ?? '';
+    } catch {
+      return '';
+    }
+  }
+  isPlaying() {
+    try {
+      return this.yt?.getPlayerState?.() === 1;
+    } catch {
+      return false;
+    }
+  }
   stop() {
     try {
       this.yt?.destroy();
@@ -157,14 +187,14 @@ class YtListPlayer {
 class MusicDirector {
   private menu = new TrackPlayer(
     () => STATIONS[0].tracks ?? [],
-    () => vol('volMusic') * 0.7,
+    () => vol('volMusic') * 0.95,
   );
   private radioTracks = new TrackPlayer(
     () => this.station()?.tracks ?? [],
-    () => vol('volMusic') * 0.55,
+    () => vol('volMusic') * 0.9,
     1,
   );
-  private radioYt = new YtListPlayer(() => vol('volMusic') * 0.55);
+  private radioYt = new YtListPlayer(() => vol('volMusic') * 0.9);
   private where: 'menu' | 'cafe' | 'none' = 'none';
   /** andere Musik läuft (Tisch-Musik, TV oder eigene) */
   private busy = false;
@@ -210,7 +240,28 @@ class MusicDirector {
   }
 
   nextTrack() {
-    this.radioYt.next();
+    if (this.station()?.youtubeList) this.radioYt.next();
+    else this.radioTracks.skip();
+  }
+
+  /** Anzeige im Kahvehane */
+  status(): { text: string; state: 'playing' | 'busy' | 'muted' | 'off' | 'blocked' | 'loading' } {
+    const st = this.station();
+    if (!st) return { text: 'Radio aus', state: 'off' };
+    if (settings.musicMuted) return { text: st.name, state: 'muted' };
+    if (this.busy) return { text: st.name, state: 'busy' };
+    const yt = !!st.youtubeList;
+    const playing = yt ? this.radioYt.isPlaying() : this.radioTracks.isPlaying();
+    const title = yt ? this.radioYt.title() : this.radioTracks.title();
+    if (!this.unlocked || this.radioTracks.blocked) return { text: st.name, state: 'blocked' };
+    return { text: st.name + (title ? ' · ' + title : ''), state: playing ? 'playing' : 'loading' };
+  }
+
+  /** Klick auf die Anzeige = Nutzergeste → Wiedergabe erlauben */
+  unlock() {
+    this.unlocked = true;
+    this.radioTracks.blocked = false;
+    this.update();
   }
 
   private update() {

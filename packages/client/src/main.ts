@@ -484,7 +484,7 @@ function openSettings() {
       ]),
       h('b', { style: { marginTop: '10px' } }, getLang() === 'de' ? '🎥 Ansicht & Steuerung' : '🎥 Görüş & kontrol'),
       range('fovTable', getLang() === 'de' ? 'Sichtfeld am Tisch' : 'Masada görüş açısı', 50, 90, '°'),
-      range('camTilt', getLang() === 'de' ? 'Blickwinkel am Tisch (nach unten)' : 'Masada bakış açısı (aşağı)', 8, 35, '°', () => world.seated !== null && world.sitAt(world.seated)),
+      range('camTilt', getLang() === 'de' ? 'Blick am Tisch heben (Gesichter)' : 'Masada bakışı kaldır (yüzler)', 0, 25, '', () => world.seated !== null && world.sitAt(world.seated)),
       range('fovWalk', getLang() === 'de' ? 'Sichtfeld beim Laufen' : 'Yürürken görüş açısı', 50, 90, '°'),
       range('sensitivity', getLang() === 'de' ? 'Empfindlichkeit (Maus/Touch/Stick)' : 'Hassasiyet (fare/dokunma/kol)', 30, 250, '%'),
       check('invertY', getLang() === 'de' ? 'Y-Achse umkehren' : 'Y eksenini ters çevir'),
@@ -510,6 +510,32 @@ function openSettings() {
     ),
   );
 }
+
+/** Radio-Anzeige: Sender · Titel; Klick = abspielen erlauben bzw. Musikfenster */
+let radioEl: HTMLElement | null = null;
+function radioChip() {
+  const label = h('span', { class: 'rc-text' });
+  const next = h('button', { class: 'small ghost', title: 'nächster Titel', onclick: (e: Event) => (e.stopPropagation(), bgm.nextTrack()) }, '⏭');
+  radioEl = h('div', { class: 'radiochip', onclick: () => (bgm.status().state === 'blocked' ? bgm.unlock() : openMedia()) }, label, next);
+  updateRadioChip();
+  return radioEl;
+}
+function updateRadioChip() {
+  if (!radioEl || !radioEl.isConnected) return;
+  const s = bgm.status();
+  const de = getLang() === 'de';
+  const why: Record<string, string> = {
+    playing: '📻 ',
+    loading: '📻 … ',
+    busy: de ? '📻 ⏸ (TV/Musik läuft) ' : '📻 ⏸ (TV/müzik açık) ',
+    muted: '📻 🔇 ',
+    off: '📻 ',
+    blocked: de ? '📻 ▶ Antippen zum Abspielen · ' : '📻 ▶ Çalmak için dokun · ',
+  };
+  (radioEl.querySelector('.rc-text') as HTMLElement).textContent = why[s.state] + s.text;
+  radioEl.className = 'radiochip ' + s.state;
+}
+setInterval(updateRadioChip, 1000);
 
 /** 🔊/🔇 für Menümusik und Radio */
 function muteButton() {
@@ -855,6 +881,7 @@ function renderRight() {
   el.innerHTML = '';
   appendAll(el,
     h('button', { class: 'small', onclick: () => openMedia() }, '📺 ' + t('tv') + ' / 🎵 ' + t('music')),
+    radioChip(),
     muteButton(),
     h(
       'button',
