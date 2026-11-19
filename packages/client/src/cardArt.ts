@@ -259,19 +259,6 @@ export function cardTexture(c: PCard | null): THREE.CanvasTexture {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 16;
     texCache.set(key, tex);
-    // echte Kartengrafik (Sketchfab-Deck) nachladen, die Zeichnung bleibt bis dahin als Ersatz
-    const t = tex;
-    const img = new Image();
-    img.onload = () => {
-      // Bild direkt als Textur (kein zweites Umrechnen über die Zeichenfläche → schärfer)
-      // alte GPU-Textur freigeben: sonst bleibt die Größe der Zeichenfläche und Reste der alten Karte sind zu sehen
-      t.dispose();
-      t.image = img;
-      t.generateMipmaps = true;
-      t.minFilter = THREE.LinearMipmapLinearFilter;
-      t.needsUpdate = true;
-    };
-    img.src = cardUrl(key);
   }
   return tex;
 }
@@ -286,8 +273,18 @@ function sideMat(c: PCard | null) {
   let m = matCache.get(key);
   if (!m) {
     const map = cardTexture(c);
-    m = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, transparent: false, roughness: 0.5, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.32 });
+    const mat = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, transparent: false, roughness: 0.5, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.32 });
+    m = mat;
     matCache.set(key, m);
+    // echte Kartengrafik (Sketchfab-Deck) als eigene, neue Textur nachladen und dann austauschen –
+    // die gezeichnete Karte ist nur der Ersatz bis dahin (nie dieselbe Textur wiederverwenden → keine Reste)
+    new THREE.TextureLoader().load(cardUrl(key), (t) => {
+      t.colorSpace = THREE.SRGBColorSpace;
+      t.anisotropy = 16;
+      mat.map = t;
+      mat.emissiveMap = t;
+      mat.needsUpdate = true;
+    });
   }
   return m;
 }
