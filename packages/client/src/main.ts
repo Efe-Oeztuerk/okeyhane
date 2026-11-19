@@ -214,9 +214,21 @@ on('emote', (m) => {
     addLog(h('div', { class: 'sys' }, `${nameOf(m.seat)} 💨`));
   }
 });
-/** Ruf nach Ahmet (bei jeder Bestellung, für alle am Tisch) */
+/** Ruf nach Ahmet (bei jeder Bestellung, für alle am Tisch) + Ahmets Antworten */
 const ahmetCall = new Audio('/sfx/ahmet.mp3');
 ahmetCall.preload = 'auto';
+const AHMET_REPLIES = ['/sfx/ahmet_reply1.mp3', '/sfx/ahmet_reply2.mp3'];
+function playVoice(src: string, gain = 1) {
+  try {
+    const a = new Audio(src);
+    a.volume = Math.max(0, Math.min(1, vol('volSfx') * gain));
+    void a.play().catch(() => {});
+  } catch {}
+}
+// Abräumen: nur manchmal sagt er etwas
+world.onAhmetClear = () => {
+  if (Math.random() < 0.45) playVoice('/sfx/ahmet_clear.mp3', 0.9);
+};
 on('order', (m) => {
   const items: OrderItem[] = (m.items ?? [m.item]) as OrderItem[];
   const variants: number[] = m.variants ?? [m.variant ?? 0];
@@ -225,6 +237,8 @@ on('order', (m) => {
     a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
     void a.play().catch(() => {});
   } catch {}
+  // Antwort von Ahmet kurz nach dem Ruf (nur manchmal, abwechselnd – vom Server bestimmt)
+  if (typeof m.reply === 'number' && m.reply >= 0) setTimeout(() => playVoice(AHMET_REPLIES[m.reply % AHMET_REPLIES.length], 0.9), 2000);
   items.forEach((item, k) => world.order(m.seat, item, variants[k] ?? 0));
   addLog(h('div', { class: 'sys' }, `${m.from}: ${items.map(orderLabel).join(', ')} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
   if (m.seat === you.seat) sfx.bell();

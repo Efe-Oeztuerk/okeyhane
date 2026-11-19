@@ -774,7 +774,10 @@ function handle(c: Client, m: Msg) {
         (c as any).lastOrder = now;
         // İçecek: Ahmet bringt eine zufällige Dose (für alle dieselbe)
         const variants = list.map((x) => (x === 'icecek' ? Math.floor(Math.random() * 7) : 0));
-        broadcast(t, { type: 'order', seat: c.seat, items: list, item: list[0], from: c.info.name, variants, variant: variants[0] });
+        // Ahmet antwortet nur manchmal – und dann abwechselnd (für alle gleich)
+        let reply = -1;
+        if (Math.random() < 0.5) reply = (t as any).ahmetReply = (((t as any).ahmetReply ?? -1) + 1) % 2;
+        broadcast(t, { type: 'order', seat: c.seat, items: list, item: list[0], from: c.info.name, variants, variant: variants[0], reply });
         return;
       }
       case 'setSpot': {

@@ -2270,6 +2270,8 @@ export class World {
   // ------------------------------------------------------------ Çaycı + Bestellungen
 
   private cayciTray: THREE.Group | null = null;
+  /** Ahmet räumt gerade leere Gläser ab (für Sprachaufnahme) */
+  onAhmetClear: (() => void) | null = null;
   private cayciQueue: { seat: number; item: OrderItem; variant: number }[] = [];
   private cayciPath: THREE.Vector3[] = [];
   private cayciHome = new THREE.Vector3(3.6, 0, -3.6);
@@ -2320,8 +2322,9 @@ export class World {
   /** Çaycı rufen: kommt an den Tisch und bringt die Bestellung */
   order(seat: number, item: OrderItem, variant = 0) {
     this.cayciQueue.push({ seat, item, variant });
-    if (this.cayciState.phase === 'idle') this.cayciState.t = 0;
-    this.cayci.say(['Geliyor abi!', 'Hemen!', 'Tamam usta!', 'Baş üstüne!'][Math.floor(Math.random() * 4)]);
+    // Ahmet braucht etwas, bis er kommt (Tee aufgießen …)
+    if (this.cayciState.phase === 'idle' && this.cayciQueue.length === 1) this.cayciState.t = 7 + Math.random() * 6;
+    if (this.cayciQueue.length === 1) this.cayci.say(['Geliyor abi!', 'Hemen!', 'Tamam usta!', 'Baş üstüne!'][Math.floor(Math.random() * 4)]);
   }
 
   /** Weg vom Çaycı zum Ziel (durch die Tür, falls im Garten) */
@@ -2416,7 +2419,10 @@ export class World {
       if (st.clearSeat !== null && !this.cayciQueue.length) {
         st.clearSeat = null;
         sfx.spoon();
-        if (cleared) this.cayci.say(['Boşları alayım', 'Müsaadenizle…', 'Bir tazesini getireyim mi?'][Math.floor(Math.random() * 3)]);
+        if (cleared) {
+          this.cayci.say(['Boşları alayım', 'Müsaadenizle…', 'Bir tazesini getireyim mi?'][Math.floor(Math.random() * 3)]);
+          this.onAhmetClear?.();
+        }
       } else {
         // alle Bestellungen für diesen Tisch abstellen
         for (const o of this.cayciQueue) this.placeOrder(o.seat, o.item, o.variant);
