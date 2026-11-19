@@ -59,6 +59,7 @@ export const TOUCH_BTNS: { key: string; icon: string; tr: string; de: string }[]
   { key: 'emotes', icon: '😊', tr: 'Hareketler', de: 'Emotes' },
   { key: 'sheet', icon: '📝', tr: 'Puan kâğıdı', de: 'Zettel' },
   { key: 'chat', icon: '💬', tr: 'Sohbet', de: 'Chat' },
+  { key: 'mic', icon: '🎙️', tr: 'Mikrofon', de: 'Mikro' },
 ];
 
 export interface KeyBinds {
@@ -177,7 +178,7 @@ const defaults: Settings = {
   hideChat: false,
   radioStation: 'okeyhane',
   musicMuted: false,
-  touchBtns: ['look', 'third', 'front', 'cayci', 'nargile', 'sheet', 'chat'],
+  touchBtns: ['look', 'third', 'front', 'cayci', 'nargile', 'sheet', 'chat', 'mic'],
 };
 /** Touchgerät (Handy/Tablet) */
 export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
@@ -201,7 +202,9 @@ if ((stored.v ?? 1) < 4) {
   if (settings.keys.drawSide === 'KeyE') settings.keys.drawSide = 'KeyW';
   settings.keys.emoteWheel = 'KeyE';
 }
-(settings as any).v = 4;
+// v5: Mikro-Knopf rechts standardmäßig dabei
+if ((stored.v ?? 1) < 5 && !settings.touchBtns.includes('mic')) settings.touchBtns = [...settings.touchBtns, 'mic'];
+(settings as any).v = 5;
 const listeners = new Set<() => void>();
 
 export function saveSettings() {

@@ -3,11 +3,32 @@
 import { vol } from './settings.ts';
 
 let ctx: AudioContext | null = null;
+// iPhone: Töne auch bei Lautlos-Schalter abspielen (Safari 17+), sonst bleibt WebAudio stumm
+try {
+  const s = (navigator as any).audioSession;
+  if (s) s.type = 'playback';
+} catch {}
 function ac() {
   if (!ctx) ctx = new AudioContext();
-  if (ctx.state === 'suspended') ctx.resume();
+  if (ctx.state !== 'running') void ctx.resume().catch(() => {});
   return ctx;
 }
+// iOS/Android lassen Audio nur nach einer Berührung starten und pausieren ihn nach Hintergrund/Anruf:
+// bei jeder Berührung wieder aufwecken (kostet nichts, wenn er schon läuft)
+for (const ev of ['pointerdown', 'touchend', 'keydown'] as const)
+  addEventListener(ev, () => {
+    const a = ac();
+    if (a.state === 'running' || (a as any)._primed) return;
+    // ein stiller Ton „entsperrt“ den Kontext auf iOS
+    const b = a.createBuffer(1, 1, 22050);
+    const src = a.createBufferSource();
+    src.buffer = b;
+    src.connect(a.destination);
+    src.start(0);
+  }, { passive: true, capture: true });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && ctx && ctx.state !== 'running') void ctx.resume().catch(() => {});
+});
 
 function click(freq: number, dur: number, gain: number, type: OscillatorType = 'square') {
   const v = vol('volSfx') * gain;

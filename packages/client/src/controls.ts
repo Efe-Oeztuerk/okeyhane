@@ -27,6 +27,8 @@ export interface ControlApi {
   focusChat(): void;
   toggleChat(): void;
   toggleSheet(): void;
+  toggleMic(): void;
+  micOn(): boolean;
   openMedia(): void;
   escape(): void;
 }
@@ -485,6 +487,7 @@ function setupTouch(world: World, api: ControlApi) {
     emotes: tap('😊', 'Emotes', () => (wheelIsOpen() ? closeWheel() : api.openEmotes()), 'seated-only'),
     sheet: tap('📝', 'Zettel / Puan', () => api.toggleSheet(), 'started-only'),
     chat: tap('💬', 'Chat', () => api.toggleChat()),
+    mic: tap('🎙️', 'Mikrofon', () => api.toggleMic(), 'mic'),
   };
   const btns = h('div', { class: 'tbtns' }, Object.values(allBtns));
 
@@ -498,6 +501,8 @@ function setupTouch(world: World, api: ControlApi) {
     document.body.classList.toggle('phone', touchActive() && Math.min(innerWidth, innerHeight) <= 540);
     root.classList.toggle('seated', world.seated !== null);
     lookBtn.classList.toggle('on', !world.focus && world.freeLook);
+    allBtns.mic.classList.toggle('on', api.micOn());
+    allBtns.mic.textContent = api.micOn() ? '🎙️' : '🔇';
     for (const [k, b] of Object.entries(allBtns)) b.classList.toggle('off', !settings.touchBtns.includes(k));
     root.classList.toggle('started', !!api.started());
     sitBtn.classList.toggle('hidden', !on || !world.chairAhead());

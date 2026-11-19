@@ -268,6 +268,7 @@ on('quick', (m) => {
 on('emote', (m) => {
   world.emote(m.seat, m.key, !!m.ring);
   if (m.seat !== null && m.seat === you.seat) selfFeedback(m.key, !!m.ring);
+  else otherSound(m.key);
   if (m.smoke) {
     setTimeout(() => world.smokeCloud(), 1400);
     addLog(h('div', { class: 'sys' }, `${nameOf(m.seat)} 💨`));
@@ -397,6 +398,16 @@ function selfFeedback(key: string, ring = false) {
     for (let i = 0; i < 6; i++) setTimeout(() => sfx.tile(), i * 180);
   }
   flashLabel(t('e_' + key));
+}
+
+/** Geräusche, wenn andere am Tisch ein Emote machen (Shisha, Tee, auf den Tisch hauen, Tespih) */
+function otherSound(key: string) {
+  if (key === 'nargile') {
+    sfx.bubble();
+    setTimeout(() => sfx.exhale(), 1900);
+  } else if (key === 'tea') setTimeout(() => sfx.sip(), 900);
+  else if (key === 'slam') setTimeout(() => sfx.slam(), 450);
+  else if (key === 'tespih') for (let i = 0; i < 6; i++) setTimeout(() => sfx.tile(), i * 180);
 }
 
 function eyeFeedback(key: string) {
@@ -1755,6 +1766,17 @@ const controlsApi: any = {
     (els.chat?.querySelector('input') as HTMLInputElement | null)?.focus();
   },
   toggleChat: () => setChatOpen(!els.chat?.classList.contains('open')),
+  toggleMic: async () => {
+    try {
+      unlockAudio();
+      await voice.enableMic(!voice.micOn);
+      toast(voice.micOn ? (getLang() === 'de' ? '🎙️ Mikro an' : '🎙️ Mikrofon açık') : getLang() === 'de' ? '🔇 Mikro aus' : '🔇 Mikrofon kapalı', '#2d5a3a');
+    } catch (e: any) {
+      toast(e.message);
+    }
+    renderRight();
+  },
+  micOn: () => !!voice.micOn,
   toggleSheet: () => {
     if (!table?.started) return;
     sheetOpen = !sheetOpen;
