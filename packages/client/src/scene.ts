@@ -1764,6 +1764,8 @@ export class World {
   private pistiAnims: { t: number; dur: number; step: (e: number, t: number) => void; done?: () => void }[] = [];
   private pistiTopHidden: THREE.Object3D | null = null;
   private pistiViewer = 0;
+  /** Karten, die gerade auf den Stapel fliegen (echte oberste Karte so lange versteckt) */
+  private pistiFlying = new Set<number>();
 
   private pistiSeed(id: number, k: number) {
     return (Math.sin(id * 12.9898 + k * 78.233) * 43758.5453) % 1;
@@ -1786,17 +1788,29 @@ export class World {
       m.rotation.set(0, readRot + sd(3) * 0.15, 0);
       return;
     }
-    const side = new THREE.Vector3(vd.z, 0, -vd.x);
-    const fan = back < 3 ? back * 0.055 : 0.16 + sd(1) * 0.02;
-    m.position.set(C.x - side.x * fan + sd(2) * 0.01, Y + layerIdx * 0.002, C.z - side.z * fan + sd(4) * 0.01);
-    m.rotation.set(0, readRot + (back < 3 ? back * 0.08 : sd(3) * 0.35), 0);
+    // r = nach rechts, f = zu mir hin (aus meiner Sicht)
+    const r = new THREE.Vector3(vd.z, 0, -vd.x).normalize();
+    const f = new THREE.Vector3(vd.x, 0, vd.z).normalize();
     if (back === 0) {
-      // oberste Karte: hintere Kante hoch → Gesicht schaut zu mir, gut lesbar
+      // oberste Karte: liegt vor dem Stapel, vordere Kante auf dem Tisch, hintere hochgeklappt → kein Durchdringen
+      const base = C.clone().addScaledVector(f, 0.085).addScaledVector(r, 0.035);
+      m.position.set(base.x, Y + layerIdx * 0.002 + 0.002, base.z);
       m.rotation.set(0, readRot, 0);
       m.rotateX(0.85);
       m.scale.setScalar(2.1);
-      m.position.y += 0.1 * Math.sin(0.85);
+      // Drehpunkt ist die Kartenmitte → um eine halbe Kartenlänge nach hinten-oben schieben
+      const half = (0.1148 * 2.1) / 2;
+      m.position.y += half * Math.sin(0.85);
+      m.position.addScaledVector(f, -half * Math.cos(0.85));
+      return;
     }
+    // ältere Karten: flach, leicht nach links/hinten aufgefächert (schauen hinter der obersten hervor)
+    const k = Math.min(back, 4);
+    const pos = C.clone()
+      .addScaledVector(f, -0.03 - k * 0.006)
+      .addScaledVector(r, -0.02 - k * 0.022 + sd(1) * 0.008);
+    m.position.set(pos.x, Y + layerIdx * 0.002, pos.z + 0);
+    m.rotation.set(0, readRot + (back < 4 ? back * 0.07 : sd(3) * 0.3), 0);
   }
   /** wo die gestochenen Karten eines Teams liegen */
   private pistiStackPos(v: any, team: number) {
@@ -1832,6 +1846,7 @@ export class World {
     if (!v) {
       this.pistiFx.clear();
       this.pistiAnims = [];
+      this.pistiFlying.clear();
       return;
     }
     const viewer = mySeat ?? 0;
@@ -1849,7 +1864,10 @@ export class World {
       const m = cardMesh(c, true);
       this.pistiPose(m, c, layer++, n - 1 - i, false);
       this.gameGroup.add(m);
-      if (i === n - 1) this.pistiTopHidden = m;
+      if (i === n - 1) {
+        this.pistiTopHidden = m;
+        if (this.pistiFlying.has(c.id)) m.visible = false;
+      }
     });
     if (!v.hiddenCount && !n) {
       const C = this.pistiCenter();
@@ -1866,7 +1884,7 @@ export class World {
       for (let i = 0; i < k; i++) {
         const m = cardMesh(null, false);
         m.scale.setScalar(1.25);
-        m.position.set(dd.x * 0.2 + side.x * 0.17, Y + i * 0.0035, dd.z * 0.2 + side.z * 0.17);
+        m.position.set(dd.x * 0.33 + side.x * 0.21, Y + i * 0.0035, dd.z * 0.33 + side.z * 0.21);
         m.rotation.y = Math.atan2(dd.x, dd.z) + 0.25;
         this.gameGroup.add(m);
       }
@@ -1914,7 +1932,18 @@ export class World {
   pistiAnimate(prev: any | null, v: any) {
     const e = v.lastEvent;
     if (!e) return;
-    const anim = (dur: number, step: (k: number, t: number) => void, done?: () => void) => this.pistiAnims.push({ t: 0, dur, step, done });
+    const anim = (dur: number, step: (k: number, t: number) => void, done?: () => void) => {
+      const a = { t: 0, dur, step, done };
+      this.pistiAnims.push(a);
+      return a;
+    };
+    for (const c of this.pistiFx.children) {
+      const w = c.userData.wait as { t: number; dur: number } | undefined;
+      if (w) {
+        w.t = w.dur;
+        delete c.userData.wait;
+      }
+    }
     const ease = (k: number) => 1 - Math.pow(1 - k, 3);
     const fly = (m: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3, toQ: THREE.Quaternion, toS: number, dur: number, arc = 0.12, done?: () => void) => {
       const fromQ = m.quaternion.clone();
@@ -1960,7 +1989,8 @@ export class World {
       const sp = this.pistiStackPos(v, team);
       const start = g.children.map((c) => ({ p: c.position.clone(), q: c.quaternion.clone(), s: c.scale.x }));
       const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, sp.rot, 0));
-      anim(delay, () => {}, () =>
+      // Wartezeit merken: kommt schon der nächste Zug, rutscht der Stapel sofort weg (sonst liegen zwei Karten übereinander)
+      g.userData.wait = anim(delay, () => {}, () =>
         anim(
           0.55,
           (k) => {
@@ -2003,6 +2033,8 @@ export class World {
         const top = this.pistiTopHidden;
         if (!top) return;
         top.visible = false;
+        const cid = e.card.id as number;
+        this.pistiFlying.add(cid);
         const m = cardMesh(e.card, e.kind === 'play');
         m.scale.setScalar(1.3);
         m.rotation.set(0, this.pistiSeed(e.card.id, 7) * 2, 0);
@@ -2010,7 +2042,9 @@ export class World {
         const target = poseOf(e.card, 0, 0);
         fly(m, from, target.position, target.quaternion, target.scale.x, e.kind === 'play' ? 0.42 : 0.3, 0.12, () => {
           this.pistiFx.remove(m);
-          top.visible = true;
+          this.pistiFlying.delete(cid);
+          // inzwischen kann der Tisch neu aufgebaut sein → die aktuelle oberste Karte zeigen
+          if (this.pistiTopHidden) this.pistiTopHidden.visible = true;
         });
         break;
       }
@@ -2058,7 +2092,7 @@ export class World {
         // Karten fliegen vom Talon zu den Spielern
         const dd = seatPos(v.dealer);
         const side = new THREE.Vector3(dd.z, 0, -dd.x);
-        const src = new THREE.Vector3(dd.x * 0.2 + side.x * 0.17, TABLE_Y + 0.03, dd.z * 0.2 + side.z * 0.17);
+        const src = new THREE.Vector3(dd.x * 0.33 + side.x * 0.21, TABLE_Y + 0.03, dd.z * 0.33 + side.z * 0.21);
         (v.seats as number[]).forEach((s, si) => {
           for (let i = 0; i < 4; i++) {
             const m = cardMesh(null, false);
