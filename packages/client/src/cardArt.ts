@@ -273,7 +273,14 @@ const imgTexCache = new Map<string, THREE.Texture>();
 function cardTex(key: string) {
   let t = imgTexCache.get(key);
   if (!t) {
-    t = new THREE.TextureLoader().load(cardUrl(key), (tt) => uploader?.(tt));
+    const waiting: (() => void)[] = [];
+    t = new THREE.TextureLoader().load(cardUrl(key), (tt) => {
+      uploader?.(tt);
+      tt.userData.ready = true;
+      for (const f of waiting) f();
+      waiting.length = 0;
+    });
+    t.userData.waiting = waiting;
     t.colorSpace = THREE.SRGBColorSpace;
     t.anisotropy = 16;
     imgTexCache.set(key, t);
@@ -322,6 +329,16 @@ export function cardMesh(c: PCard | null, faceUp = true): THREE.Group {
   bottom.position.y = -0.0004;
   top.receiveShadow = bottom.receiveShadow = true;
   g.add(top, bottom);
+  // nie eine leere (weiße) Karte zeigen: erst sichtbar, wenn beide Bilder geladen sind
+  const texs = [top, bottom].map((x) => (x.material as THREE.MeshStandardMaterial).map!).filter((t) => !t.userData.ready);
+  if (texs.length) {
+    g.visible = false;
+    let left = texs.length;
+    for (const t of texs)
+      (t.userData.waiting as (() => void)[]).push(() => {
+        if (--left === 0) g.visible = true;
+      });
+  }
   return g;
 }
 

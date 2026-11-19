@@ -508,6 +508,10 @@ addEventListener('orientationchange', () => [100, 400, 1000].forEach((ms) => set
 
 // ------------------------------------------------------------------ App (PWA)
 
+// am PC die Kartenbilder schon im Leerlauf laden (am Handy erst, wenn Pişti gewählt ist)
+setTimeout(() => {
+  if (!document.body.classList.contains('phone')) preloadCards();
+}, 4000);
 if ('serviceWorker' in navigator && location.hostname !== 'localhost') navigator.serviceWorker.register('/sw.js').catch(() => {});
 let installEvt: any = null;
 addEventListener('beforeinstallprompt', (e) => {
