@@ -719,6 +719,9 @@ function modal(...children: (HTMLElement | string)[]) {
 }
 
 function openSettings() {
+  // nochmal ⚙️ drücken = Einstellungen wieder zu
+  const open = ui.querySelector(':scope > .modal.settings-modal');
+  if (open) return open.remove();
   const slider = (key: keyof typeof settings, label: string) =>
     h(
       'label',
@@ -783,7 +786,7 @@ function openSettings() {
   };
   const check = (key: keyof typeof settings, label: string) =>
     h('label', {}, label, h('input', { type: 'checkbox', checked: settings[key] as boolean, onchange: (e: Event) => (((settings as any)[key] = (e.target as HTMLInputElement).checked), saveSettings()) }));
-  modal(
+  const settingsM = modal(
     h('h2', {}, '⚙️ ' + t('settings')),
     h(
       'div',
@@ -880,6 +883,7 @@ function openSettings() {
       ),
     ),
   );
+  settingsM.classList.add('settings-modal');
 }
 
 /** kleiner Punkt: Sprachverbindung zu diesem Spieler */
