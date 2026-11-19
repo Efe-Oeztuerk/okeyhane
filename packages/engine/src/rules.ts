@@ -44,6 +44,8 @@ export interface TableRules {
   /** so viele Stiche über dem Gebot = auch batık (0 = aus) */
   batakOverLimit: number;
   batakZeroBatar: boolean;
+  /** Überbieten nach Pas erlaubt */
+  batakRebid: boolean;
 }
 
 export function defaultRules(mode: Mode): TableRules {
@@ -69,7 +71,8 @@ export function defaultRules(mode: Mode): TableRules {
     batakHands: 0,
     batakMinBid: 5,
     batakMustTrump: true,
-    batakTrumpBreak: true,
+    batakTrumpBreak: false,
+    batakRebid: false,
     batakOverLimit: 0,
     batakZeroBatar: true,
   };

@@ -591,3 +591,21 @@ body.phone .batak-hand .pcard { margin-left: -26px; }
 .batak-scores .bs.mine b { color: var(--gold); }
 .batak-scores .bs.bidder span:first-child::after { content: ' ★'; color: var(--gold); }
 .batak-hand .pcard.dim { filter: brightness(.72) saturate(.8); }
+/* Batak: Sprechblasen für Gebote, Koz-Banner, Koz-Abzeichen oben */
+.bk-bubble { position: fixed; transform: translate(-50%, -100%); z-index: 48; background: #f6ecd6; color: #2a1a0e; border-radius: 14px; padding: 6px 14px; text-align: center; box-shadow: 0 6px 18px rgba(0,0,0,.45); pointer-events: none; animation: bk-pop .32s cubic-bezier(.2,1.6,.4,1) both; transition: opacity .45s, transform .45s; }
+.bk-bubble::after { content: ''; position: absolute; left: 50%; bottom: -8px; margin-left: -8px; border: 8px solid transparent; border-bottom: 0; border-top-color: #f6ecd6; }
+.bk-bubble.mine { left: 50%; top: auto; bottom: 34%; }
+.bk-bubble .bk-who { font-size: 11px; opacity: .7; font-weight: 700; }
+.bk-bubble .bk-what { font-size: 24px; font-weight: 900; line-height: 1.1; }
+.bk-bubble.pas .bk-what { color: #8a6a4a; font-size: 20px; }
+.bk-bubble.win { background: #e3b04b; } .bk-bubble.win::after { border-top-color: #e3b04b; }
+.bk-bubble.out { opacity: 0; transform: translate(-50%, -130%); }
+@keyframes bk-pop { from { opacity: 0; transform: translate(-50%, -60%) scale(.5); } to { opacity: 1; transform: translate(-50%, -100%) scale(1); } }
+.bk-trump { position: fixed; left: 50%; top: 40%; transform: translate(-50%, -50%); z-index: 49; background: rgba(28,18,10,.92); border: 2px solid #e3b04b; border-radius: 20px; padding: 14px 30px; text-align: center; color: #f3e3c3; font-weight: 800; font-size: 18px; pointer-events: none; animation: bk-in .4s cubic-bezier(.2,1.4,.4,1) both; transition: opacity .5s, transform .5s; }
+.bk-trump .big { font-size: 74px; line-height: 1; margin: 4px 0; }
+.bk-trump .big .suit.black { color: #f1e6d0; }
+.bk-trump.out { opacity: 0; transform: translate(-50%, -50%) scale(.8); }
+@keyframes bk-in { from { opacity: 0; transform: translate(-50%, -50%) scale(.4); } to { opacity: 1; transform: translate(-50%, -50%) scale(1); } }
+.bk-koz { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 10px; border-radius: 10px; background: #f6ecd6; color: #2a1a0e; font-weight: 900; }
+.bk-koz .suit { font-size: 22px; line-height: 1; }
+.bk-koz .suit.black { color: #1d1209; }

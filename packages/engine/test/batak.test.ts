@@ -65,6 +65,31 @@ describe('Batak', () => {
       expect(g.winner).not.toBeNull();
     }
   });
+  it('Überbieten: wer gepasst hat, darf später wieder bieten', () => {
+    const g = new BatakGame({ rebid: true, minBid: 5 }, 4);
+    const a = g.current;
+    g.bid(a, null); // a passt
+    const b = g.current;
+    g.bid(b, 6);
+    g.bid(g.current, null);
+    g.bid(g.current, null);
+    expect(g.current).toBe(a); // a ist wieder dran
+    g.bid(a, 7);
+    expect(g.phase).toBe('bid');
+    g.bid(g.current, null);
+    g.bid(g.current, null);
+    g.bid(g.current, null);
+    expect(g.contract).toEqual({ seat: a, bid: 7 });
+  });
+  it('ohne Überbieten bleibt Pas endgültig', () => {
+    const g = new BatakGame({ rebid: false, minBid: 5 }, 4);
+    const a = g.current;
+    g.bid(a, null);
+    g.bid(g.current, 6);
+    g.bid(g.current, null);
+    g.bid(g.current, null);
+    expect(g.phase).toBe('trump');
+  });
   it('Spielende nach Anzahl Hände', () => {
     const g = new BatakGame({ handLimit: 3, target: 9999 }, 21);
     playOut(g);

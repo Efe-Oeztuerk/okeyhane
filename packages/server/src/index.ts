@@ -249,7 +249,7 @@ function newGame(t: Table): OkeyGame | PistiGame | BatakGame {
   const seed = Date.now() & 0x7fffffff;
   if (t.rules.mode === 'batak') {
     const r = t.rules;
-    return new BatakGame({ mode: r.batakMode, target: r.batakTarget, handLimit: r.batakHands, minBid: r.batakMinBid, mustTrump: r.batakMustTrump, trumpBreak: r.batakTrumpBreak, overLimit: r.batakOverLimit, zeroBatar: r.batakZeroBatar }, seed);
+    return new BatakGame({ mode: r.batakMode, target: r.batakTarget, handLimit: r.batakHands, minBid: r.batakMinBid, mustTrump: r.batakMustTrump, trumpBreak: r.batakTrumpBreak, overLimit: r.batakOverLimit, zeroBatar: r.batakZeroBatar, rebid: r.batakRebid }, seed);
   }
   if (t.rules.mode === 'pisti') return new PistiGame({ players: t.rules.pistiPlayers === 2 ? 2 : 4, target: t.rules.pistiTarget || 151, bluff: !!t.rules.pistiBluff }, seed);
   return new OkeyGame(t.rules, seed);
@@ -699,7 +699,8 @@ function handle(c: Client, m: Msg) {
           r.batakMinBid = Math.max(1, Math.min(maxB, Math.round(Number(r.batakMinBid) || 5)));
           r.batakOverLimit = Math.max(0, Math.min(13, Math.round(Number(r.batakOverLimit) || 0)));
           r.batakMustTrump = true;
-          r.batakTrumpBreak = r.batakTrumpBreak !== false;
+          r.batakTrumpBreak = !!r.batakTrumpBreak;
+          r.batakRebid = !!r.batakRebid;
           r.batakZeroBatar = r.batakZeroBatar !== false;
           if (r.mode === 'batak' && r.batakMode === 'gommeli') t.seats[3].bot = null;
         }

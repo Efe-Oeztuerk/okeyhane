@@ -24,9 +24,11 @@ export interface BatakRules {
   overLimit: number;
   /** wer (außer dem Bieter) keinen Stich macht, ist auch „batık“ */
   zeroBatar: boolean;
+  /** wer gepasst hat, darf in der nächsten Runde wieder bieten (überbieten) */
+  rebid: boolean;
 }
 
-export const DEFAULT_BATAK: BatakRules = { mode: 'ihaleli', target: 51, handLimit: 0, minBid: 5, mustTrump: true, trumpBreak: true, overLimit: 0, zeroBatar: true };
+export const DEFAULT_BATAK: BatakRules = { mode: 'ihaleli', target: 51, handLimit: 0, minBid: 5, mustTrump: true, trumpBreak: false, overLimit: 0, zeroBatar: true, rebid: false };
 
 /** Wert für den Vergleich: Ass am höchsten */
 export const rankValue = (r: number) => (r === 1 ? 14 : r);
@@ -85,6 +87,8 @@ export class BatakGame {
   winner: number | null = null;
   lastEvent: BatakEvent | null = null;
   private seq = 0;
+  /** Pas in Folge seit dem letzten Gebot (für „überbieten erlaubt“) */
+  private passStreak = 0;
   /** gespielte Karten (für Bots) */
   played: Card[] = [];
 
@@ -128,6 +132,7 @@ export class BatakGame {
     this.kitty = deck; // Gömmeli: 4 Karten, sonst leer
     for (const s of this.seats) sortHand(this.hands[s]);
     this.bids = [undefined, undefined, undefined, undefined];
+    this.passStreak = 0;
     this.contract = null;
     this.trump = null;
     this.trumpBroken = false;
@@ -172,6 +177,7 @@ export class BatakGame {
     }
     this.bids[seat] = value;
     this.event({ kind: 'bid', seat, bid: value });
+    if (this.rules.rebid) return this.bidRebid(seat, value);
     // fertig, wenn alle außer einem gepasst haben (und der eine geboten hat) oder alle gepasst haben
     const passed = this.seats.filter((s) => this.bids[s] === null);
     const open = this.seats.filter((s) => this.bids[s] !== null);
@@ -188,6 +194,22 @@ export class BatakGame {
     let n = this.next(seat);
     for (let i = 0; i < this.seats.length && this.bids[n] === null; i++) n = this.next(n);
     this.current = n;
+  }
+
+  /** Ihale mit Überbieten: Pas gilt nur für diesen Durchgang; Ende, wenn nach dem höchsten Gebot alle anderen gepasst haben */
+  private bidRebid(seat: number, value: number | null) {
+    const n = this.seats.length;
+    if (value === this.maxBid) return this.setContract(seat, value);
+    const hb = this.highBid;
+    if (value === null) this.passStreak++;
+    else this.passStreak = 0;
+    if (hb && this.passStreak >= n - 1) return this.setContract(hb.seat, hb.bid);
+    if (!hb && this.passStreak >= n) {
+      const opener = this.next(this.dealer);
+      this.bids[opener] = this.rules.minBid;
+      return this.setContract(opener, this.rules.minBid);
+    }
+    this.current = this.next(seat);
   }
 
   private setContract(seat: number, bid: number) {

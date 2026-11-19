@@ -1936,6 +1936,7 @@ function renderLobby() {
       num('batakMinBid', de ? 'Mindestgebot' : 'En az ihale', 1, r.batakMode === 'gommeli' ? 16 : 13),
       num('batakOverLimit', de ? 'Zu viel = batık ab +Stichen (0 = aus)' : 'Fazla alırsa batar: +el (0 = kapalı)', 0, 13),
       chk('batakZeroBatar', de ? 'Kein Stich = batık' : 'Hiç el alamayan batar'),
+      chk('batakRebid', de ? 'Überbieten nach Pas erlaubt' : 'Pas sonrası tekrar artırma'),
       chk('batakTrumpBreak', de ? 'Koz erst ausspielen, wenn gefallen' : 'Koz kırılmadan koz açılmaz'),
       h('label', {}, t('timer'), h('input', { type: 'number', min: 0, max: 300, value: r.turnTimerSec ?? 0, disabled: dis, onchange: (e: Event) => set({ turnTimerSec: Number((e.target as HTMLInputElement).value) || null }) })),
       chk('allowBots', t('bots')),
@@ -2578,6 +2579,32 @@ function batakName(v: any, seatOrTeam: number, short = false) {
   if (v.team) return [seatOrTeam, seatOrTeam + 2].map((s) => (short ? (nameOf(s) ?? '?').split(' ')[0] : nameOf(s))).join(' & ');
   return short ? (nameOf(seatOrTeam) ?? '?').split(' ')[0] : nameOf(seatOrTeam);
 }
+/** Sprechblase über einem Spieler (Gebot / Pas) */
+function batakBubble(seat: number, text: string, kind: 'pas' | 'bid' | 'win') {
+  const pos = seat === you.seat ? null : world.screenOfSeat(seat);
+  const el = h('div', { class: 'bk-bubble ' + kind }, h('div', { class: 'bk-who' }, nameOf(seat) ?? ''), h('div', { class: 'bk-what' }, text));
+  if (pos) {
+    el.style.left = pos.x + 'px';
+    el.style.top = pos.y + 'px';
+  } else el.classList.add('mine');
+  document.getElementById('ui')!.append(el);
+  setTimeout(() => el.classList.add('out'), 1900);
+  setTimeout(() => el.remove(), 2400);
+}
+/** großes Koz-Banner in der Mitte (Anfang jeder Hand) */
+function batakTrumpBanner(suit: string, bidder: number, bid: number) {
+  const de = getLang() === 'de';
+  const el = h(
+    'div',
+    { class: 'bk-trump' },
+    h('div', { class: 'muted' }, de ? `İhale: ${nameOf(bidder)} · ${bid}` : `İhale: ${nameOf(bidder)} · ${bid}`),
+    h('div', { class: 'big' }, suitHtml(suit)),
+    h('div', {}, 'Koz: ' + suitName(suit, de)),
+  );
+  document.getElementById('ui')!.append(el);
+  setTimeout(() => el.classList.add('out'), 2600);
+  setTimeout(() => el.remove(), 3200);
+}
 function batakFeedback(prev: any | null, v: any) {
   const e = v.lastEvent;
   if (!e || e.seq === batakLastSeq) return;
@@ -2593,14 +2620,14 @@ function batakFeedback(prev: any | null, v: any) {
       break;
     case 'bid':
       sfx.tile();
-      pistiNote(e.bid === null ? `${who}: Pas` : `${who}: ${e.bid}`);
+      batakBubble(e.seat, e.bid === null ? 'Pas' : String(e.bid), e.bid === null ? 'pas' : 'bid');
       break;
     case 'contract':
-      pistiNote(de ? `İhale: ${who} · ${e.bid}` : `İhale ${who}’de · ${e.bid}`);
+      setTimeout(() => batakBubble(e.seat, de ? `İhale ${e.bid} ✓` : `İhale ${e.bid} ✓`, 'win'), 350);
       break;
     case 'trump':
       sfx.slam();
-      pistiNote(`Koz: ${SUIT_SYM[e.suit as 'S']} ${suitName(e.suit, de)}`);
+      batakTrumpBanner(e.suit, e.seat, v.contract?.bid ?? 0);
       break;
     case 'play':
       sfx.tile();
@@ -2636,7 +2663,7 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     'div',
     { class: 'okeyinfo pisti-info' },
     v.contract ? h('span', {}, `İhale: ${batakName(v, v.contract.seat, true)} ${v.contract.bid}`) : h('span', {}, de ? 'Ihale läuft' : 'İhale'),
-    v.trump ? h('span', {}, ' · Koz ', suitHtml(v.trump)) : null,
+    v.trump ? h('span', { class: 'bk-koz' }, 'Koz ', suitHtml(v.trump)) : null,
     you.seat !== null && v.phase === 'play' ? h('span', { class: 'muted' }, ` · ${de ? 'Stiche' : 'El'} ${v.team ? v.tricks[you.seat] + v.tricks[(you.seat + 2) % 4] : v.tricks[you.seat]}`) : null,
     h('span', { class: 'muted ok-meta' }, v.rules.handLimit ? ` · ${de ? 'Hand' : 'El'} ${v.history.length + (v.phase === 'handOver' ? 0 : 1)}/${v.rules.handLimit}` : ` · ${de ? 'bis' : 'hedef'} ${v.rules.target}`),
   );

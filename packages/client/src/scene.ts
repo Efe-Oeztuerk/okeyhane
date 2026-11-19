@@ -1574,6 +1574,18 @@ export class World {
     }
   }
 
+  /** Bildschirmposition über dem Kopf eines Platzes (null = hinter mir / ich selbst) */
+  screenOfSeat(seat: number): { x: number; y: number } | null {
+    const local = seatPos(seat).multiplyScalar(1.15);
+    const wp = new THREE.Vector3(local.x, 1.32, local.z).add(this.tableRoot.position);
+    const p = wp.clone().project(this.camera);
+    if (p.z > 1 || p.z < -1) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    const x = r.left + ((p.x + 1) / 2) * r.width;
+    const y = r.top + ((1 - p.y) / 2) * r.height;
+    if (x < r.left || x > r.right || y < r.top || y > r.bottom) return null;
+    return { x, y };
+  }
   /** Bildschirmposition von Stapel bzw. Seitenstein (für die Flug-Animation) */
   screenOf(kind: 'pile' | 'side'): { x: number; y: number } | null {
     const o = kind === 'pile' ? this.pileObj : this.sideObj;
