@@ -13,7 +13,7 @@ import { Istaka } from './istaka.ts';
 import { openEditor } from './editor.ts';
 import { MediaPlayer, parseTwitch, parseYouTube } from './media.ts';
 import { Voice } from './voice.ts';
-import { sfx, unlockAudio } from './sound.ts';
+import { sfx, unlockAudio, playFile, preloadFile } from './sound.ts';
 import { settings, saveSettings, vol, TOUCH_BTNS, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
 import { isCompleteMelds, isCompletePairs, looseSum, rackIsFinished } from '@okeyhane/engine';
@@ -275,15 +275,11 @@ on('emote', (m) => {
   }
 });
 /** Ruf nach Ahmet (bei jeder Bestellung, für alle am Tisch) + Ahmets Antworten */
-const ahmetCall = new Audio('/sfx/ahmet.mp3');
-ahmetCall.preload = 'auto';
+const AHMET_CALL = '/sfx/ahmet.mp3';
 const AHMET_REPLIES = ['/sfx/ahmet_reply1.mp3', '/sfx/ahmet_reply2.mp3'];
+setTimeout(() => [AHMET_CALL, ...AHMET_REPLIES].forEach(preloadFile), 3000);
 function playVoice(src: string, gain = 1) {
-  try {
-    const a = new Audio(src);
-    a.volume = Math.max(0, Math.min(1, vol('volSfx') * gain));
-    void a.play().catch(() => {});
-  } catch {}
+  return playFile(src, gain, 'volSfx');
 }
 // Abräumen: nur manchmal sagt er etwas
 world.onAhmetClear = () => {
@@ -296,32 +292,22 @@ function voiceOfSeat(seat: number | null | undefined): string | undefined {
   return (table?.seats[seat] as any)?.avatar?.voice;
 }
 /** Satz in der Stimme dieser Figur – null, wenn sie keinen dafür hat (oder Stimmen aus sind) */
-function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): HTMLAudioElement | null {
+function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): Promise<void> | null {
   const v = voiceOfSeat(seat);
   if (!hasLine(v, line)) return null;
-  // in den Einstellungen leiser/aus stellbar
-  const cv = vol('volChar');
-  if (cv <= 0) return null;
-  try {
-    const a = new Audio(voiceUrl(v!, line));
-    a.volume = Math.max(0, Math.min(1, cv * gain * (seat === you.seat ? 1 : 0.85)));
-    void a.play().catch(() => {});
-    return a;
-  } catch {
-    return null;
-  }
+  if (vol('volChar') <= 0) return null;
+  return playFile(voiceUrl(v!, line), gain * (seat === you.seat ? 1 : 0.85), 'volChar');
 }
 /** wenn ein Ton fertig ist (oder spätestens nach maxMs) */
-function afterAudio(a: HTMLAudioElement | null, fn: () => void, maxMs = 6000) {
+function afterAudio(p: Promise<void> | null, fn: () => void, maxMs = 6000) {
   let done = false;
   const go = () => {
     if (done) return;
     done = true;
     fn();
   };
-  if (!a) return go();
-  a.addEventListener('ended', go, { once: true });
-  a.addEventListener('error', go, { once: true });
+  if (!p) return go();
+  void p.then(go);
   setTimeout(go, maxMs);
 }
 on('order', (m) => {
@@ -329,18 +315,11 @@ on('order', (m) => {
   const variants: number[] = m.variants ?? [m.variant ?? 0];
   // nur Dosen bestellt → „bi kola getir“, sonst (auch gemischt) der Tee-Ruf; ohne eigene Stimme der alte Ruf
   const line: VoiceLine = items.every((x) => x === 'icecek') ? 'kola' : 'cay';
-  let call: HTMLAudioElement | null = null;
+  let call: Promise<void> | null = null;
   // Charakter-Stimmen auf 0 → auch kein Ruf nach Ahmet
   if (vol('volChar') > 0) {
     call = sayLine(m.seat, line);
-    if (!call)
-      try {
-        call = ahmetCall.cloneNode(true) as HTMLAudioElement;
-        call.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
-        void call.play().catch(() => {});
-      } catch {
-        call = null;
-      }
+    if (!call) call = playFile(AHMET_CALL, m.seat === you.seat ? 1 : 0.8, 'volChar');
   }
   // Ahmet antwortet nur manchmal – erst wenn der Ruf fertig ist, dann 1–2 s Pause (nicht überlappend)
   if (typeof m.reply === 'number' && m.reply >= 0) {

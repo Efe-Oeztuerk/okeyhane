@@ -149,13 +149,13 @@ export function keyLabel(code: string) {
 }
 
 const defaults: Settings = {
-  volMaster: 80,
-  volSfx: 70,
+  volMaster: 70,
+  volSfx: 60,
   volVoice: 90,
   volTv: 60,
   volMusic: 50,
   volNpc: 30,
-  volChar: 80,
+  volChar: 60,
   uiInset: 0,
   smoke: true,
   quality: 'high',

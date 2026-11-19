@@ -22,17 +22,13 @@ export const VOICES: VoiceDef[] = [
 export const voiceUrl = (id: string, line: VoiceLine | 'preview') => `/voices/${id}/${line}.mp3`;
 export const hasLine = (id: string | undefined | null, line: VoiceLine) => !!id && !!VOICES.find((v) => v.id === id)?.lines.includes(line);
 
-let previewAudio: HTMLAudioElement | null = null;
-/** Hörprobe im Charakter-Menü (eine läuft gleichzeitig) */
+import { playFile } from './sound.ts';
+let previewToken = 0;
+/** Hörprobe im Charakter-Menü (eine neue ersetzt die alte nur logisch; Proben sind kurz) */
 export function playPreview(id: string, volume = 1) {
-  try {
-    previewAudio?.pause();
-    previewAudio = new Audio(voiceUrl(id, 'preview'));
-    previewAudio.volume = Math.max(0, Math.min(1, volume));
-    void previewAudio.play().catch(() => {});
-  } catch {}
+  previewToken++;
+  void playFile(voiceUrl(id, 'preview'), volume, 'volSfx');
 }
 export function stopPreview() {
-  previewAudio?.pause();
-  previewAudio = null;
+  previewToken++;
 }

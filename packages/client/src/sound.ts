@@ -104,6 +104,42 @@ export const sfx = {
   wink: () => click(1500, 0.05, 0.05, 'sine'),
 };
 
+// ---------------------------------------------------------------- Audiodateien über WebAudio
+// (iPhone/iPad ignorieren audio.volume – über WebAudio greifen Gesamt- und Einzel-Lautstärke überall)
+const bufCache = new Map<string, Promise<AudioBuffer | null>>();
+function loadBuf(url: string) {
+  let p = bufCache.get(url);
+  if (!p) {
+    p = fetch(url)
+      .then((r) => r.arrayBuffer())
+      .then((b) => new Promise<AudioBuffer | null>((res) => ac().decodeAudioData(b, res, () => res(null))))
+      .catch(() => null);
+    bufCache.set(url, p);
+  }
+  return p;
+}
+export const preloadFile = (url: string) => void loadBuf(url);
+/** spielt eine Datei; Lautstärke = Regler × gain (Dateien sind laut gemischt → Grundfaktor 0.7). Promise endet, wenn fertig. */
+export function playFile(url: string, gain = 1, target: 'volSfx' | 'volChar' | 'volNpc' = 'volSfx'): Promise<void> {
+  const v = vol(target) * gain * 0.7;
+  if (v <= 0) return Promise.resolve();
+  return loadBuf(url).then(
+    (buf) =>
+      new Promise<void>((res) => {
+        if (!buf) return res();
+        const a = ac();
+        const src = a.createBufferSource();
+        const g = a.createGain();
+        src.buffer = buf;
+        g.gain.value = Math.min(1.5, v);
+        src.connect(g).connect(a.destination);
+        src.onended = () => res();
+        src.start();
+        setTimeout(res, buf.duration * 1000 + 300);
+      }),
+  );
+}
+
 export function unlockAudio() {
   ac();
 }
