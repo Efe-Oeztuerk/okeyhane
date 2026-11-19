@@ -268,22 +268,43 @@ const CW = 0.082;
 const CH = 0.1148;
 const planeGeo = new THREE.PlaneGeometry(CW, CH);
 const matCache = new Map<string, THREE.Material>();
+const imgTexCache = new Map<string, THREE.Texture>();
+/** Kartenbild als Textur (einmal laden, danach sofort da) */
+function cardTex(key: string) {
+  let t = imgTexCache.get(key);
+  if (!t) {
+    t = new THREE.TextureLoader().load(cardUrl(key), (tt) => uploader?.(tt));
+    t.colorSpace = THREE.SRGBColorSpace;
+    t.anisotropy = 16;
+    imgTexCache.set(key, t);
+  }
+  return t;
+}
+let uploader: ((t: THREE.Texture) => void) | null = null;
+/** Szene meldet, wie Texturen gleich auf die Grafikkarte kommen (kein Ruckler beim ersten Zeigen) */
+export function setCardUploader(fn: (t: THREE.Texture) => void) {
+  uploader = fn;
+}
+let preloaded = false;
+/** alle 53 Kartenbilder vorab laden (sobald Pişti gewählt ist) → keine weißen Karten beim ersten Auftauchen */
+export function preloadCards() {
+  if (preloaded) return;
+  preloaded = true;
+  const keys = ['back'];
+  for (const su of ['S', 'H', 'D', 'C']) for (let r = 1; r <= 13; r++) keys.push(su + r);
+  for (const k of keys) {
+    cardTex(k);
+    sideMat(k === 'back' ? null : { id: -1, suit: k[0] as PCard['suit'], rank: Number(k.slice(1)) });
+  }
+}
 function sideMat(c: PCard | null) {
   const key = c ? `${c.suit}${c.rank}` : 'back';
   let m = matCache.get(key);
   if (!m) {
     {
       // Vorder- und Rückseite: nur das echte Kartenbild – keine Ersatz-Zeichnung darunter (sonst zwei Designs ineinander)
-      const mat = new THREE.MeshStandardMaterial({ color: '#f4f1ea', alphaTest: 0.5, roughness: 0.5, emissive: '#ffffff', emissiveIntensity: 0.32 });
-      m = mat;
-      new THREE.TextureLoader().load(cardUrl(key), (t) => {
-        t.colorSpace = THREE.SRGBColorSpace;
-        t.anisotropy = 16;
-        mat.color.set('#ffffff');
-        mat.map = t;
-        mat.emissiveMap = t;
-        mat.needsUpdate = true;
-      });
+      const t = cardTex(key);
+      m = new THREE.MeshStandardMaterial({ map: t, alphaTest: 0.5, roughness: 0.5, emissive: '#ffffff', emissiveMap: t, emissiveIntensity: 0.32 });
     }
     matCache.set(key, m);
   }

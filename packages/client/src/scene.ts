@@ -7,7 +7,7 @@ import type { Avatar, PlayerInfo } from '../../server/src/protocol.ts';
 import { Avatar3D } from './avatar.ts';
 import { City } from './city.ts';
 import { tileMesh } from './tileArt.ts';
-import { cardMesh, type PCard } from './cardArt.ts';
+import { cardMesh, setCardUploader, type PCard } from './cardArt.ts';
 import * as D from './decor.ts';
 import { settings, onSettings } from './settings.ts';
 import { sfx } from './sound.ts';
@@ -165,6 +165,7 @@ export class World {
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, settings.quality === 'high' ? 2 : 1));
+    setCardUploader((t) => this.renderer.initTexture(t));
     this.css = new CSS3DRenderer();
     this.css.domElement.className = 'css3d';
     this.renderer.domElement.className = 'gl';

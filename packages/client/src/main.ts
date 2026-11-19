@@ -5,7 +5,7 @@ import type { Tile, OkeyIdentity } from '@okeyhane/engine';
 import type { MediaState, PlayerInfo } from '../../server/src/protocol.ts';
 import { connect, send, on } from './net.ts';
 import { h, toast } from './dom.ts';
-import { cardElement, type PCard } from './cardArt.ts';
+import { cardElement, preloadCards, type PCard } from './cardArt.ts';
 import { t, setLang, getLang } from './i18n.ts';
 import { World, type GameVisual } from './scene.ts';
 import { Istaka } from './istaka.ts';
@@ -137,6 +137,7 @@ on('welcome', (m) => {
   voice.setMe(myId);
 });
 on('table', (m) => {
+  if (m.table?.rules?.mode === 'pisti') preloadCards();
   rejoining = false;
   const prevStarted = table?.started;
   table = m.table;
@@ -171,6 +172,7 @@ on('state', (m) => {
   st = m;
   const v = m.view;
   if (v.kind === 'pisti') {
+    preloadCards();
     world.setPisti(v, you.seat);
     pistiFeedback(prev?.view?.kind === 'pisti' ? prev.view : null, v);
     const endedP = v.phase === 'handOver' || v.phase === 'gameOver';
