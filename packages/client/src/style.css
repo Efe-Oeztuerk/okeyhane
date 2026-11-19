@@ -619,9 +619,17 @@ body.phone .bk-tc .pcard { width: 28px; height: 40px; }
 .bk-trick.big { transform: scale(2.6); z-index: 60; background: rgba(28,18,10,.92); padding: 4px 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
 @media (hover: hover) { .bk-trick:hover { transform: scale(2.6); z-index: 60; background: rgba(28,18,10,.92); padding: 4px 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); } }
 .okeyinfo:has(.bk-trick.big), .okeyinfo:has(.bk-trick:hover) { z-index: 60; position: relative; overflow: visible; }
-.batak-dummy { transform: scale(.82); transform-origin: bottom center; margin-bottom: -10px; opacity: .97; }
-.batak-dummy:not(.myturn) .pcard { filter: brightness(.8); }
 .dummy-label { text-align: center; font-size: 12px; font-weight: 700; color: var(--gold); }
-/* Handy: Partner-Karten nur einblenden, wenn du für ihn legen musst (sonst zu wenig Platz) */
-body.phone .batak-dummy:not(.myturn), body.phone .dummy-label:not(.myturn) { display: none; }
-body.phone .batak-dummy { transform: scale(.78); margin-bottom: -18px; }
+
+/* Batak Eşli: offene Partner-Karten – PC über der eigenen Hand, Handy oben unter der Leiste */
+.dummy-box { position: fixed; left: 50%; bottom: calc(env(safe-area-inset-bottom, 0px) + 150px); transform: translateX(-50%) scale(.82); transform-origin: bottom center; z-index: 21; text-align: center; }
+.dummy-box .batak-dummy { margin: 0; }
+.dummy-box:not(.myturn) .pcard { filter: brightness(.88); }
+.dummy-box.myturn .dummy-label { color: #ffe08a; }
+body.phone .dummy-box { top: calc(env(safe-area-inset-top, 0px) + 52px); bottom: auto; transform: translateX(-50%) scale(.7); transform-origin: top center; }
+body.phone .dummy-box .pcard { width: 52px; height: 73px; }
+/* größere Tippfläche für den Ein-/Ausklapp-Knopf (nach links), damit man nicht aus Versehen den Code kopiert */
+.hud-left .fold { position: relative; }
+.hud-left:not(.compact) .fold { position: absolute; }
+body.touch .hud-left .fold::before { content: ''; position: absolute; top: -10px; bottom: -10px; left: -34px; right: -8px; }
+body.touch .hud-left:not(.compact) .fold::before { left: -90px; bottom: -14px; }

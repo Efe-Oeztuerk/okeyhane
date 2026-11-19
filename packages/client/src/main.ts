@@ -160,6 +160,12 @@ on('table', (m) => {
   if (m.table?.rules?.mode === 'pisti' || m.table?.rules?.mode === 'batak') preloadCards();
   rejoining = false;
   const prevStarted = table?.started;
+  // Handy: neuer Tisch → alle Menüs zu (auch „Schick deinen Freunden diesen Code“)
+  if (document.body.classList.contains('phone') && m.table?.code && m.table.code !== table?.code) {
+    settings.hudCompact = true;
+    saveSettings();
+    closeOverlays();
+  }
   table = m.table;
   you = m.you;
   sessionStorage.setItem('tableCode', table!.code);
@@ -2068,6 +2074,8 @@ function renderGame() {
   const zones = slot('zones', 'dropzones');
   const result = slot('result', 'result panel');
   top.classList.toggle('hidden', !playing);
+  // Partner-Karten (Batak Eşli) nur, solange sie offen liegen
+  if (!(playing && st.view.kind === 'batak' && st.view.open)) els.dummy?.remove();
   wrap.classList.toggle('hidden', !playing || (you.seat === null && you.watching === null));
   if (!playing) {
     zones.classList.add('hidden');
@@ -2801,8 +2809,8 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     }
     hand.append(el);
   });
-  // Eşli: als Bieter siehst du die offenen Karten deines Partners hier groß und legst sie selbst
-  if (v.open && you.seat !== null && v.contract?.seat === you.seat) {
+  // Eşli: offene Karten vom Partner des Bieters groß für alle; legen darf nur der Bieter
+  if (v.open) {
     const dl = new Set<number>(v.dummyLegal ?? []);
     const row = h('div', { class: 'pisti-hand batak-hand batak-dummy' + (forDummy ? ' myturn' : '') });
     (v.open.cards as PCard[]).forEach((c) => {
@@ -2818,7 +2826,15 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
       }
       row.append(el);
     });
-    wrap.append(h('div', { class: 'dummy-label' + (forDummy ? ' myturn' : '') }, (de ? 'Partner: ' : 'Eş: ') + (nameOf(v.open.seat) ?? '')), row);
+    const mineBid = v.contract?.seat === you.seat;
+    const label = mineBid ? (de ? 'Partner: ' : 'Eş: ') + (nameOf(v.open.seat) ?? '') : (de ? 'Offen: ' : 'Açık: ') + (nameOf(v.open.seat) ?? '') + (de ? ` (legt ${nameOf(v.contract.seat)})` : ` (${nameOf(v.contract.seat)} atar)`);
+    // eigener Kasten (am Handy oben am Bildschirm, damit die Tischmitte frei bleibt)
+    const box = slot('dummy', 'dummy-box');
+    box.innerHTML = '';
+    box.classList.toggle('myturn', forDummy);
+    box.append(h('div', { class: 'dummy-label' }, label), row);
+  } else {
+    els.dummy?.remove();
   }
   wrap.append(bar, hand);
   zones.classList.add('hidden');
