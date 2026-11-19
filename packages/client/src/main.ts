@@ -250,7 +250,9 @@ world.onAhmetClear = () => {
 /** Stimme der Figur auf einem Platz */
 function voiceOfSeat(seat: number | null | undefined): string | undefined {
   if (seat === null || seat === undefined) return undefined;
-  return (table?.seats[seat] as any)?.avatar?.voice;
+  const pl = table?.seats[seat] as any;
+  // nur echte Spieler sprechen, Bots nicht
+  return pl && !pl.bot ? pl.avatar?.voice : undefined;
 }
 /** Satz in der Stimme dieser Figur – false, wenn sie keinen dafür hat */
 function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): boolean {

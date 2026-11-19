@@ -102,8 +102,6 @@ function broadcast(t: Table, msg: unknown, except?: Client) {
 
 const BOT_NAMES = ['Hasan Abi', 'Kemal Usta', 'Rıza Dayı', 'Cemil', 'Nuri Bey', 'Selami', 'Fatma Teyze', 'Hatice Abla', 'Emine Hanım'];
 const FEMALE_BOTS = new Set(['Fatma Teyze', 'Hatice Abla', 'Emine Hanım']);
-/** feste Stimme je Bot-Name */
-const BOT_VOICES: Record<string, string> = { 'Hasan Abi': 'abi', 'Kemal Usta': 'kayseri', 'Rıza Dayı': 'koylu', Cemil: 'genco', 'Nuri Bey': 'kayseri', Selami: 'karadeniz', 'Fatma Teyze': 'teyze', 'Hatice Abla': 'istanbullu', 'Emine Hanım': 'teyze' };
 function botInfo(seat: number, taken: string[] = []): PlayerInfo {
   const skins = ['#e0b48f', '#c99068', '#a26e4a', '#f1c9a5'];
   const avatar: Avatar = {
@@ -142,7 +140,6 @@ function botInfo(seat: number, taken: string[] = []): PlayerInfo {
       glasses: i % 3 === 0 ? 'reading' : 'none',
     });
   }
-  avatar.voice = BOT_VOICES[name];
   return { id: 'bot-' + seat, name, avatar, signature: null, bot: true };
 }
 
