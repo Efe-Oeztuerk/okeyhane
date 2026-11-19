@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, type TableRules, type Mode } from '@okeyhane/engine';
+import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, BatakGame, BatakError, batakBotTurn, type TableRules, type Mode } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from './protocol.ts';
 import { loadStats, recordResult, getStats } from './stats.ts';
 import { accounts, AccountError, type UserRow, type FriendRow } from './accounts.ts';
@@ -50,7 +50,7 @@ interface Table {
   spectators: Set<Client>;
   invited: Set<string>;
   rules: TableRules;
-  game: OkeyGame | PistiGame | null;
+  game: OkeyGame | PistiGame | BatakGame | null;
   started: boolean;
   tv: MediaState;
   music: MediaState;
@@ -174,16 +174,24 @@ function pushTable(t: Table) {
 
 /** Pişti: welche Plätze spielen mit (2 Spieler = gegenüber 0 + 2) */
 function activeSeats(t: Table): number[] {
+  if (t.rules.mode === 'batak' && t.rules.batakMode === 'gommeli') return [0, 1, 2];
   return t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2 ? [0, 2] : [0, 1, 2, 3];
 }
 function isPisti(g: Table['game']): g is PistiGame {
   return !!g && (g as any).kind === 'pisti';
 }
+function isBatak(g: Table['game']): g is BatakGame {
+  return !!g && (g as any).kind === 'batak';
+}
+/** Kartenspiel (kein Okey-Brett) */
+function isCards(g: Table['game']): g is PistiGame | BatakGame {
+  return isPisti(g) || isBatak(g);
+}
 
 function pushState(t: Table) {
   if (!t.game) return;
   const pg = t.game;
-  if (isPisti(pg)) {
+  if (isCards(pg)) {
     for (const c of members(t)) {
       const view: any = pg.viewFor(c.seat ?? c.watching ?? 0);
       if (c.seat === null) view.myHand = [];
@@ -237,8 +245,12 @@ setInterval(() => {
   }
 }, 15_000);
 
-function newGame(t: Table): OkeyGame | PistiGame {
+function newGame(t: Table): OkeyGame | PistiGame | BatakGame {
   const seed = Date.now() & 0x7fffffff;
+  if (t.rules.mode === 'batak') {
+    const r = t.rules;
+    return new BatakGame({ mode: r.batakMode, target: r.batakTarget, minBid: r.batakMinBid, mustTrump: r.batakMustTrump, trumpBreak: r.batakTrumpBreak, overLimit: r.batakOverLimit, zeroBatar: r.batakZeroBatar }, seed);
+  }
   if (t.rules.mode === 'pisti') return new PistiGame({ players: t.rules.pistiPlayers === 2 ? 2 : 4, target: t.rules.pistiTarget || 151, bluff: !!t.rules.pistiBluff }, seed);
   return new OkeyGame(t.rules, seed);
 }
@@ -292,7 +304,7 @@ function scheduleBots(t: Table) {
     t.seats.forEach((s, i) => s.bot && t.ready.add(i));
     // Bots legen ihr Brett sichtbar geordnet hin (wie ein Mensch, der umgestellt hat)
     t.seats.forEach((s, i) => {
-      if (!s.bot || isPisti(g)) return;
+      if (!s.bot || isCards(g)) return;
       const hp = g.hand.players[i];
       t.layouts[i] = autoLayout(hp.hand, g.hand.okey, g.hand.indicator, t.rules.indicatorPairsAnything);
     });
@@ -309,12 +321,13 @@ function scheduleBots(t: Table) {
       if (t.game !== g || g.hand.current !== seat || !t.seats[seat].bot) return;
       try {
         if (isPisti(g)) pistiBotTurn(g, seat);
+        else if (isBatak(g)) batakBotTurn(g, seat);
         else botTurn(g, seat);
       } catch (e) {
         console.error('Bot-Fehler', e);
       }
       afterAction(t);
-    }, isPisti(g) ? 1900 + Math.random() * 900 : 900 + Math.random() * 700);
+    }, isPisti(g) ? 1900 + Math.random() * 900 : isBatak(g) ? (g.phase === 'play' ? 1300 + Math.random() * 700 : 1700 + Math.random() * 900) : 900 + Math.random() * 700);
   }
 }
 
@@ -344,6 +357,7 @@ function scheduleTurnTimer(t: Table) {
     if (t.game !== g || g.handNo !== handNo || g.hand.current !== seat) return;
     try {
       if (isPisti(g)) pistiBotTurn(g, seat);
+      else if (isBatak(g)) batakBotTurn(g, seat);
       else botTurn(g, seat); // Zeit abgelaufen: automatischer Zug
     } catch (e) {
       console.error(e);
@@ -357,7 +371,7 @@ function afterAction(t: Table) {
   if (g?.gameOver && !t.recorded) {
     t.recorded = true;
     t.seats.forEach((s, seat) => {
-      const team = isPisti(g) ? g.teamOf(seat) : seat % 2;
+      const team = isPisti(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : seat % 2;
       if (s.client && g.winnerTeam !== null) recordResult(s.client.info.name, t.rules.mode, team === g.winnerTeam);
     });
   }
@@ -636,7 +650,7 @@ function handle(c: Client, m: Msg) {
       case 'sit': {
         const s = Number(m.seat);
         const seat = t.seats[s];
-        if (!activeSeats(t).includes(s)) throw new GameError('Pişti zu zweit: nur die beiden gegenüberliegenden Plätze');
+        if (!activeSeats(t).includes(s)) throw new GameError('Dieser Platz spielt in diesem Modus nicht mit');
         if (!seat || seat.client) throw new GameError('Platz besetzt');
         // Vor dem Start nur freie Plätze; im laufenden Spiel darf man einen Bot ablösen
         if (seat.bot && !t.started) throw new GameError('Platz besetzt');
@@ -676,6 +690,18 @@ function handle(c: Client, m: Msg) {
         t.rules.pistiPlayers = t.rules.pistiPlayers === 2 ? 2 : 4;
         t.rules.pistiTarget = Math.max(10, Math.min(1000, Math.round(Number(t.rules.pistiTarget) || 151)));
         if (t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2) for (const i of [1, 3]) t.seats[i].bot = null;
+        {
+          const r = t.rules;
+          r.batakMode = (['ihaleli', 'esli', 'gommeli'] as const).includes(r.batakMode) ? r.batakMode : 'ihaleli';
+          r.batakTarget = Math.max(5, Math.min(1000, Math.round(Number(r.batakTarget) || 51)));
+          const maxB = r.batakMode === 'gommeli' ? 16 : 13;
+          r.batakMinBid = Math.max(1, Math.min(maxB, Math.round(Number(r.batakMinBid) || 5)));
+          r.batakOverLimit = Math.max(0, Math.min(13, Math.round(Number(r.batakOverLimit) || 0)));
+          r.batakMustTrump = !!r.batakMustTrump;
+          r.batakTrumpBreak = r.batakTrumpBreak !== false;
+          r.batakZeroBatar = r.batakZeroBatar !== false;
+          if (r.mode === 'batak' && r.batakMode === 'gommeli') t.seats[3].bot = null;
+        }
         if (m.rules?.mode && m.rules.mode !== prevMode && m.rules.handCount === undefined) {
           t.rules.handCount = base.handCount;
         }
@@ -686,7 +712,7 @@ function handle(c: Client, m: Msg) {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
         if (!t.rules.allowBots) throw new GameError('Bots sind aus');
         const s = Number(m.seat);
-        if (!activeSeats(t).includes(s)) throw new GameError('Pişti zu zweit: nur die beiden gegenüberliegenden Plätze');
+        if (!activeSeats(t).includes(s)) throw new GameError('Dieser Platz spielt in diesem Modus nicht mit');
         if (t.seats[s] && !t.seats[s].client) t.seats[s].bot = botInfo(s, t.seats.map((x) => x.bot?.name ?? ''));
         pushTable(t);
         return;
@@ -769,6 +795,20 @@ function handle(c: Client, m: Msg) {
         if (!g) throw new GameError('Kein Spiel');
         const seat = c.seat;
         if (seat === null) throw new GameError('Zuschauer können nicht spielen');
+        if (isBatak(g)) {
+          try {
+            if (m.action === 'bid') g.bid(seat, m.bid === null || m.bid === undefined ? null : Number(m.bid));
+            else if (m.action === 'trump') g.chooseTrump(seat, m.suit);
+            else if (m.action === 'bury') g.bury(seat, (Array.isArray(m.cardIds) ? m.cardIds : []).map(Number));
+            else if (m.action === 'play') g.play(seat, Number(m.cardId));
+            else throw new GameError('Unbekannte Aktion');
+          } catch (e) {
+            if (e instanceof BatakError) throw new GameError(e.message);
+            throw e;
+          }
+          afterAction(t);
+          return;
+        }
         if (isPisti(g)) {
           try {
             if (m.action === 'play') g.play(seat, Number(m.cardId), !!m.bluff);

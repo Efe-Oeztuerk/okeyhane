@@ -576,3 +576,18 @@ body.ui-inset #ui, body.ui-inset .touch-ui { inset: var(--ui-inset-y) var(--ui-i
 /* mit Bildschirmrand: geschlossene Seitenleiste darf nicht in den Rand hineinragen */
 body.ui-inset .chat.drawer:not(.open) { visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
 body.ui-inset .chat.drawer.open { visibility: visible; }
+/* Batak */
+.batak-hand { flex-wrap: nowrap; }
+.batak-hand .pcard { margin-left: -18px; }
+.batak-hand .pcard:first-child { margin-left: 0; }
+.batak-hand .pcard.dim { filter: brightness(.55); }
+.batak-hand .pcard.sel { transform: translateY(-14px); outline: 3px solid #e3b04b; }
+.suit.red { color: #e0413a; } .suit.black { color: #f1e6d0; }
+.suitbtn { font-size: 15px; }
+.pisti-result td.neg, .sheet td.neg { color: #ff7a6a; }
+body.phone .batak-hand .pcard { margin-left: -26px; }
+.batak-scores { display: flex; flex-direction: column; gap: 1px; font-size: 13px !important; padding: 4px 10px !important; min-width: 0 !important; text-align: left; }
+.batak-scores .bs { display: flex; gap: 6px; align-items: baseline; justify-content: space-between; white-space: nowrap; }
+.batak-scores .bs.mine b { color: var(--gold); }
+.batak-scores .bs.bidder span:first-child::after { content: ' ★'; color: var(--gold); }
+.batak-hand .pcard.dim { filter: brightness(.72) saturate(.8); }

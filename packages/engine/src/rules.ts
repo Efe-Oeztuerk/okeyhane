@@ -2,7 +2,7 @@
 
 import type { Color } from './tiles.ts';
 
-export type Mode = 'standard' | 'okey101' | 'perisan' | 'pisti';
+export type Mode = 'standard' | 'okey101' | 'perisan' | 'pisti' | 'batak';
 
 export interface TableRules {
   mode: Mode;
@@ -33,6 +33,15 @@ export interface TableRules {
   pistiPlayers: 2 | 4;
   pistiTarget: number;
   pistiBluff: boolean;
+  /** Batak-Variante */
+  batakMode: 'ihaleli' | 'esli' | 'gommeli';
+  batakTarget: number;
+  batakMinBid: number;
+  batakMustTrump: boolean;
+  batakTrumpBreak: boolean;
+  /** so viele Stiche über dem Gebot = auch batık (0 = aus) */
+  batakOverLimit: number;
+  batakZeroBatar: boolean;
 }
 
 export function defaultRules(mode: Mode): TableRules {
@@ -53,5 +62,12 @@ export function defaultRules(mode: Mode): TableRules {
     pistiPlayers: 4,
     pistiTarget: 151,
     pistiBluff: false,
+    batakMode: 'ihaleli',
+    batakTarget: 51,
+    batakMinBid: 5,
+    batakMustTrump: false,
+    batakTrumpBreak: true,
+    batakOverLimit: 0,
+    batakZeroBatar: true,
   };
 }

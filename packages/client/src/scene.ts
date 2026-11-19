@@ -1929,6 +1929,201 @@ export class World {
     }
   }
 
+  // ------------------------------------------------------------------ Batak
+  private batakViewer = 0;
+  /** Lage einer Karte im aktuellen Stich (vor dem Platz, der sie gespielt hat) */
+  private batakTrickPose(m: THREE.Object3D, seat: number, idx: number) {
+    const vd = seatPos(this.batakViewer);
+    const dd = seatPos(seat);
+    m.scale.setScalar(1.95);
+    // Stichmitte etwas zu mir hin, damit man die Karten gut sieht
+    m.position.set(dd.x * 0.12 + vd.x * 0.06, TABLE_Y + 0.003 + idx * 0.0016, dd.z * 0.12 + vd.z * 0.06);
+    // lesbar für mich, leicht schräg je nach Platz
+    m.rotation.set(0, Math.atan2(vd.x, vd.z) + (seat - this.batakViewer) * 0.12, 0);
+  }
+  /** wo die Stiche eines Platzes liegen */
+  private batakStackPos(seat: number) {
+    const dd = seatPos(seat);
+    const side = new THREE.Vector3(dd.z, 0, -dd.x);
+    return { pos: new THREE.Vector3(dd.x * 0.33 - side.x * 0.22, TABLE_Y + 0.004, dd.z * 0.33 - side.z * 0.22), rot: Math.atan2(dd.x, dd.z) + Math.PI / 2 };
+  }
+
+  /** Batak-Tisch: Stich in der Mitte, gewonnene Stiche, Rückseiten der anderen, offene Partner-Hand (Eşli) */
+  setBatak(v: any | null, mySeat: number | null) {
+    this.sharpCards(!!v);
+    this.visual = null;
+    this.flyers = [];
+    this.gameGroup.clear();
+    this.clickables = [];
+    this.sideObj = null;
+    this.pistiTopHidden = null;
+    if (!this.pistiFx.parent) this.tableRoot.add(this.pistiFx);
+    if (!v) {
+      this.pistiFx.clear();
+      this.pistiAnims = [];
+      this.pistiFlying.clear();
+      return;
+    }
+    const viewer = mySeat ?? 0;
+    this.batakViewer = viewer;
+    const vd = seatPos(viewer);
+    const Y = TABLE_Y + 0.002;
+    // aktueller Stich
+    (v.trick as { seat: number; card: PCard }[]).forEach((t, i) => {
+      const m = cardMesh(t.card, true);
+      this.batakTrickPose(m, t.seat, i);
+      if (this.pistiFlying.has(t.card.id)) m.visible = false;
+      m.userData.cardId = t.card.id;
+      this.gameGroup.add(m);
+    });
+    // gewonnene Stiche als verdeckte Päckchen
+    for (const s of v.seats as number[]) {
+      const sp = this.batakStackPos(s);
+      for (let i = 0; i < v.tricks[s]; i++) {
+        const m = cardMesh(null, false);
+        m.scale.setScalar(1.2);
+        m.position.copy(sp.pos).setY(Y + i * 0.004);
+        m.rotation.y = sp.rot + (i % 2 ? 0.12 : -0.05) + (i % 3) * 0.04;
+        this.gameGroup.add(m);
+      }
+    }
+    // Gömmeli: verdeckte Karten (Kitty) in der Mitte bis zur Ihale
+    if (v.kittyCount && v.phase === 'bid') {
+      for (let i = 0; i < v.kittyCount; i++) {
+        const m = cardMesh(null, false);
+        m.scale.setScalar(1.5);
+        m.position.set((i - 1.5) * 0.05, Y + i * 0.002, 0);
+        m.rotation.y = Math.atan2(vd.x, vd.z) + (i - 1.5) * 0.08;
+        this.gameGroup.add(m);
+      }
+    }
+    for (const s of v.seats as number[]) {
+      const dd = seatPos(s);
+      const open = v.open && v.open.seat === s ? (v.open.cards as PCard[]) : null;
+      if (open) {
+        // Eşli: Hand des Partners offen vor ihm, für alle lesbar
+        const k = open.length;
+        open.forEach((c, i) => {
+          const m = cardMesh(c, true);
+          m.scale.setScalar(1.25);
+          const side = new THREE.Vector3(dd.z, 0, -dd.x);
+          const off = (i - (k - 1) / 2) * 0.052;
+          m.position.set(dd.x * 0.3 + side.x * off, Y + 0.002 + i * 0.0008, dd.z * 0.3 + side.z * off);
+          m.rotation.y = Math.atan2(vd.x, vd.z);
+          this.gameGroup.add(m);
+        });
+      } else if (s !== mySeat) {
+        const k = v.handCounts[s];
+        const g = new THREE.Group();
+        for (let i = 0; i < k; i++) {
+          const m = cardMesh(null, false);
+          m.scale.setScalar(1.15);
+          m.rotation.x = -1.15;
+          m.rotation.z = (i - (k - 1) / 2) * 0.09;
+          m.position.set((i - (k - 1) / 2) * 0.026, 0.06, -i * 0.002);
+          g.add(m);
+        }
+        g.position.set(dd.x * 0.43, TABLE_Y, dd.z * 0.43);
+        facing(g, dd.x, dd.z);
+        this.gameGroup.add(g);
+      }
+      if (s === v.current && v.phase !== 'handOver') {
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.075, 24), new THREE.MeshBasicMaterial({ color: '#ffd27a' }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(dd.x * 0.27, TABLE_Y + 0.002, dd.z * 0.27);
+        this.gameGroup.add(ring);
+      }
+    }
+  }
+
+  /** Batak-Animation: Karte fliegt in den Stich; voller Stich bleibt kurz liegen und rutscht zum Gewinner */
+  batakAnimate(v: any) {
+    const e = v.lastEvent;
+    if (!e) return;
+    const anim = (dur: number, step: (k: number, t: number) => void, done?: () => void) => {
+      const a = { t: 0, dur, step, done };
+      this.pistiAnims.push(a);
+      return a;
+    };
+    // läuft noch ein Stich-Einsammeln → sofort fertig machen
+    for (const c of this.pistiFx.children) {
+      const w = c.userData.wait as { t: number; dur: number } | undefined;
+      if (w) {
+        w.t = w.dur;
+        delete c.userData.wait;
+      }
+    }
+    const ease = (k: number) => 1 - Math.pow(1 - k, 3);
+    const fly = (m: THREE.Object3D, from: THREE.Vector3, dur: number, done?: () => void) => {
+      const to = m.position.clone();
+      const q = m.quaternion.clone();
+      const s0 = 0.9;
+      const s1 = m.scale.x;
+      m.position.copy(from);
+      anim(
+        dur,
+        (k) => {
+          const kk = ease(k);
+          m.position.lerpVectors(from, to, kk);
+          m.position.y += Math.sin(kk * Math.PI) * 0.06;
+          m.quaternion.copy(q);
+          m.scale.setScalar(s0 + (s1 - s0) * kk);
+        },
+        done,
+      );
+    };
+    if (e.kind === 'play') {
+      const real = this.gameGroup.children.find((c) => c.userData.cardId === e.card.id);
+      if (!real) return;
+      real.visible = false;
+      const id = e.card.id as number;
+      this.pistiFlying.add(id);
+      const m = cardMesh(e.card, true);
+      this.batakTrickPose(m, e.seat, (v.trick as any[]).length - 1);
+      this.pistiFx.add(m);
+      fly(m, this.seatHandPos(e.seat), 0.36, () => {
+        this.pistiFx.remove(m);
+        this.pistiFlying.delete(id);
+        const r2 = this.gameGroup.children.find((c) => c.userData.cardId === id);
+        if (r2) r2.visible = true;
+      });
+      return;
+    }
+    if (e.kind === 'trick') {
+      // letzter Karte hinfliegen lassen, dann kurz zeigen, dann zum Gewinner
+      const g = new THREE.Group();
+      const cards = e.cards as { seat: number; card: PCard }[];
+      let lastM: THREE.Object3D | null = null;
+      cards.forEach((t, i) => {
+        const m = cardMesh(t.card, true);
+        this.batakTrickPose(m, t.seat, i);
+        g.add(m);
+        if (i === cards.length - 1) lastM = m;
+      });
+      this.pistiFx.add(g);
+      if (lastM) fly(lastM, this.seatHandPos(cards[cards.length - 1].seat), 0.36);
+      const sp = this.batakStackPos(e.seat);
+      const start = g.children.map((c) => ({ p: c.position.clone(), q: c.quaternion.clone(), s: c.scale.x }));
+      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, sp.rot, Math.PI));
+      g.userData.wait = anim(1.25, () => {}, () =>
+        anim(
+          0.5,
+          (k) => {
+            const kk = ease(k);
+            g.children.forEach((c, i) => {
+              const st = start[i];
+              c.position.lerpVectors(st.p, sp.pos.clone().setY(TABLE_Y + 0.05 + i * 0.002), kk);
+              c.quaternion.copy(st.q).slerp(target, kk);
+              c.scale.setScalar(st.s + (1.2 - st.s) * kk);
+            });
+          },
+          () => this.pistiFx.remove(g),
+        ),
+      );
+      return;
+    }
+  }
+
   /** Animation zum letzten Ereignis (nach setPisti aufrufen) */
   pistiAnimate(prev: any | null, v: any) {
     const e = v.lastEvent;

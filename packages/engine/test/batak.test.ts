@@ -1,0 +1,54 @@
+import { describe, it, expect } from 'vitest';
+import { BatakGame, batakBotTurn } from '../src/batak.ts';
+
+function playOut(g: BatakGame, seed = 1) {
+  let r = seed;
+  const rnd = () => ((r = (r * 9301 + 49297) % 233280) / 233280);
+  let guard = 0;
+  while (!g.gameOver && guard++ < 20000) {
+    if (g.phase === 'handOver') g.nextHand();
+    else batakBotTurn(g, g.current, rnd);
+  }
+  return guard;
+}
+
+describe('Batak', () => {
+  it('teilt 13 Karten an 4 Spieler aus', () => {
+    const g = new BatakGame({}, 5);
+    for (const s of [0, 1, 2, 3]) expect(g.hands[s].length).toBe(13);
+    expect(g.phase).toBe('bid');
+  });
+  it('alle passen → Geber spielt mit Mindestgebot', () => {
+    const g = new BatakGame({ minBid: 5 }, 7);
+    for (let i = 0; i < 4; i++) g.bid(g.current, null);
+    expect(g.contract).toEqual({ seat: g.dealer, bid: 5 });
+    expect(g.phase).toBe('trump');
+  });
+  it('Farbe bedienen und höher gehen ist Pflicht', () => {
+    const g = new BatakGame({}, 11);
+    g.bid(g.current, 5);
+    while (g.phase === 'bid') g.bid(g.current, null);
+    g.chooseTrump(g.current, 'S');
+    const lead = g.legal(g.current)[0];
+    g.play(g.current, lead.id);
+    const s = g.current;
+    const legal = g.legal(s);
+    const follow = g.hands[s].filter((c) => c.suit === lead.suit);
+    if (follow.length) expect(legal.every((c) => c.suit === lead.suit)).toBe(true);
+  });
+  it('spielt komplette Spiele mit Bots (alle Varianten)', () => {
+    for (const mode of ['ihaleli', 'esli', 'gommeli'] as const) {
+      const g = new BatakGame({ mode, minBid: mode === 'esli' ? 8 : mode === 'gommeli' ? 4 : 5, target: 31 }, 3);
+      const steps = playOut(g);
+      expect(g.gameOver).toBe(true);
+      expect(steps).toBeLessThan(20000);
+      expect(g.winner).not.toBeNull();
+    }
+  });
+  it('Stichzahl pro Hand stimmt', () => {
+    const g = new BatakGame({ mode: 'gommeli', minBid: 4 }, 9);
+    while (g.phase !== 'handOver') batakBotTurn(g, g.current, () => 0.5);
+    expect(g.tricks.reduce((a, b) => a + b, 0)).toBe(16);
+    expect(g.kitty.length).toBe(4);
+  });
+});

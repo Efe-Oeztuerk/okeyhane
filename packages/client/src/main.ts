@@ -5,7 +5,7 @@ import type { Tile, OkeyIdentity } from '@okeyhane/engine';
 import type { MediaState, PlayerInfo } from '../../server/src/protocol.ts';
 import { connect, send, on } from './net.ts';
 import { h, toast } from './dom.ts';
-import { cardElement, preloadCards, type PCard } from './cardArt.ts';
+import { cardElement, preloadCards, SUIT_SYM, type PCard } from './cardArt.ts';
 import { hasLine, voiceUrl, type VoiceLine } from './voices.ts';
 import { t, setLang, getLang } from './i18n.ts';
 import { World, type GameVisual } from './scene.ts';
@@ -146,7 +146,7 @@ on('welcome', (m) => {
   voice.setMe(myId);
 });
 on('table', (m) => {
-  if (m.table?.rules?.mode === 'pisti') preloadCards();
+  if (m.table?.rules?.mode === 'pisti' || m.table?.rules?.mode === 'batak') preloadCards();
   rejoining = false;
   const prevStarted = table?.started;
   table = m.table;
@@ -180,6 +180,22 @@ on('state', (m) => {
   const prev = st;
   st = m;
   const v = m.view;
+  if (v.kind === 'batak') {
+    preloadCards();
+    world.setBatak(v, you.seat);
+    batakFeedback(prev?.view?.kind === 'batak' ? prev.view : null, v);
+    const endedB = v.phase === 'handOver';
+    const wasEndedB = prev?.view?.kind === 'batak' && prev.view.phase === 'handOver';
+    if (endedB && !wasEndedB) sheetOpen = true;
+    if (!endedB && wasEndedB) sheetOpen = false;
+    if (v.current === you.seat && prev?.view.current !== you.seat && !endedB) sfx.bell();
+    if (v.handNo !== batakHandNo) {
+      batakHandNo = v.handNo;
+      batakBurySel.clear();
+    }
+    renderAll();
+    return;
+  }
   if (v.kind === 'pisti') {
     preloadCards();
     world.setPisti(v, you.seat);
@@ -1276,6 +1292,7 @@ function leaveCafe() {
 function act(m: any) {
   // Pişti kennt nur „play“ und „respond“ (Okey-Tasten ignorieren)
   if (st?.view?.kind === 'pisti' && m.action !== 'play' && m.action !== 'respond') return;
+  if (st?.view?.kind === 'batak' && !['bid', 'trump', 'bury', 'play'].includes(m.action)) return;
   if (m.action === 'drawPile' && !istaka.flyFrom) istaka.flyFrom = world.screenOf('pile');
   if (m.action === 'drawDiscard' && !istaka.flyFrom) istaka.flyFrom = world.screenOf('side');
   send({ type: 'action', ...m });
@@ -1284,7 +1301,7 @@ function act(m: any) {
 
 /** Beenden nur mit fertiger Hand und nach Bestätigung (nie aus Versehen) */
 function tryFinish(id: number) {
-  if (st?.view?.kind === 'pisti') return;
+  if (st?.view?.kind === 'pisti' || st?.view?.kind === 'batak') return;
   if (!st || !myTurn('discard')) return;
   const de = getLang() === 'de';
   const v = st.view;
@@ -1806,7 +1823,27 @@ function renderLobby() {
   // Plätze
   const seats = h('div', { class: 'seats' });
   const pistiDuo = r.mode === 'pisti' && r.pistiPlayers === 2;
+  const batakSolo = r.mode === 'batak' && r.batakMode !== 'esli';
+  const gommeli3 = r.mode === 'batak' && r.batakMode === 'gommeli';
   table!.seats.forEach((p, s) => {
+    if (gommeli3 && s === 3) {
+      seats.append(h('div', { class: 'seat off' }, h('div', { class: 'muted' }, '—'), h('span', { class: 'muted' }, getLang() === 'de' ? 'frei (zu dritt)' : 'boş (üç kişilik)')));
+      return;
+    }
+    if (batakSolo) {
+      seats.append(
+        h(
+          'div',
+          { class: 'seat' },
+          h('div', { class: 'muted' }, ['①', '②', '③', '④'][s]),
+          h('b', {}, p ? p.name + (p.bot ? ' 🤖' : '') : t('empty')),
+          !p && you.seat !== null ? h('button', { class: 'small ghost', onclick: () => send({ type: 'sit', seat: s }) }, t('sitHere')) : null,
+          !p && isOwner && r.allowBots ? h('button', { class: 'small', onclick: () => send({ type: 'addBot', seat: s }) }, '🤖 ' + t('addBot')) : null,
+          p?.bot && isOwner ? h('button', { class: 'small ghost', onclick: () => send({ type: 'removeBot', seat: s }) }, t('removeBot')) : null,
+        ),
+      );
+      return;
+    }
     if (pistiDuo && (s === 1 || s === 3)) {
       seats.append(h('div', { class: 'seat off' }, h('div', { class: 'muted' }, '—'), h('span', { class: 'muted' }, getLang() === 'de' ? 'frei (zu zweit)' : 'boş (iki kişilik)')));
       return;
@@ -1837,6 +1874,70 @@ function renderLobby() {
     { class: 'rules' },
     modePicker(r.mode, dis),
   );
+  if (r.mode === 'batak') {
+    const de = getLang() === 'de';
+    const info = () =>
+      modal(
+        h('h2', {}, 'ⓘ Batak'),
+        h(
+          'div',
+          { class: 'col', style: { gap: '8px', lineHeight: '1.45' } },
+          ...(de
+            ? [
+                'Ass ist die höchste Karte, dann K, D, B, 10 … 2.',
+                'Farbe bedienen ist Pflicht – und wenn du kannst, musst du höher gehen.',
+                'Hast du die Farbe nicht, darfst du Koz (Trumpf) spielen; liegt schon Koz, musst du überstechen, wenn du Koz spielst.',
+                'Ihale: Jeder sagt, wie viele Stiche er macht (mind. das Mindestgebot) oder passt. Wer am meisten bietet, wählt den Koz und spielt aus.',
+                'Schafft er sein Gebot: + Stiche. Sonst: minus Gebot (batık). Wer sonst keinen Stich macht, ist auch batık (einstellbar).',
+                'Eşli: 2 gegen 2, die Karten vom Partner des Bieters liegen offen. Gömmeli: zu dritt, der Bieter nimmt 4 verdeckte Karten und legt 4 weg.',
+              ]
+            : [
+                'En büyük kart As, sonra K, Q, J, 10 … 2.',
+                'Yerdeki renge uymak zorunlu – ve varsa daha yüksek kart atmak zorunlu.',
+                'Renk yoksa koz atabilirsin; yerde koz varsa koz atarken yükseltmek zorunlu.',
+                'İhale: Herkes kaç el alacağını söyler (en az minimum) ya da pas der. En yüksek ihaleyi alan kozu seçer ve ilk eli açar.',
+                'Tutturursa: aldığı el kadar artı. Tutturamazsa: ihale kadar eksi (batar). Hiç el alamayan da batar (ayarlanır).',
+                'Eşli: 2’ye 2, ihaleyi alanın eşinin kartları açılır. Gömmeli: 3 kişi, ihaleyi alan 4 kapalı kartı alır ve 4 kart gömer.',
+              ]
+          ).map((x) => h('div', {}, x)),
+        ),
+      );
+    rules.append(
+      h(
+        'label',
+        {},
+        h('span', {}, de ? 'Variante ' : 'Tür ', h('button', { class: 'info-i', type: 'button', title: 'Info', onclick: (e: Event) => (e.preventDefault(), info()) }, 'i')),
+        h(
+          'select',
+          {
+            disabled: dis,
+            onchange: (e: Event) => {
+              const m = (e.target as HTMLSelectElement).value;
+              set({ batakMode: m, batakMinBid: m === 'esli' ? 8 : m === 'gommeli' ? 4 : 5 });
+            },
+          },
+          h('option', { value: 'ihaleli', selected: r.batakMode === 'ihaleli' }, de ? 'İhaleli (jeder für sich)' : 'İhaleli (tekli)'),
+          h('option', { value: 'esli', selected: r.batakMode === 'esli' }, de ? 'Eşli (2 gegen 2)' : 'Eşli (2’ye 2)'),
+          h('option', { value: 'gommeli', selected: r.batakMode === 'gommeli' }, de ? 'Gömmeli (zu dritt)' : 'Gömmeli (3 kişi)'),
+        ),
+      ),
+      num('batakTarget', de ? 'Spiel bis (Punkte)' : 'Oyun sonu (puan)', 5, 1000),
+      num('batakMinBid', de ? 'Mindestgebot' : 'En az ihale', 1, r.batakMode === 'gommeli' ? 16 : 13),
+      num('batakOverLimit', de ? 'Zu viel = batık ab +Stichen (0 = aus)' : 'Fazla alırsa batar: +el (0 = kapalı)', 0, 13),
+      chk('batakZeroBatar', de ? 'Kein Stich = batık' : 'Hiç el alamayan batar'),
+      chk('batakMustTrump', de ? 'Koz-Pflicht (Farbe fehlt → Koz)' : 'Koz zorunlu (renk yoksa)'),
+      chk('batakTrumpBreak', de ? 'Koz erst ausspielen, wenn gefallen' : 'Koz kırılmadan koz açılmaz'),
+      h('label', {}, t('timer'), h('input', { type: 'number', min: 0, max: 300, value: r.turnTimerSec ?? 0, disabled: dis, onchange: (e: Event) => set({ turnTimerSec: Number((e.target as HTMLInputElement).value) || null }) })),
+      chk('allowBots', t('bots')),
+    );
+    el.append(rules);
+    if (isOwner) {
+      const need = gommeli3 ? [0, 1, 2] : [0, 1, 2, 3];
+      const full = need.every((i) => table!.seats[i]);
+      el.append(h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '14px' } }, h('button', { class: 'primary', disabled: !full, onclick: () => (unlockAudio(), send({ type: 'start' })) }, '▶ ' + t('startGame'))));
+    }
+    return;
+  }
   if (r.mode === 'pisti') {
     const de = getLang() === 'de';
     const info = () =>
@@ -1953,6 +2054,7 @@ function renderGame() {
   }
   const v = st.view;
   if (v.kind === 'pisti') return renderPisti(v, top, wrap, zones, result);
+  if (v.kind === 'batak') return renderBatak(v, top, wrap, zones, result);
   const mine = you.seat !== null ? you.seat % 2 : -1;
   const teamName = (team: number) => [team, team + 2].map((s) => table!.seats[s]?.name ?? '?').join(' & ');
   top.innerHTML = '';
@@ -2254,7 +2356,7 @@ function pistiFeedback(prev: any | null, v: any) {
 /** Spielauswahl: zwei Gruppen (Okey / Kartenspiele) – gespielt wird immer genau eins */
 const MODE_GROUPS: { key: string; de: string; tr: string; modes: string[] }[] = [
   { key: 'okey', de: '🀄 Okey', tr: '🀄 Okey', modes: ['standard', 'okey101', 'perisan'] },
-  { key: 'cards', de: '🃏 Kartenspiele', tr: '🃏 Kart oyunları', modes: ['pisti'] },
+  { key: 'cards', de: '🃏 Kartenspiele', tr: '🃏 Kart oyunları', modes: ['pisti', 'batak'] },
 ];
 function modePicker(mode: string, dis: boolean) {
   const de = getLang() === 'de';
@@ -2455,6 +2557,220 @@ function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
   );
 }
 
+// ------------------------------------------------------------------ Batak
+let batakLastSeq = -1;
+let batakHandNo = -1;
+const batakBurySel = new Set<number>();
+let batakHandIds = new Set<number>();
+const suitName = (s: string, de: boolean) => (de ? { S: 'Pik', H: 'Herz', D: 'Karo', C: 'Kreuz' } : { S: 'Maça', H: 'Kupa', D: 'Karo', C: 'Sinek' })[s as 'S'] ?? s;
+const suitHtml = (s: string) => h('span', { class: 'suit ' + (s === 'H' || s === 'D' ? 'red' : 'black') }, SUIT_SYM[s as 'S']);
+function batakName(v: any, seatOrTeam: number, short = false) {
+  if (v.team) return [seatOrTeam, seatOrTeam + 2].map((s) => (short ? (nameOf(s) ?? '?').split(' ')[0] : nameOf(s))).join(' & ');
+  return short ? (nameOf(seatOrTeam) ?? '?').split(' ')[0] : nameOf(seatOrTeam);
+}
+function batakFeedback(prev: any | null, v: any) {
+  const e = v.lastEvent;
+  if (!e || e.seq === batakLastSeq) return;
+  const first = batakLastSeq === -1 && prev === null;
+  batakLastSeq = e.seq;
+  if (first && e.kind !== 'deal') return;
+  world.batakAnimate(v);
+  const de = getLang() === 'de';
+  const who = nameOf(e.seat);
+  switch (e.kind) {
+    case 'deal':
+      sfx.shuffle();
+      break;
+    case 'bid':
+      sfx.tile();
+      pistiNote(e.bid === null ? `${who}: Pas` : `${who}: ${e.bid}`);
+      break;
+    case 'contract':
+      pistiNote(de ? `İhale: ${who} · ${e.bid}` : `İhale ${who}’de · ${e.bid}`);
+      break;
+    case 'trump':
+      sfx.slam();
+      pistiNote(`Koz: ${SUIT_SYM[e.suit as 'S']} ${suitName(e.suit, de)}`);
+      break;
+    case 'play':
+      sfx.tile();
+      break;
+    case 'trick':
+      setTimeout(() => sfx.slam(), 400);
+      break;
+    case 'handEnd': {
+      const lr = v.lastResult;
+      if (lr) pistiNote(lr.made ? (de ? `${nameOf(lr.bidder)} hat es geschafft (${lr.bid})` : `${nameOf(lr.bidder)} tutturdu (${lr.bid})`) : de ? `${nameOf(lr.bidder)} ist batık!` : `${nameOf(lr.bidder)} battı!`);
+      break;
+    }
+  }
+}
+function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLElement, result: HTMLElement) {
+  const de = getLang() === 'de';
+  const isMe = v.current === you.seat;
+  const over = v.phase === 'handOver';
+  let timer = '';
+  if (st.turnDeadline) timer = ` · ${Math.max(0, Math.ceil((st.turnDeadline - Date.now()) / 1000))}s`;
+  // --- oben: Stand, wer dran ist, Ihale/Koz
+  top.innerHTML = '';
+  top.classList.remove('mini');
+  const phaseText: Record<string, [string, string]> = {
+    bid: ['🗣 Ihale – wie viele Stiche?', '🗣 İhale – kaç el?'],
+    trump: ['Koz wählen', 'Koz seç'],
+    bury: ['4 Karten weglegen (gömmek)', '4 kart göm'],
+    play: ['🂠 Du bist dran', '🂠 Sıra sende'],
+  };
+  const turnText = over ? (v.gameOver ? t('gameOver') : t('handOver')) : isMe ? phaseText[v.phase]?.[de ? 0 : 1] ?? '' : `${t('waitingFor')}: ${nameOf(v.current)}`;
+  const scoreBox = (label: string, val: number, mine: boolean) => h('div', { class: 'score' + (mine ? ' mine' : '') }, h('div', { class: 'muted' }, label), String(val));
+  const info = h(
+    'div',
+    { class: 'okeyinfo pisti-info' },
+    v.contract ? h('span', {}, `İhale: ${batakName(v, v.contract.seat, true)} ${v.contract.bid}`) : h('span', {}, de ? 'Ihale läuft' : 'İhale'),
+    v.trump ? h('span', {}, ' · Koz ', suitHtml(v.trump)) : null,
+    you.seat !== null && v.phase === 'play' ? h('span', { class: 'muted' }, ` · ${de ? 'Stiche' : 'El'} ${v.team ? v.tricks[you.seat] + v.tricks[(you.seat + 2) % 4] : v.tricks[you.seat]}`) : null,
+    h('span', { class: 'muted ok-meta' }, ` · ${de ? 'bis' : 'hedef'} ${v.rules.target}`),
+  );
+  if (v.team) {
+    const mt = you.seat !== null ? you.seat % 2 : -1;
+    top.append(scoreBox(batakName(v, 0, true), v.scores[0], mt === 0), h('div', { class: 'turn' + (isMe && !over ? ' me' : '') }, turnText, timer), info, scoreBox(batakName(v, 1, true), v.scores[1], mt === 1));
+  } else {
+    // alle Spieler kompakt in einem Kasten (sonst wird die Leiste zu breit)
+    top.append(
+      h('div', { class: 'turn' + (isMe && !over ? ' me' : '') }, turnText, timer),
+      info,
+      h(
+        'div',
+        { class: 'score batak-scores' },
+        (v.seats as number[]).map((s) => h('div', { class: 'bs' + (s === you.seat ? ' mine' : '') + (v.contract?.seat === s ? ' bidder' : '') }, h('span', { class: 'muted' }, batakName(v, s, true)), h('b', {}, String(v.scores[s])), v.phase === 'play' || v.phase === 'handOver' ? h('span', { class: 'muted' }, ` (${v.tricks[s]})`) : null)),
+      ),
+    );
+  }
+  // --- Hand + Aktionen
+  wrap.innerHTML = '';
+  wrap.classList.toggle('hidden', you.seat === null && you.watching === null);
+  const bar = h('div', { class: 'actions-bar pisti-bar' });
+  if (you.seat === null) {
+    wrap.append(h('div', { class: 'row' }, h('span', { class: 'muted' }, t('watching') + ':'), (v.seats as number[]).map((s) => h('button', { class: 'small ' + (you.watching === s ? 'primary' : 'ghost'), onclick: () => (send({ type: 'watch', seat: s }), watchAt(s)) }, nameOf(s)))));
+  }
+  // Gebote der anderen
+  if (v.phase === 'bid') {
+    bar.append(
+      h(
+        'span',
+        { class: 'pb-text' },
+        (v.seats as number[])
+          .map((s) => {
+            const b = v.bids[s];
+            return `${(nameOf(s) ?? '?').split(' ')[0]}: ${b === 'wait' ? '…' : b === null ? 'Pas' : b}`;
+          })
+          .join(' · '),
+      ),
+    );
+    if (isMe) {
+      const btns: HTMLElement[] = [];
+      for (let n = v.nextMinBid; n <= v.maxBid && btns.length < 9; n++) {
+        const val = n;
+        btns.push(h('button', { class: 'small primary', onclick: () => act({ action: 'bid', bid: val }) }, String(val)));
+      }
+      bar.append(...btns, h('button', { class: 'small', onclick: () => act({ action: 'bid', bid: null }) }, 'Pas'));
+    }
+  } else if (v.phase === 'trump' && isMe) {
+    bar.append(h('span', { class: 'pb-text' }, de ? 'Koz wählen:' : 'Koz seç:'), ...(['S', 'H', 'C', 'D'] as const).map((su) => h('button', { class: 'suitbtn', onclick: () => act({ action: 'trump', suit: su }) }, suitHtml(su), ' ', suitName(su, de))));
+  } else if (v.phase === 'bury' && isMe) {
+    bar.append(
+      h('span', { class: 'pb-text' }, de ? `4 Karten antippen (${batakBurySel.size}/4)` : `4 kart seç (${batakBurySel.size}/4)`),
+      h('button', { class: 'primary', disabled: batakBurySel.size !== 4, onclick: () => (act({ action: 'bury', cardIds: [...batakBurySel] }), batakBurySel.clear()) }, de ? 'Weglegen' : 'Göm'),
+    );
+  }
+  const legal = new Set<number>(v.legal ?? []);
+  const hand = h('div', { class: 'pisti-hand batak-hand' + (isMe && v.phase === 'play' ? ' myturn' : '') });
+  const cards = v.myHand as PCard[];
+  const fresh = cards.filter((c) => !batakHandIds.has(c.id));
+  batakHandIds = new Set(cards.map((c) => c.id));
+  cards.forEach((c, idx) => {
+    const el = cardElement(c);
+    if (fresh.length >= 4 && fresh.some((x) => x.id === c.id)) {
+      el.classList.add('dealt');
+      el.style.animationDelay = `${0.2 + idx * 0.04}s`;
+    }
+    if (isMe && v.phase === 'play') {
+      if (legal.has(c.id)) {
+        el.classList.add('playable');
+        el.onclick = () => {
+          el.classList.add('thrown');
+          act({ action: 'play', cardId: c.id });
+        };
+      } else el.classList.add('dim');
+    } else if (isMe && v.phase === 'bury') {
+      el.classList.add('playable');
+      if (batakBurySel.has(c.id)) el.classList.add('sel');
+      el.onclick = () => {
+        if (batakBurySel.has(c.id)) batakBurySel.delete(c.id);
+        else if (batakBurySel.size < 4) batakBurySel.add(c.id);
+        renderGame();
+      };
+    }
+    hand.append(el);
+  });
+  wrap.append(bar, hand);
+  zones.classList.add('hidden');
+  // --- Handende
+  result.classList.toggle('hidden', !over);
+  if (!over) return;
+  result.innerHTML = '';
+  const isOwner = table!.ownerId === myId;
+  const lr = v.lastResult;
+  if (lr) {
+    const rows = v.team
+      ? [0, 1].map((tm) => h('tr', {}, h('td', {}, batakName(v, tm, true)), h('td', {}, String(v.tricks[tm] + v.tricks[tm + 2])), h('td', { class: lr.points[tm] < 0 ? 'neg' : '' }, (lr.points[tm] > 0 ? '+' : '') + lr.points[tm]), h('td', {}, String(v.scores[tm]))))
+      : (v.seats as number[]).map((s) => h('tr', {}, h('td', {}, batakName(v, s, true) + (s === lr.bidder ? ` (İhale ${lr.bid})` : '')), h('td', {}, String(lr.tricks[s])), h('td', { class: lr.points[s] < 0 ? 'neg' : '' }, (lr.points[s] > 0 ? '+' : '') + lr.points[s]), h('td', {}, String(v.scores[s]))));
+    result.append(
+      h('h2', {}, v.gameOver ? `🏆 ${t('winner')}: ${batakName(v, v.winner)}` : lr.made ? (de ? `✓ ${nameOf(lr.bidder)} hat ${lr.bid} geschafft` : `✓ ${nameOf(lr.bidder)} ${lr.bid} tutturdu`) : de ? `✗ ${nameOf(lr.bidder)} ist batık` : `✗ ${nameOf(lr.bidder)} battı`),
+      h('div', { class: 'muted', style: { textAlign: 'center' } }, 'Koz ', suitHtml(lr.trump)),
+      h('table', { class: 'pisti-result' }, h('tr', {}, h('th', {}, ''), h('th', {}, de ? 'Stiche' : 'El'), h('th', {}, de ? 'Runde' : 'Puan'), h('th', {}, 'Σ')), ...rows),
+    );
+  }
+  if (v.gameOver) {
+    result.append(h('div', { class: 'row', style: { justifyContent: 'center' } }, isOwner ? h('button', { class: 'primary', onclick: () => send({ type: 'rematch' }) }, '🔁 ' + t('rematch')) : null, isOwner ? h('button', { onclick: () => send({ type: 'backToLobby' }) }, t('toLobby')) : null));
+    return;
+  }
+  const ready = new Set(table!.ready ?? []);
+  const humans = table!.seats.map((p, i) => [p, i] as const).filter(([p]) => p && !p.bot);
+  const iAmReady = you.seat !== null && ready.has(you.seat);
+  appendAll(
+    result,
+    h('div', { class: 'readyrow' }, humans.map(([p, i]) => h('span', { class: 'rd ' + (ready.has(i) ? 'ok' : '') }, (ready.has(i) ? '✅ ' : '⏳ ') + p!.name))),
+    h(
+      'div',
+      { class: 'row', style: { justifyContent: 'center' } },
+      you.seat !== null ? h('button', { class: iAmReady ? 'ghost' : 'primary', onclick: () => send({ type: 'ready', ready: !iAmReady }) }, iAmReady ? (de ? '↩ Doch nicht bereit' : '↩ Hazır değilim') : de ? '✓ Bereit für die nächste Hand' : '✓ Sonraki ele hazırım') : null,
+      isOwner ? h('button', { onclick: () => send({ type: 'nextHand' }) }, de ? '▶ Jetzt starten (Tischbesitzer)' : '▶ Hemen başlat (masa sahibi)') : null,
+    ),
+  );
+}
+function renderBatakSheet(el: HTMLElement, v: any) {
+  el.innerHTML = '';
+  const cols: number[] = v.team ? [0, 1] : v.seats;
+  const tbl = h('table', {}, h('tr', {}, h('th', {}, '#'), ...cols.map((c) => h('th', {}, batakName(v, c, true)))));
+  (v.history as any[]).forEach((r, i) => {
+    const fresh = i >= seenRows;
+    tbl.append(
+      h(
+        'tr',
+        {},
+        h('td', {}, `${i + 1}${SUIT_SYM[r.trump as 'S']}`),
+        ...cols.map((c) => {
+          const p = v.team ? r.points[c] : r.points[c];
+          return h('td', { class: p < 0 ? 'neg' : '' }, h('span', { class: fresh ? 'write' : '', style: { animationDelay: fresh ? `${(i - seenRows) * 0.4}s` : '0s' } }, String(p)));
+        }),
+      ),
+    );
+  });
+  tbl.append(h('tr', { class: 'total' }, h('td', {}, 'Σ'), ...cols.map((c) => h('td', {}, String(v.scores[c])))));
+  seenRows = v.history.length;
+  el.append(h('div', { class: 'tear' }, `— ✂ — Batak · ${v.rules.target}`), tbl);
+}
+
 function renderPistiSheet(el: HTMLElement, v: any) {
   el.innerHTML = '';
   const tbl = h('table', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, pistiTeamName(v, 0, true)), h('th', {}, pistiTeamName(v, 1, true))));
@@ -2471,7 +2787,7 @@ function renderPistiSheet(el: HTMLElement, v: any) {
 }
 
 function renderActions() {
-  if (st?.view?.kind === 'pisti') return;
+  if (st?.view?.kind === 'pisti' || st?.view?.kind === 'batak') return;
   const bar = document.getElementById('actions');
   if (!bar || !st) return;
   bar.innerHTML = '';
@@ -2530,6 +2846,7 @@ function renderSheet() {
   if (!show) return;
   const v = st.view;
   if (v.kind === 'pisti') return renderPistiSheet(el, v);
+  if (v.kind === 'batak') return renderBatakSheet(el, v);
   const rows = v.sheet as { hand: number; teamDelta: [number, number]; totals: [number, number]; notes: string[] }[];
   const short = (team: number) => [team, team + 2].map((s) => (table!.seats[s]?.name ?? '?').split(' ')[0]).join('-');
   el.innerHTML = '';
