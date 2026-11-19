@@ -253,34 +253,58 @@ function voiceOfSeat(seat: number | null | undefined): string | undefined {
   // Spieler und Bots an meinem Tisch (andere Tische schicken keine Ereignisse)
   return (table?.seats[seat] as any)?.avatar?.voice;
 }
-/** Satz in der Stimme dieser Figur – false, wenn sie keinen dafür hat */
-function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): boolean {
+/** Satz in der Stimme dieser Figur – null, wenn sie keinen dafür hat (oder Stimmen aus sind) */
+function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): HTMLAudioElement | null {
   const v = voiceOfSeat(seat);
-  if (!hasLine(v, line)) return false;
-  // in den Einstellungen leiser/aus stellbar (aus = die normalen Töne wie vorher)
+  if (!hasLine(v, line)) return null;
+  // in den Einstellungen leiser/aus stellbar
   const cv = vol('volChar');
-  if (cv <= 0) return false;
+  if (cv <= 0) return null;
   try {
     const a = new Audio(voiceUrl(v!, line));
     a.volume = Math.max(0, Math.min(1, cv * gain * (seat === you.seat ? 1 : 0.85)));
     void a.play().catch(() => {});
-  } catch {}
-  return true;
+    return a;
+  } catch {
+    return null;
+  }
+}
+/** wenn ein Ton fertig ist (oder spätestens nach maxMs) */
+function afterAudio(a: HTMLAudioElement | null, fn: () => void, maxMs = 6000) {
+  let done = false;
+  const go = () => {
+    if (done) return;
+    done = true;
+    fn();
+  };
+  if (!a) return go();
+  a.addEventListener('ended', go, { once: true });
+  a.addEventListener('error', go, { once: true });
+  setTimeout(go, maxMs);
 }
 on('order', (m) => {
   const items: OrderItem[] = (m.items ?? [m.item]) as OrderItem[];
   const variants: number[] = m.variants ?? [m.variant ?? 0];
-  // nur Dosen bestellt → „bi kola getir“, sonst der Tee-Ruf; ohne eigene Stimme der alte Ruf
+  // nur Dosen bestellt → „bi kola getir“, sonst (auch gemischt) der Tee-Ruf; ohne eigene Stimme der alte Ruf
   const line: VoiceLine = items.every((x) => x === 'icecek') ? 'kola' : 'cay';
+  let call: HTMLAudioElement | null = null;
   // Charakter-Stimmen auf 0 → auch kein Ruf nach Ahmet
-  if (vol('volChar') > 0 && !sayLine(m.seat, line))
-    try {
-      const a = ahmetCall.cloneNode(true) as HTMLAudioElement;
-      a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
-      void a.play().catch(() => {});
-    } catch {}
-  // Ahmet antwortet 3 s nach dem Ruf (abwechselnd – vom Server bestimmt)
-  if (typeof m.reply === 'number' && m.reply >= 0) setTimeout(() => playVoice(AHMET_REPLIES[m.reply % AHMET_REPLIES.length], 0.9), 3000);
+  if (vol('volChar') > 0) {
+    call = sayLine(m.seat, line);
+    if (!call)
+      try {
+        call = ahmetCall.cloneNode(true) as HTMLAudioElement;
+        call.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
+        void call.play().catch(() => {});
+      } catch {
+        call = null;
+      }
+  }
+  // Ahmet antwortet nur manchmal – erst wenn der Ruf fertig ist, dann 1–2 s Pause (nicht überlappend)
+  if (typeof m.reply === 'number' && m.reply >= 0) {
+    const reply = AHMET_REPLIES[m.reply % AHMET_REPLIES.length];
+    afterAudio(call, () => setTimeout(() => playVoice(reply, 0.9), 1000 + Math.random() * 1000));
+  }
   items.forEach((item, k) => world.order(m.seat, item, variants[k] ?? 0));
   addLog(h('div', { class: 'sys' }, `${m.from}: ${items.map(orderLabel).join(', ')} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
   if (m.seat === you.seat) sfx.bell();

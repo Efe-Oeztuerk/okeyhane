@@ -217,6 +217,26 @@ function pushState(t: Table) {
 /** Mindestabstand zwischen zwei Bestellungen desselben Spielers */
 const ORDER_GAP_MS = 45_000;
 
+/** Bots bestellen ab und zu (Çay meistens, manchmal eine Dose) – rein kosmetisch, mit Ruf in ihrer Stimme */
+setInterval(() => {
+  const now = Date.now();
+  for (const t of tables.values()) {
+    if (!t.started || !t.game) continue;
+    // nicht zu oft am selben Tisch
+    if (now - ((t as any).lastBotOrder ?? 0) < 90_000) continue;
+    const bots = t.seats.map((s, i) => (s.bot ? i : -1)).filter((i) => i >= 0);
+    if (!bots.length || Math.random() > 0.18) continue;
+    const seat = bots[Math.floor(Math.random() * bots.length)];
+    const info = t.seats[seat].bot!;
+    const items = Math.random() < 0.3 ? ['icecek'] : ['cay'];
+    const variants = items.map((x) => (x === 'icecek' ? Math.floor(Math.random() * 7) : 0));
+    let reply = -1;
+    if (Math.random() < 0.5) reply = (t as any).ahmetReply = (((t as any).ahmetReply ?? -1) + 1) % 2;
+    (t as any).lastBotOrder = now;
+    broadcast(t, { type: 'order', seat, items, item: items[0], from: info.name, variants, variant: variants[0], reply });
+  }
+}, 15_000);
+
 function newGame(t: Table): OkeyGame | PistiGame {
   const seed = Date.now() & 0x7fffffff;
   if (t.rules.mode === 'pisti') return new PistiGame({ players: t.rules.pistiPlayers === 2 ? 2 : 4, target: t.rules.pistiTarget || 151, bluff: !!t.rules.pistiBluff }, seed);
@@ -824,9 +844,9 @@ function handle(c: Client, m: Msg) {
         (c as any).lastOrder = now;
         // İçecek: Ahmet bringt eine zufällige Dose (für alle dieselbe)
         const variants = list.map((x) => (x === 'icecek' ? Math.floor(Math.random() * 7) : 0));
-        // Ahmet antwortet immer – abwechselnd (für alle gleich)
+        // Ahmet antwortet nur manchmal – und dann abwechselnd (für alle gleich)
         let reply = -1;
-        reply = (t as any).ahmetReply = (((t as any).ahmetReply ?? -1) + 1) % 2;
+        if (Math.random() < 0.5) reply = (t as any).ahmetReply = (((t as any).ahmetReply ?? -1) + 1) % 2;
         broadcast(t, { type: 'order', seat: c.seat, items: list, item: list[0], from: c.info.name, variants, variant: variants[0], reply });
         return;
       }
