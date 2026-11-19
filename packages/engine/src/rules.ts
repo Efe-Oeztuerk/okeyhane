@@ -2,7 +2,7 @@
 
 import type { Color } from './tiles.ts';
 
-export type Mode = 'standard' | 'okey101' | 'perisan';
+export type Mode = 'standard' | 'okey101' | 'perisan' | 'pisti';
 
 export interface TableRules {
   mode: Mode;
@@ -29,6 +29,10 @@ export interface TableRules {
   turnTimerSec: number | null;
   /** Bots dürfen leere Plätze füllen */
   allowBots: boolean;
+  /** Pişti: 2 oder 4 Spieler, Zielpunkte, Bluff (Kapalı Pişti) */
+  pistiPlayers: 2 | 4;
+  pistiTarget: number;
+  pistiBluff: boolean;
 }
 
 export function defaultRules(mode: Mode): TableRules {
@@ -46,5 +50,8 @@ export function defaultRules(mode: Mode): TableRules {
     hardMode: false,
     turnTimerSec: null,
     allowBots: true,
+    pistiPlayers: 4,
+    pistiTarget: 151,
+    pistiBluff: false,
   };
 }

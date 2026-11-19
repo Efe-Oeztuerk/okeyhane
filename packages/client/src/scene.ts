@@ -7,6 +7,7 @@ import type { Avatar, PlayerInfo } from '../../server/src/protocol.ts';
 import { Avatar3D } from './avatar.ts';
 import { City } from './city.ts';
 import { tileMesh } from './tileArt.ts';
+import { cardMesh, type PCard } from './cardArt.ts';
 import * as D from './decor.ts';
 import { settings, onSettings } from './settings.ts';
 import { sfx } from './sound.ts';
@@ -1757,6 +1758,110 @@ export class World {
 
   private prevDiscards: number[] = [];
   private flyers: { m: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; spin: number }[] = [];
+
+  /** Pişti-Tisch: Mitte (Stapel), Talon, gestochene Karten, Handkarten der anderen (Rückseiten) */
+  setPisti(v: any | null, mySeat: number | null) {
+    this.visual = null;
+    this.flyers = [];
+    this.gameGroup.clear();
+    this.clickables = [];
+    this.sideObj = null;
+    if (!v) return;
+    const viewer = mySeat ?? 0;
+    const vd = seatPos(viewer);
+    const readRot = Math.atan2(vd.x, vd.z);
+    const Y = TABLE_Y + 0.002;
+    const seeded = (id: number, k: number) => (Math.sin(id * 12.9898 + k * 78.233) * 43758.5453) % 1;
+    // Mitte für jeden etwas näher zu sich (jeder sieht den Tisch aus seiner Sicht)
+    const C = new THREE.Vector3(vd.x * 0.1, 0, vd.z * 0.1);
+    // Mitte: verdeckte Startkarten + offener Stapel, oberste Karte groß und zu mir geneigt
+    const total = v.hiddenCount + v.pile.length;
+    let layer = 0;
+    for (let i = 0; i < v.hiddenCount; i++) {
+      const m = cardMesh(null, false);
+      m.scale.setScalar(1.8);
+      m.position.set(C.x + seeded(i, 1) * 0.01, Y + layer++ * 0.0013, C.z + seeded(i, 2) * 0.01);
+      m.rotation.y = readRot + seeded(i, 3) * 0.15;
+      this.gameGroup.add(m);
+    }
+    // Mitte gut lesbar: größer, die letzten Karten leicht aufgefächert, oberste schräg zu mir
+    const n = v.pile.length;
+    v.pile.forEach((c: PCard, i: number) => {
+      const isTop = i === n - 1;
+      const back = n - 1 - i; // 0 = oberste
+      const m = cardMesh(c, true);
+      m.scale.setScalar(1.8);
+      const side = new THREE.Vector3(vd.z, 0, -vd.x);
+      const fan = back < 3 ? back * 0.055 : 0.16 + seeded(c.id, 1) * 0.02;
+      m.position.set(C.x - side.x * fan + seeded(c.id, 2) * 0.01, Y + layer++ * 0.002, C.z - side.z * fan + seeded(c.id, 4) * 0.01);
+      m.rotation.y = readRot + (back < 3 ? back * 0.08 : seeded(c.id, 3) * 0.35);
+      if (isTop) {
+        // oberste Karte: hintere Kante hoch → Gesicht schaut zu mir, gut lesbar
+        m.rotation.set(0, readRot, 0);
+        m.rotateX(0.85);
+        m.scale.setScalar(2.1);
+        m.position.y += 0.1 * Math.sin(0.85);
+      }
+      this.gameGroup.add(m);
+    });
+    if (!total) {
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.075, 0.085, 32), new THREE.MeshBasicMaterial({ color: '#e8d9b0', transparent: true, opacity: 0.5 }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(C.x, Y, C.z);
+      this.gameGroup.add(ring);
+    }
+    // Talon beim Geber
+    if (v.stockCount > 0) {
+      const dd = seatPos(v.dealer);
+      const side = new THREE.Vector3(dd.z, 0, -dd.x);
+      const n = Math.max(1, Math.round(v.stockCount / 3));
+      for (let i = 0; i < n; i++) {
+        const m = cardMesh(null, false);
+        m.position.set(dd.x * 0.2 + side.x * 0.17, Y + i * 0.0035, dd.z * 0.2 + side.z * 0.17);
+        m.rotation.y = Math.atan2(dd.x, dd.z) + 0.25;
+        this.gameGroup.add(m);
+      }
+    }
+    // gestochene Karten je Team: verdeckter Stapel rechts vor dem ersten Spieler des Teams
+    for (const team of [0, 1]) {
+      const seat = (v.seats as number[]).find((s) => v.teamOfSeat[s] === team);
+      if (seat === undefined) continue;
+      const dd = seatPos(seat);
+      const side = new THREE.Vector3(dd.z, 0, -dd.x);
+      const n = Math.ceil(v.capturedCounts[team] / 4);
+      for (let i = 0; i < n; i++) {
+        const m = cardMesh(null, false);
+        m.position.set(dd.x * 0.32 - side.x * 0.2, Y + i * 0.0035, dd.z * 0.32 - side.z * 0.2);
+        m.rotation.y = Math.atan2(dd.x, dd.z) + Math.PI / 2 + (i % 3) * 0.05;
+        this.gameGroup.add(m);
+      }
+    }
+    // Handkarten der anderen: Rückseiten als kleiner Fächer vor ihrem Platz
+    for (const s of v.seats as number[]) {
+      const dd = seatPos(s);
+      if (s !== mySeat) {
+        const n = v.handCounts[s];
+        const g = new THREE.Group();
+        for (let i = 0; i < n; i++) {
+          const m = cardMesh(null, false);
+          m.rotation.x = -1.15;
+          m.rotation.z = (i - (n - 1) / 2) * 0.12;
+          m.position.set((i - (n - 1) / 2) * 0.03, 0.05, -i * 0.002);
+          g.add(m);
+        }
+        g.position.set(dd.x * 0.43, TABLE_Y, dd.z * 0.43);
+        facing(g, dd.x, dd.z);
+        this.gameGroup.add(g);
+      }
+      // wer dran ist
+      if (s === v.current && v.phase !== 'handOver' && v.phase !== 'gameOver') {
+        const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.075, 24), new THREE.MeshBasicMaterial({ color: '#ffd27a' }));
+        ring.rotation.x = -Math.PI / 2;
+        ring.position.set(dd.x * 0.27, TABLE_Y + 0.002, dd.z * 0.27);
+        this.gameGroup.add(ring);
+      }
+    }
+  }
 
   setGame(v: GameVisual | null) {
     this.visual = v;

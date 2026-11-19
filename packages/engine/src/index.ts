@@ -6,3 +6,4 @@ export * from './scoring.ts';
 export * from './game.ts';
 export * from './bot.ts';
 export * from './layout.ts';
+export * from './pisti.ts';

@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, type TableRules, type Mode } from '@okeyhane/engine';
+import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, type TableRules, type Mode } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from './protocol.ts';
 import { loadStats, recordResult, getStats } from './stats.ts';
 import { accounts, AccountError, type UserRow, type FriendRow } from './accounts.ts';
@@ -50,7 +50,7 @@ interface Table {
   spectators: Set<Client>;
   invited: Set<string>;
   rules: TableRules;
-  game: OkeyGame | null;
+  game: OkeyGame | PistiGame | null;
   started: boolean;
   tv: MediaState;
   music: MediaState;
@@ -169,32 +169,56 @@ function pushTable(t: Table) {
   for (const c of members(t)) send(c, { type: 'table', table: summary, you: { id: c.id, seat: c.seat, watching: c.watching } });
 }
 
+/** Pişti: welche Plätze spielen mit (2 Spieler = gegenüber 0 + 2) */
+function activeSeats(t: Table): number[] {
+  return t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2 ? [0, 2] : [0, 1, 2, 3];
+}
+function isPisti(g: Table['game']): g is PistiGame {
+  return !!g && (g as any).kind === 'pisti';
+}
+
 function pushState(t: Table) {
   if (!t.game) return;
+  const pg = t.game;
+  if (isPisti(pg)) {
+    for (const c of members(t)) {
+      const view: any = pg.viewFor(c.seat ?? c.watching ?? 0);
+      if (c.seat === null) view.myHand = [];
+      send(c, { type: 'state', view, spectator: c.seat === null, turnDeadline: t.turnDeadline, lastResult: pg.lastResult });
+    }
+    return;
+  }
+  const og = pg;
   for (const c of members(t)) {
     const seat = c.seat ?? c.watching ?? 0;
-    const view: any = t.game.viewFor(seat);
+    const view: any = og.viewFor(seat);
     // Zuschauer sehen keine Steine (sonst könnte man spicken und sich dann setzen)
-    if (c.seat === null && t.game.hand.phase !== 'handOver' && !t.game.gameOver) view.myHand = [];
+    if (c.seat === null && og.hand.phase !== 'handOver' && !og.gameOver) view.myHand = [];
     send(c, {
       type: 'state',
       view,
       spectator: c.seat === null,
       turnDeadline: t.turnDeadline,
       topDiscards: [0, 1, 2, 3].map((s) => {
-        const d = t.game!.hand.players[s].discards;
+        const d = og.hand.players[s].discards;
         return d.length ? d[d.length - 1] : null;
       }),
-      okey: t.game.hand.okey,
-      lastResult: t.game.hand.lastResult,
+      okey: og.hand.okey,
+      lastResult: og.hand.lastResult,
       // Bretter der anderen erst nach der Hand (sonst wäre es Spicken)
-      layouts: t.game.hand.phase === 'handOver' || t.game.gameOver ? t.layouts : null,
+      layouts: og.hand.phase === 'handOver' || og.gameOver ? t.layouts : null,
     });
   }
 }
 
 /** Mindestabstand zwischen zwei Bestellungen desselben Spielers */
 const ORDER_GAP_MS = 45_000;
+
+function newGame(t: Table): OkeyGame | PistiGame {
+  const seed = Date.now() & 0x7fffffff;
+  if (t.rules.mode === 'pisti') return new PistiGame({ players: t.rules.pistiPlayers === 2 ? 2 : 4, target: t.rules.pistiTarget || 151, bluff: !!t.rules.pistiBluff }, seed);
+  return new OkeyGame(t.rules, seed);
+}
 
 function humanCount(t: Table) {
   return t.seats.filter((s) => s.client).length;
@@ -245,7 +269,7 @@ function scheduleBots(t: Table) {
     t.seats.forEach((s, i) => s.bot && t.ready.add(i));
     // Bots legen ihr Brett sichtbar geordnet hin (wie ein Mensch, der umgestellt hat)
     t.seats.forEach((s, i) => {
-      if (!s.bot) return;
+      if (!s.bot || isPisti(g)) return;
       const hp = g.hand.players[i];
       t.layouts[i] = autoLayout(hp.hand, g.hand.okey, g.hand.indicator, t.rules.indicatorPairsAnything);
     });
@@ -261,12 +285,13 @@ function scheduleBots(t: Table) {
     t.botTimer = setTimeout(() => {
       if (t.game !== g || g.hand.current !== seat || !t.seats[seat].bot) return;
       try {
-        botTurn(g, seat);
+        if (isPisti(g)) pistiBotTurn(g, seat);
+        else botTurn(g, seat);
       } catch (e) {
         console.error('Bot-Fehler', e);
       }
       afterAction(t);
-    }, 900 + Math.random() * 700);
+    }, isPisti(g) ? 1100 + Math.random() * 900 : 900 + Math.random() * 700);
   }
 }
 
@@ -295,7 +320,8 @@ function scheduleTurnTimer(t: Table) {
   t.turnTimer = setTimeout(() => {
     if (t.game !== g || g.handNo !== handNo || g.hand.current !== seat) return;
     try {
-      botTurn(g, seat); // Zeit abgelaufen: automatischer Zug
+      if (isPisti(g)) pistiBotTurn(g, seat);
+      else botTurn(g, seat); // Zeit abgelaufen: automatischer Zug
     } catch (e) {
       console.error(e);
     }
@@ -308,7 +334,8 @@ function afterAction(t: Table) {
   if (g?.gameOver && !t.recorded) {
     t.recorded = true;
     t.seats.forEach((s, seat) => {
-      if (s.client && g.winnerTeam !== null) recordResult(s.client.info.name, t.rules.mode, seat % 2 === g.winnerTeam);
+      const team = isPisti(g) ? g.teamOf(seat) : seat % 2;
+      if (s.client && g.winnerTeam !== null) recordResult(s.client.info.name, t.rules.mode, team === g.winnerTeam);
     });
   }
   scheduleTurnTimer(t);
@@ -586,6 +613,7 @@ function handle(c: Client, m: Msg) {
       case 'sit': {
         const s = Number(m.seat);
         const seat = t.seats[s];
+        if (!activeSeats(t).includes(s)) throw new GameError('Pişti zu zweit: nur die beiden gegenüberliegenden Plätze');
         if (!seat || seat.client) throw new GameError('Platz besetzt');
         // Vor dem Start nur freie Plätze; im laufenden Spiel darf man einen Bot ablösen
         if (seat.bot && !t.started) throw new GameError('Platz besetzt');
@@ -622,6 +650,9 @@ function handle(c: Client, m: Msg) {
         const base = defaultRules((m.rules?.mode as Mode) ?? t.rules.mode);
         const prevMode = t.rules.mode;
         t.rules = { ...base, ...(m.rules ?? {}) };
+        t.rules.pistiPlayers = t.rules.pistiPlayers === 2 ? 2 : 4;
+        t.rules.pistiTarget = Math.max(10, Math.min(1000, Math.round(Number(t.rules.pistiTarget) || 151)));
+        if (t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2) for (const i of [1, 3]) t.seats[i].bot = null;
         if (m.rules?.mode && m.rules.mode !== prevMode && m.rules.handCount === undefined) {
           t.rules.handCount = base.handCount;
         }
@@ -632,6 +663,7 @@ function handle(c: Client, m: Msg) {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
         if (!t.rules.allowBots) throw new GameError('Bots sind aus');
         const s = Number(m.seat);
+        if (!activeSeats(t).includes(s)) throw new GameError('Pişti zu zweit: nur die beiden gegenüberliegenden Plätze');
         if (t.seats[s] && !t.seats[s].client) t.seats[s].bot = botInfo(s, t.seats.map((x) => x.bot?.name ?? ''));
         pushTable(t);
         return;
@@ -663,8 +695,11 @@ function handle(c: Client, m: Msg) {
       }
       case 'start': {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
-        if (t.seats.some((s) => !s.client && !s.bot)) throw new GameError('Alle 4 Plätze müssen besetzt sein');
-        t.game = new OkeyGame(t.rules, Date.now() & 0x7fffffff);
+        const act = activeSeats(t);
+        if (act.some((i) => !t.seats[i].client && !t.seats[i].bot)) throw new GameError(act.length === 2 ? 'Beide Plätze müssen besetzt sein' : 'Alle 4 Plätze müssen besetzt sein');
+        // Pişti zu zweit: die anderen beiden Plätze bleiben frei
+        for (let i = 0; i < 4; i++) if (!act.includes(i)) t.seats[i].bot = null;
+        t.game = newGame(t);
         t.started = true;
         t.signatures = {};
         t.recorded = false;
@@ -676,7 +711,7 @@ function handle(c: Client, m: Msg) {
       case 'rematch': {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
         if (!t.game?.gameOver) throw new GameError('Spiel läuft noch');
-        t.game = new OkeyGame(t.rules, Date.now() & 0x7fffffff);
+        t.game = newGame(t);
         t.ready.clear();
         t.signatures = {};
         t.recorded = false;
@@ -711,6 +746,18 @@ function handle(c: Client, m: Msg) {
         if (!g) throw new GameError('Kein Spiel');
         const seat = c.seat;
         if (seat === null) throw new GameError('Zuschauer können nicht spielen');
+        if (isPisti(g)) {
+          try {
+            if (m.action === 'play') g.play(seat, Number(m.cardId), !!m.bluff);
+            else if (m.action === 'respond') g.respond(seat, !!m.believe);
+            else throw new GameError('Unbekannte Aktion');
+          } catch (e) {
+            if (e instanceof PistiError) throw new GameError(e.message);
+            throw e;
+          }
+          afterAction(t);
+          return;
+        }
         doAction(t, g, seat, m);
         afterAction(t);
         return;

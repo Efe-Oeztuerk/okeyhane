@@ -5,6 +5,7 @@ import type { Tile, OkeyIdentity } from '@okeyhane/engine';
 import type { MediaState, PlayerInfo } from '../../server/src/protocol.ts';
 import { connect, send, on } from './net.ts';
 import { h, toast } from './dom.ts';
+import { cardElement, type PCard } from './cardArt.ts';
 import { t, setLang, getLang } from './i18n.ts';
 import { World, type GameVisual } from './scene.ts';
 import { Istaka } from './istaka.ts';
@@ -169,6 +170,17 @@ on('state', (m) => {
   const prev = st;
   st = m;
   const v = m.view;
+  if (v.kind === 'pisti') {
+    world.setPisti(v, you.seat);
+    pistiFeedback(prev?.view?.kind === 'pisti' ? prev.view : null, v);
+    const endedP = v.phase === 'handOver' || v.phase === 'gameOver';
+    const wasEndedP = prev && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
+    if (endedP && !wasEndedP) sheetOpen = true;
+    if (!endedP && wasEndedP) sheetOpen = false;
+    if (v.current === you.seat && prev?.view.current !== you.seat && !endedP) sfx.bell();
+    renderAll();
+    return;
+  }
   const okey: OkeyIdentity = m.okey;
   if (v.handNo !== lastHandNo || (prev && prev.view.phase === 'handOver' && v.phase !== 'handOver')) {
     if (prev && v.phase !== 'handOver' && prev.view.indicator?.id !== v.indicator?.id) istaka.clear();
@@ -1177,6 +1189,8 @@ function leaveCafe() {
 }
 
 function act(m: any) {
+  // Pişti kennt nur „play“ und „respond“ (Okey-Tasten ignorieren)
+  if (st?.view?.kind === 'pisti' && m.action !== 'play' && m.action !== 'respond') return;
   if (m.action === 'drawPile' && !istaka.flyFrom) istaka.flyFrom = world.screenOf('pile');
   if (m.action === 'drawDiscard' && !istaka.flyFrom) istaka.flyFrom = world.screenOf('side');
   send({ type: 'action', ...m });
@@ -1185,6 +1199,7 @@ function act(m: any) {
 
 /** Beenden nur mit fertiger Hand und nach Bestätigung (nie aus Versehen) */
 function tryFinish(id: number) {
+  if (st?.view?.kind === 'pisti') return;
   if (!st || !myTurn('discard')) return;
   const de = getLang() === 'de';
   const v = st.view;
@@ -1346,7 +1361,7 @@ function renderLeft() {
       h(
         'div',
         { class: 'p' },
-        h('span', {}, voiceDot(p.id, isMe), `${s % 2 === 0 ? '🔵' : '🔴'} ${p.name}${p.bot ? ' 🤖' : ''}${p.id === table!.ownerId ? ' 👑' : ''}${isMe ? (getLang() === 'de' ? ' (du)' : ' (sen)') : ''}`),
+        h('span', {}, voiceDot(p.id, isMe), `${(table!.rules.mode === 'pisti' && table!.rules.pistiPlayers === 2 ? s === 0 : s % 2 === 0) ? '🔵' : '🔴'} ${p.name}${p.bot ? ' 🤖' : ''}${p.id === table!.ownerId ? ' 👑' : ''}${isMe ? (getLang() === 'de' ? ' (du)' : ' (sen)') : ''}`),
         h(
           'span',
           { class: 'row', style: { gap: '4px' } },
@@ -1705,12 +1720,17 @@ function renderLobby() {
   appendAll(el, h('h2', {}, '🀄 ' + t('rules')), isOwner ? null : h('div', { class: 'muted', style: { marginBottom: '8px' } }, t('onlyOwner')));
   // Plätze
   const seats = h('div', { class: 'seats' });
+  const pistiDuo = r.mode === 'pisti' && r.pistiPlayers === 2;
   table!.seats.forEach((p, s) => {
+    if (pistiDuo && (s === 1 || s === 3)) {
+      seats.append(h('div', { class: 'seat off' }, h('div', { class: 'muted' }, '—'), h('span', { class: 'muted' }, getLang() === 'de' ? 'frei (zu zweit)' : 'boş (iki kişilik)')));
+      return;
+    }
     seats.append(
       h(
         'div',
-        { class: 'seat ' + (s % 2 === 0 ? 'teamA' : 'teamB') },
-        h('div', { class: 'muted' }, s % 2 === 0 ? t('teamA') : t('teamB')),
+        { class: 'seat ' + ((pistiDuo ? s === 0 : s % 2 === 0) ? 'teamA' : 'teamB') },
+        h('div', { class: 'muted' }, pistiDuo ? (s === 0 ? '①' : '②') : s % 2 === 0 ? t('teamA') : t('teamB')),
         h('b', {}, p ? p.name + (p.bot ? ' 🤖' : '') : t('empty')),
         !p && you.seat !== null ? h('button', { class: 'small ghost', onclick: () => send({ type: 'sit', seat: s }) }, t('sitHere')) : null,
         !p && isOwner && r.allowBots ? h('button', { class: 'small', onclick: () => send({ type: 'addBot', seat: s }) }, '🤖 ' + t('addBot')) : null,
@@ -1737,10 +1757,68 @@ function renderLobby() {
       h(
         'select',
         { disabled: dis, onchange: (e: Event) => send({ type: 'setRules', rules: { mode: (e.target as HTMLSelectElement).value } }) },
-        ['standard', 'okey101', 'perisan'].map((m) => h('option', { value: m, selected: r.mode === m }, t(m))),
+        ['standard', 'okey101', 'perisan', 'pisti'].map((m) => h('option', { value: m, selected: r.mode === m }, t(m))),
       ),
     ),
   );
+  if (r.mode === 'pisti') {
+    const de = getLang() === 'de';
+    const info = () =>
+      modal(
+        h('h2', {}, 'ⓘ ' + (de ? 'Kapalı Pişti (Bluff)' : 'Kapalı Pişti (Blöf)')),
+        h(
+          'div',
+          { class: 'col', style: { gap: '8px', lineHeight: '1.45' } },
+          ...(de
+            ? [
+                'Liegt genau eine Karte in der Mitte, darfst du eine Karte verdeckt legen und damit „Pişti“ behaupten – auch wenn sie gar nicht passt.',
+                'Der nächste Spieler entscheidet: glauben oder aufdecken.',
+                '• Geglaubt: Du nimmst die Mitte und bekommst 10 Punkte (liegt eine Vale in der Mitte: 20). Die Karte bleibt geheim.',
+                '• Aufgedeckt und es war echt: doppelte Punkte – 20 (bei Vale 40).',
+                '• Aufgedeckt und es war geblufft: Der Aufdecker bekommt 10 (bei Vale 20), deine Karte bleibt offen in der Mitte liegen.',
+                'Mit der letzten Karte einer Runde ist kein Bluff möglich.',
+              ]
+            : [
+                'Ortada tek kart varken bir kartı kapalı atıp “Pişti” diyebilirsin – kart tutmasa bile.',
+                'Sıradaki oyuncu karar verir: inanır ya da açar.',
+                '• İnanırsa: Ortayı alırsın, 10 puan (ortada vale varsa 20). Kart gizli kalır.',
+                '• Açar ve gerçekse: puan iki katı – 20 (valede 40).',
+                '• Açar ve blöfse: açan 10 puan alır (valede 20), senin kartın ortada açık kalır.',
+                'Elin son kartıyla blöf yapılamaz.',
+              ]
+          ).map((x) => h('div', {}, x)),
+        ),
+      );
+    rules.append(
+      h(
+        'label',
+        {},
+        de ? 'Spieler' : 'Oyuncu',
+        h(
+          'select',
+          { disabled: dis, onchange: (e: Event) => set({ pistiPlayers: Number((e.target as HTMLSelectElement).value) }) },
+          h('option', { value: 4, selected: r.pistiPlayers !== 2 }, de ? '4 (2 gegen 2)' : '4 (eşli)'),
+          h('option', { value: 2, selected: r.pistiPlayers === 2 }, de ? '2 (1 gegen 1)' : '2 (teke tek)'),
+        ),
+      ),
+      num('pistiTarget', de ? 'Spiel bis (Punkte)' : 'Oyun sonu (puan)', 10, 1000),
+      h(
+        'label',
+        {},
+        h('span', {}, de ? 'Bluff (Kapalı Pişti) ' : 'Blöf (Kapalı Pişti) ', h('button', { class: 'info-i', type: 'button', title: 'Info', onclick: (e: Event) => (e.preventDefault(), info()) }, 'i')),
+        h('input', { type: 'checkbox', checked: !!r.pistiBluff, disabled: dis, onchange: (e: Event) => set({ pistiBluff: (e.target as HTMLInputElement).checked }) }),
+      ),
+      h('label', {}, t('timer'), h('input', { type: 'number', min: 0, max: 300, value: r.turnTimerSec ?? 0, disabled: dis, onchange: (e: Event) => set({ turnTimerSec: Number((e.target as HTMLInputElement).value) || null }) })),
+      chk('allowBots', t('bots')),
+    );
+    el.append(rules);
+    if (isOwner) {
+      const need = pistiDuo ? [0, 2] : [0, 1, 2, 3];
+      const full = need.every((i) => table!.seats[i]);
+      el.append(h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '14px' } }, h('button', { class: 'primary', disabled: !full, onclick: () => (unlockAudio(), send({ type: 'start' })) }, '▶ ' + t('startGame'))));
+    }
+    return;
+  }
   if (r.mode === 'standard') rules.append(chk('colorful', t('colorful')), num('startPoints', t('startPoints'), 2, 100));
   if (r.mode !== 'standard') rules.append(num('handCount', t('handCount'), 1, 30));
   if (r.mode === 'okey101') rules.append(num('openThreshold', 'Açma ≥', 50, 200), num('pairOpenCount', 'Çift açma', 3, 7), chk('doubling101', t('doubling101')));
@@ -1798,6 +1876,7 @@ function renderGame() {
     return;
   }
   const v = st.view;
+  if (v.kind === 'pisti') return renderPisti(v, top, wrap, zones, result);
   const mine = you.seat !== null ? you.seat % 2 : -1;
   const teamName = (team: number) => [team, team + 2].map((s) => table!.seats[s]?.name ?? '?').join(' & ');
   top.innerHTML = '';
@@ -2006,7 +2085,249 @@ function handsPanel(v: any): HTMLElement {
   return box;
 }
 
+// ------------------------------------------------------------------ Pişti
+
+let pistiBluffArmed = false;
+let pistiLastSeq = -1;
+
+function pistiTeamName(v: any, team: number, short = false) {
+  return (v.seats as number[])
+    .filter((s) => v.teamOfSeat[s] === team)
+    .map((s) => {
+      const n = table!.seats[s]?.name ?? '?';
+      return short ? n.split(' ')[0] : n;
+    })
+    .join(short ? '-' : ' & ');
+}
+
+/** kleiner Hinweis unter der Anzeige oben (verschwindet von selbst) */
+function pistiNote(text: string) {
+  document.querySelector('.pisti-note')?.remove();
+  const n = h('div', { class: 'pisti-note' }, text);
+  document.getElementById('ui')!.append(n);
+  setTimeout(() => n.classList.add('out'), 2400);
+  setTimeout(() => n.remove(), 3000);
+}
+
+/** Töne, Gesten und Hinweise zu dem, was gerade passiert ist */
+function pistiFeedback(prev: any | null, v: any) {
+  const e = v.lastEvent;
+  if (!e || e.seq === pistiLastSeq) return;
+  const first = pistiLastSeq === -1 && prev === null;
+  pistiLastSeq = e.seq;
+  if (first && e.kind !== 'deal') return;
+  const de = getLang() === 'de';
+  const who = nameOf(e.seat);
+  switch (e.kind) {
+    case 'deal':
+      sfx.shuffle();
+      break;
+    case 'play':
+      sfx.tile();
+      break;
+    case 'capture':
+      sfx.slam();
+      break;
+    case 'pisti':
+      sfx.slam();
+      world.emote(e.seat, 'slam');
+      pistiNote(`Pişti · ${who} +${e.points}`);
+      break;
+    case 'bluff':
+      sfx.tile();
+      pistiNote(de ? `${who}: verdeckt – „Pişti!“` : `${who}: kapalı – “Pişti!”`);
+      break;
+    case 'bluffBelieved':
+      sfx.slam();
+      pistiNote(de ? `${nameOf(e.by)} glaubt es · ${who} +${e.points}` : `${nameOf(e.by)} inandı · ${who} +${e.points}`);
+      break;
+    case 'bluffTrue':
+      sfx.slam();
+      world.emote(e.seat, 'slam');
+      pistiNote(de ? `Aufgedeckt – echt! ${who} +${e.points}` : `Açıldı – gerçek! ${who} +${e.points}`);
+      break;
+    case 'bluffFalse':
+      sfx.tile();
+      world.emote(e.seat, 'headshake');
+      pistiNote(de ? `Aufgedeckt – Bluff! ${nameOf(e.by)} +${e.points}` : `Açıldı – blöf! ${nameOf(e.by)} +${e.points}`);
+      break;
+  }
+}
+
+function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLElement, result: HTMLElement) {
+  const de = getLang() === 'de';
+  const myTeam = you.seat !== null ? v.teamOfSeat[you.seat] : -1;
+  const isMe = v.current === you.seat;
+  const over = v.phase === 'handOver' || v.phase === 'gameOver';
+  let timer = '';
+  if (st.turnDeadline) timer = ` · ${Math.max(0, Math.ceil((st.turnDeadline - Date.now()) / 1000))}s`;
+
+  // --- Anzeige oben
+  top.innerHTML = '';
+  top.classList.remove('mini');
+  const turnText = over
+    ? v.gameOver
+      ? t('gameOver')
+      : t('handOver')
+    : v.phase === 'bluff'
+      ? isMe
+        ? de
+          ? '❓ Glauben oder aufdecken?'
+          : '❓ İnanıyor musun?'
+        : `${t('waitingFor')}: ${nameOf(v.current)}`
+      : isMe
+        ? de
+          ? '🂠 Du bist dran – eine Karte legen'
+          : '🂠 Sıra sende – bir kart at'
+        : `${t('waitingFor')}: ${nameOf(v.current)}`;
+  top.append(
+    h('div', { class: 'score' + (myTeam === 0 ? ' mine' : '') }, h('div', { class: 'muted' }, pistiTeamName(v, 0)), String(v.scores[0])),
+    h('div', { class: 'turn' + (isMe && !over ? ' me' : '') }, turnText, timer),
+    h(
+      'div',
+      { class: 'okeyinfo pisti-info' },
+      h('span', {}, (de ? 'Mitte ' : 'Yerde ') + v.pileCount),
+      h('span', { class: 'muted' }, '·'),
+      h('span', {}, (de ? 'Talon ' : 'Deste ') + v.stockCount),
+      h('span', { class: 'muted ok-meta' }, `· ${de ? 'bis' : 'hedef'} ${v.target}`),
+    ),
+    h('div', { class: 'score' + (myTeam === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, pistiTeamName(v, 1)), String(v.scores[1])),
+  );
+
+  // --- Hand + Aktionen
+  wrap.innerHTML = '';
+  wrap.classList.toggle('hidden', you.seat === null && you.watching === null);
+  const bar = h('div', { class: 'actions-bar pisti-bar' });
+  if (you.seat === null) {
+    wrap.append(
+      h(
+        'div',
+        { class: 'row' },
+        h('span', { class: 'muted' }, t('watching') + ':'),
+        (v.seats as number[]).map((s) => h('button', { class: 'small ' + (you.watching === s ? 'primary' : 'ghost'), onclick: () => (send({ type: 'watch', seat: s }), watchAt(s)) }, nameOf(s))),
+      ),
+    );
+  }
+  const canBluff = v.bluff && isMe && v.phase === 'play' && v.pileCount === 1 && v.hiddenCount === 0 && !(v.stockCount === 0 && (v.handCounts as number[]).every((n: number, s: number) => n === (s === you.seat ? 1 : 0)));
+  if (!canBluff) pistiBluffArmed = false;
+  if (v.phase === 'bluff' && v.pending) {
+    if (isMe) {
+      bar.append(
+        h('span', { class: 'pb-text' }, de ? `${nameOf(v.pending.seat)} hat verdeckt gelegt und sagt „Pişti“` : `${nameOf(v.pending.seat)} kapalı attı, “Pişti” diyor`),
+        h('button', { class: 'primary', onclick: () => act({ action: 'respond', believe: true }) }, de ? '✓ Glauben' : '✓ İnanıyorum'),
+        h('button', { onclick: () => act({ action: 'respond', believe: false }) }, de ? '👁 Aufdecken' : '👁 Aç'),
+      );
+    } else bar.append(h('span', { class: 'pb-text' }, de ? `${nameOf(v.pending.seat)} sagt „Pişti“ – ${nameOf(v.current)} entscheidet…` : `${nameOf(v.pending.seat)} “Pişti” diyor – ${nameOf(v.current)} karar veriyor…`));
+  } else if (canBluff) {
+    bar.append(
+      h(
+        'button',
+        { class: pistiBluffArmed ? 'primary' : 'ghost', title: de ? 'Nächste Karte verdeckt legen (Bluff)' : 'Sonraki kartı kapalı at (blöf)', onclick: () => ((pistiBluffArmed = !pistiBluffArmed), renderGame()) },
+        pistiBluffArmed ? (de ? '🂠 Verdeckt: Karte wählen' : '🂠 Kapalı: kart seç') : de ? '🂠 Verdeckt legen (Bluff)' : '🂠 Kapalı at (blöf)',
+      ),
+    );
+  }
+  const hand = h('div', { class: 'pisti-hand' + (isMe && v.phase === 'play' ? ' myturn' : '') });
+  for (const c of v.myHand as PCard[]) {
+    const el = cardElement(c);
+    if (isMe && v.phase === 'play') {
+      el.classList.add('playable');
+      el.onclick = () => {
+        act({ action: 'play', cardId: c.id, bluff: pistiBluffArmed });
+        pistiBluffArmed = false;
+      };
+    }
+    hand.append(el);
+  }
+  wrap.append(bar, hand);
+  zones.classList.add('hidden');
+
+  // --- Rundenende / Spielende
+  result.classList.toggle('hidden', !over);
+  if (!over) return;
+  result.innerHTML = '';
+  const isOwner = table!.ownerId === myId;
+  const lr = v.lastResult;
+  if (lr) {
+    const row = (label: string, key: string) =>
+      h('tr', {}, h('td', {}, label), h('td', {}, String(lr.teams[0][key])), h('td', {}, String(lr.teams[1][key])));
+    result.append(
+      h('h2', {}, v.gameOver ? (v.winnerTeam === null ? t('draw') : `🏆 ${t('winner')}: ${pistiTeamName(v, v.winnerTeam)}`) : t('handOver')),
+      h(
+        'table',
+        { class: 'pisti-result' },
+        h('tr', {}, h('th', {}, ''), h('th', {}, pistiTeamName(v, 0, true)), h('th', {}, pistiTeamName(v, 1, true))),
+        row(de ? 'Karten' : 'Kart', 'cards'),
+        row(de ? 'Kartenmehrheit' : 'Kart fazlası', 'majority'),
+        row(de ? 'Asse' : 'As', 'aces'),
+        row(de ? 'Valen' : 'Vale', 'jacks'),
+        row('♣2', 'clubs2'),
+        row('♦10', 'diamonds10'),
+        h('tr', {}, h('td', {}, 'Pişti'), h('td', {}, `${lr.teams[0].pistiPoints}${lr.teams[0].pistis ? ` (${lr.teams[0].pistis}×)` : ''}`), h('td', {}, `${lr.teams[1].pistiPoints}${lr.teams[1].pistis ? ` (${lr.teams[1].pistis}×)` : ''}`)),
+        h('tr', { class: 'sum' }, h('td', {}, de ? 'Runde' : 'El'), h('td', {}, '+' + lr.teams[0].total), h('td', {}, '+' + lr.teams[1].total)),
+        h('tr', { class: 'sum' }, h('td', {}, 'Σ'), h('td', {}, String(v.scores[0])), h('td', {}, String(v.scores[1]))),
+      ),
+    );
+  }
+  if (v.gameOver) {
+    result.append(
+      h(
+        'div',
+        { class: 'row', style: { justifyContent: 'center' } },
+        isOwner ? h('button', { class: 'primary', onclick: () => send({ type: 'rematch' }) }, '🔁 ' + t('rematch')) : null,
+        isOwner ? h('button', { onclick: () => send({ type: 'backToLobby' }) }, t('toLobby')) : null,
+      ),
+    );
+    return;
+  }
+  const ready = new Set(table!.ready ?? []);
+  const humans = table!.seats.map((p, i) => [p, i] as const).filter(([p]) => p && !p.bot);
+  const iAmReady = you.seat !== null && ready.has(you.seat);
+  appendAll(
+    result,
+    h('div', { class: 'readyrow' }, humans.map(([p, i]) => h('span', { class: 'rd ' + (ready.has(i) ? 'ok' : '') }, (ready.has(i) ? '✅ ' : '⏳ ') + p!.name))),
+    h(
+      'div',
+      { class: 'row', style: { justifyContent: 'center' } },
+      you.seat !== null
+        ? h('button', { class: iAmReady ? 'ghost' : 'primary', onclick: () => send({ type: 'ready', ready: !iAmReady }) }, iAmReady ? (de ? '↩ Doch nicht bereit' : '↩ Hazır değilim') : de ? '✓ Bereit für die nächste Runde' : '✓ Sonraki ele hazırım')
+        : null,
+      isOwner ? h('button', { onclick: () => send({ type: 'nextHand' }) }, de ? '▶ Jetzt starten (Tischbesitzer)' : '▶ Hemen başlat (masa sahibi)') : null,
+      isOwner
+        ? h(
+            'button',
+            {
+              class: 'danger',
+              onclick: () =>
+                popupMenu(de ? '⏹ Ganzes Spiel beenden? Alle stehen auf.' : '⏹ Oyunu bitir? Herkes kalkar.', [
+                  { label: de ? '✓ Ja, Spiel beenden' : '✓ Evet, bitir', fn: () => send({ type: 'backToLobby' }) },
+                  { label: de ? '✗ Nein, weiterspielen' : '✗ Hayır, devam', fn: () => {} },
+                ]),
+            },
+            de ? '⏹ Spiel beenden' : '⏹ Oyunu bitir',
+          )
+        : null,
+    ),
+  );
+}
+
+function renderPistiSheet(el: HTMLElement, v: any) {
+  el.innerHTML = '';
+  const tbl = h('table', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, pistiTeamName(v, 0, true)), h('th', {}, pistiTeamName(v, 1, true))));
+  (v.history as { points: [number, number]; result: any }[]).forEach((r, i) => {
+    const fresh = i >= seenRows;
+    const cell = (n: number) => h('td', {}, h('span', { class: fresh ? 'write' : '', style: { animationDelay: fresh ? `${(i - seenRows) * 0.4}s` : '0s' } }, String(n)));
+    tbl.append(h('tr', {}, h('td', {}, String(i + 1)), cell(r.points[0]), cell(r.points[1])));
+    const notes = [0, 1].map((tm) => (r.result.teams[tm].pistis ? `${r.result.teams[tm].pistis}× Pişti` : '')).filter(Boolean);
+    if (notes.length) tbl.append(h('tr', {}, h('td', {}, ''), h('td', { class: 'note', colSpan: 2 }, notes.join(' · '))));
+  });
+  tbl.append(h('tr', { class: 'total' }, h('td', {}, 'Σ'), h('td', {}, String(v.scores[0])), h('td', {}, String(v.scores[1]))));
+  seenRows = v.history.length;
+  el.append(h('div', { class: 'tear' }, `— ✂ — Pişti · ${v.target}`), tbl);
+}
+
 function renderActions() {
+  if (st?.view?.kind === 'pisti') return;
   const bar = document.getElementById('actions');
   if (!bar || !st) return;
   bar.innerHTML = '';
@@ -2064,6 +2385,7 @@ function renderSheet() {
   el.classList.toggle('hidden', !show);
   if (!show) return;
   const v = st.view;
+  if (v.kind === 'pisti') return renderPistiSheet(el, v);
   const rows = v.sheet as { hand: number; teamDelta: [number, number]; totals: [number, number]; notes: string[] }[];
   const short = (team: number) => [team, team + 2].map((s) => (table!.seats[s]?.name ?? '?').split(' ')[0]).join('-');
   el.innerHTML = '';
