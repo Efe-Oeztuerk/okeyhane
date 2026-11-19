@@ -614,3 +614,8 @@ body.phone .batak-hand .pcard { margin-left: -26px; }
 .bk-tc .pcard { width: 34px; height: 48px; border-radius: 4px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
 .bk-tn { font-size: 10px; opacity: .8; line-height: 1.1; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.phone .bk-tc .pcard { width: 28px; height: 40px; }
+/* Stichkarten oben vergrößern: Maus drüber oder antippen */
+.bk-trick { position: relative; transform-origin: top center; transition: transform .18s ease; cursor: zoom-in; border-radius: 8px; }
+.bk-trick.big { transform: scale(2.6); z-index: 60; background: rgba(28,18,10,.92); padding: 4px 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
+@media (hover: hover) { .bk-trick:hover { transform: scale(2.6); z-index: 60; background: rgba(28,18,10,.92); padding: 4px 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); } }
+.okeyinfo:has(.bk-trick.big), .okeyinfo:has(.bk-trick:hover) { z-index: 60; position: relative; overflow: visible; }

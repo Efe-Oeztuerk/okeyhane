@@ -50,6 +50,17 @@ let st: any = null; // letzter Spielzustand
 let inCafe = false;
   document.body.classList.remove('incafe');
 let sheetOpen = false;
+/** Ergebnis erst nach kurzer Pause zeigen, damit man die letzte Karte / den letzten Stein und wohin es ging noch sieht */
+let resultHold = 0;
+function holdResult(ms: number) {
+  resultHold = Date.now() + ms;
+  setTimeout(() => {
+    const ph = st?.view?.phase;
+    if (ph === 'handOver' || ph === 'gameOver' || st?.view?.gameOver) sheetOpen = true;
+    renderAll();
+  }, ms + 30);
+}
+const resultHidden = () => Date.now() < resultHold;
 let seenRows = 0;
 let lastHandNo = -1;
 let chatLog: HTMLElement[] = [];
@@ -186,7 +197,7 @@ on('state', (m) => {
     batakFeedback(prev?.view?.kind === 'batak' ? prev.view : null, v);
     const endedB = v.phase === 'handOver';
     const wasEndedB = prev?.view?.kind === 'batak' && prev.view.phase === 'handOver';
-    if (endedB && !wasEndedB) sheetOpen = true;
+    if (endedB && !wasEndedB) holdResult(2900);
     if (!endedB && wasEndedB) sheetOpen = false;
     if (v.current === you.seat && prev?.view.current !== you.seat && !endedB) sfx.bell();
     if (v.handNo !== batakHandNo) {
@@ -202,7 +213,7 @@ on('state', (m) => {
     pistiFeedback(prev?.view?.kind === 'pisti' ? prev.view : null, v);
     const endedP = v.phase === 'handOver' || v.phase === 'gameOver';
     const wasEndedP = prev && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
-    if (endedP && !wasEndedP) sheetOpen = true;
+    if (endedP && !wasEndedP) holdResult(3000);
     if (!endedP && wasEndedP) sheetOpen = false;
     if (v.current === you.seat && prev?.view.current !== you.seat && !endedP) sfx.bell();
     renderAll();
@@ -232,7 +243,7 @@ on('state', (m) => {
   const ended = v.phase === 'handOver' || v.phase === 'gameOver';
   const wasEnded = prev && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
   if (ended && !wasEnded) {
-    sheetOpen = true;
+    holdResult(2200);
     // mit Okey beendet → die Figur ruft „Okey!“
     if (m.lastResult?.withOkey && m.lastResult.finisher !== null && m.lastResult.finisher !== undefined) sayLine(m.lastResult.finisher, 'okey');
     if (m.lastResult?.note) toast(m.lastResult.note, '#2d5a3a');
@@ -2147,7 +2158,7 @@ function renderGame() {
   zones.querySelectorAll('.zone').forEach((z) => ((z as HTMLElement).dataset.zone = (z as HTMLElement).getAttribute('data-zone')!));
 
   // Ergebnis
-  const over = v.phase === 'handOver' || v.gameOver;
+  const over = (v.phase === 'handOver' || v.gameOver) && !resultHidden();
   result.classList.toggle('hidden', !over);
   if (over) {
     result.innerHTML = '';
@@ -2499,9 +2510,9 @@ function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
   wrap.append(bar, hand);
   zones.classList.add('hidden');
 
-  // --- Rundenende / Spielende
-  result.classList.toggle('hidden', !over);
-  if (!over) return;
+  // --- Rundenende / Spielende (kurz warten, damit man den letzten Zug noch sieht)
+  result.classList.toggle('hidden', !over || resultHidden());
+  if (!over || resultHidden()) return;
   result.innerHTML = '';
   const isOwner = table!.ownerId === myId;
   const lr = v.lastResult;
@@ -2570,6 +2581,13 @@ function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
 
 // ------------------------------------------------------------------ Batak
 let batakLastSeq = -1;
+/** Stichkarten oben vergrößert (Handy: per Antippen) */
+let bkTrickBig = false;
+document.addEventListener('pointerdown', () => {
+  if (!bkTrickBig) return;
+  bkTrickBig = false;
+  document.querySelectorAll('.bk-trick.big').forEach((x) => x.classList.remove('big'));
+});
 let batakHandNo = -1;
 const batakBurySel = new Set<number>();
 let batakHandIds = new Set<number>();
@@ -2674,7 +2692,16 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     info.append(
       h(
         'span',
-        { class: 'bk-trick' },
+        {
+          class: 'bk-trick' + (bkTrickBig ? ' big' : ''),
+          title: getLang() === 'de' ? 'Antippen zum Vergrößern' : 'Büyütmek için dokun',
+          // Handy: antippen = groß, nochmal irgendwo tippen = normal (Maus: einfach drüberfahren)
+          onpointerdown: (e: Event) => {
+            e.stopPropagation();
+            bkTrickBig = !bkTrickBig;
+            (e.currentTarget as HTMLElement).classList.toggle('big', bkTrickBig);
+          },
+        },
         (v.trick as { seat: number; card: PCard }[]).map((tc) => h('span', { class: 'bk-tc' }, cardElement(tc.card), h('span', { class: 'bk-tn' }, (nameOf(tc.seat) ?? '?').split(' ')[0]))),
       ),
     );
@@ -2763,9 +2790,9 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
   });
   wrap.append(bar, hand);
   zones.classList.add('hidden');
-  // --- Handende
-  result.classList.toggle('hidden', !over);
-  if (!over) return;
+  // --- Handende (kurz warten, damit man den letzten Stich und wohin er ging noch sieht)
+  result.classList.toggle('hidden', !over || resultHidden());
+  if (!over || resultHidden()) return;
   result.innerHTML = '';
   const isOwner = table!.ownerId === myId;
   const lr = v.lastResult;
