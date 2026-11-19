@@ -569,3 +569,10 @@ body.phone .okeyinfo .pisti-top .pcard { width: 30px; height: 42px; }
 .rules .mode-group.active { opacity: 1; border-color: #e3b04b; background: rgba(227,176,75,.12); }
 .rules .mode-group > span { font-weight: 700; font-size: 13px; }
 .rules .mode-group select { width: 100%; }
+/* Fernseh-Modus: der Stream lässt sich direkt bedienen (Play, Ton, Qualität …) */
+body.tv-watch .tv-host, body.tv-watch .tv-host iframe { pointer-events: auto; }
+/* Einstellung „Bildschirmrand“: Bedienung rückt nach innen (transform → fixe Kinder beziehen sich auf diesen Rahmen) */
+body.ui-inset #ui, body.ui-inset .touch-ui { inset: var(--ui-inset-y) var(--ui-inset-x); transform: translateZ(0); }
+/* mit Bildschirmrand: geschlossene Seitenleiste darf nicht in den Rand hineinragen */
+body.ui-inset .chat.drawer:not(.open) { visibility: hidden; transition: transform .22s ease, visibility 0s .22s; }
+body.ui-inset .chat.drawer.open { visibility: visible; }

@@ -55,6 +55,14 @@ let lastHandNo = -1;
 let chatLog: HTMLElement[] = [];
 
 const ui = document.getElementById('ui')!;
+/** Bedienfläche um uiInset vom Rand nach innen (fixe Elemente beziehen sich dann auf den kleineren Rahmen) */
+function applyUiInset() {
+  const px = Math.max(0, settings.uiInset || 0);
+  document.body.style.setProperty('--ui-inset-x', px + 'px');
+  document.body.style.setProperty('--ui-inset-y', Math.round(px * 0.5) + 'px');
+  document.body.classList.toggle('ui-inset', px > 0);
+}
+applyUiInset();
 const world = new World(document.getElementById('world')!);
 // alle Fernseher zeigen dasselbe; Ton nur vom nächsten
 const tvs = world.tvHosts.map((host) => new MediaPlayer(host, 'volTv', true));
@@ -868,6 +876,24 @@ function openSettings() {
       slider('volMusic', t('volumeMusic')),
       slider('volNpc', t('volumeNpc')),
       slider('volChar', t('volumeChar')),
+      // Bedienfläche nach innen rücken (z. B. bei abgerundeten Handy-Ecken oder wenn man es zentraler mag)
+      h(
+        'label',
+        {},
+        getLang() === 'de' ? 'Bildschirmrand (Bedienung nach innen)' : 'Ekran kenarı (kontroller içe)',
+        h('input', {
+          type: 'range',
+          min: 0,
+          max: 80,
+          step: 4,
+          value: settings.uiInset,
+          oninput: (e: Event) => {
+            settings.uiInset = Number((e.target as HTMLInputElement).value);
+            applyUiInset();
+            saveSettings();
+          },
+        }),
+      ),
       check('smoke', t('smoke')),
       // Touch: Knöpfe rechts selbst auswählen
       document.body.classList.contains('touch')

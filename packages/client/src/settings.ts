@@ -11,6 +11,8 @@ export interface Settings {
   volNpc: number;
   /** Stimmen der Spielfiguren (Pişti!, Okey!, Bestellungen) – 0 = aus */
   volChar: number;
+  /** Abstand der Bedienelemente zum Bildschirmrand in px (Handy: alles rückt nach innen) */
+  uiInset: number;
   smoke: boolean;
   quality: 'low' | 'high';
   timeOfDay: 'auto' | 'day' | 'evening' | 'night';
@@ -153,6 +155,7 @@ const defaults: Settings = {
   volMusic: 50,
   volNpc: 30,
   volChar: 80,
+  uiInset: 0,
   smoke: true,
   quality: 'high',
   timeOfDay: 'auto',
