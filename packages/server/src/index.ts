@@ -1031,6 +1031,19 @@ const MIME: Record<string, string> = {
 /** TURN-Zugang von Metered (Umgebungsvariablen METERED_APP + METERED_API_KEY auf Render), 1 h zwischengespeichert */
 let iceCache: { at: number; ice: unknown[] } | null = null;
 async function iceServers(): Promise<unknown[]> {
+  // feste TURN-Zugangsdaten (Metered „Credential“) – nur als Umgebungsvariablen auf Render, nie im Code
+  const user = process.env.TURN_USERNAME;
+  const pass = process.env.TURN_CREDENTIAL;
+  if (user && pass) {
+    const host = process.env.TURN_HOST || 'global.relay.metered.ca';
+    return [
+      { urls: 'stun:stun.relay.metered.ca:80' },
+      { urls: `turn:${host}:80`, username: user, credential: pass },
+      { urls: `turn:${host}:80?transport=tcp`, username: user, credential: pass },
+      { urls: `turn:${host}:443`, username: user, credential: pass },
+      { urls: `turns:${host}:443?transport=tcp`, username: user, credential: pass },
+    ];
+  }
   const app = process.env.METERED_APP;
   const key = process.env.METERED_API_KEY;
   if (!app || !key) return [];
