@@ -6,6 +6,7 @@ import type { MediaState, PlayerInfo } from '../../server/src/protocol.ts';
 import { connect, send, on } from './net.ts';
 import { h, toast } from './dom.ts';
 import { cardElement, preloadCards, type PCard } from './cardArt.ts';
+import { hasLine, voiceUrl, type VoiceLine } from './voices.ts';
 import { t, setLang, getLang } from './i18n.ts';
 import { World, type GameVisual } from './scene.ts';
 import { Istaka } from './istaka.ts';
@@ -208,6 +209,8 @@ on('state', (m) => {
   const wasEnded = prev && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
   if (ended && !wasEnded) {
     sheetOpen = true;
+    // mit Okey beendet → die Figur ruft „Okey!“
+    if (m.lastResult?.withOkey && m.lastResult.finisher !== null && m.lastResult.finisher !== undefined) sayLine(m.lastResult.finisher, 'okey');
     if (m.lastResult?.note) toast(m.lastResult.note, '#2d5a3a');
   }
   // neue Runde beginnt → Zettel wieder zu
@@ -244,14 +247,29 @@ function playVoice(src: string, gain = 1) {
 world.onAhmetClear = () => {
   if (Math.random() < 0.45) playVoice('/sfx/ahmet_clear.mp3', 0.9);
 };
+/** Stimme der Figur auf einem Platz */
+function voiceOfSeat(seat: number | null | undefined): string | undefined {
+  if (seat === null || seat === undefined) return undefined;
+  return (table?.seats[seat] as any)?.avatar?.voice;
+}
+/** Satz in der Stimme dieser Figur – false, wenn sie keinen dafür hat */
+function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): boolean {
+  const v = voiceOfSeat(seat);
+  if (!hasLine(v, line)) return false;
+  playVoice(voiceUrl(v!, line), gain * (seat === you.seat ? 1 : 0.85));
+  return true;
+}
 on('order', (m) => {
   const items: OrderItem[] = (m.items ?? [m.item]) as OrderItem[];
   const variants: number[] = m.variants ?? [m.variant ?? 0];
-  try {
-    const a = ahmetCall.cloneNode(true) as HTMLAudioElement;
-    a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
-    void a.play().catch(() => {});
-  } catch {}
+  // nur Dosen bestellt → „bi kola getir“, sonst der Tee-Ruf; ohne eigene Stimme der alte Ruf
+  const line: VoiceLine = items.every((x) => x === 'icecek') ? 'kola' : 'cay';
+  if (!sayLine(m.seat, line))
+    try {
+      const a = ahmetCall.cloneNode(true) as HTMLAudioElement;
+      a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
+      void a.play().catch(() => {});
+    } catch {}
   // Antwort von Ahmet kurz nach dem Ruf (nur manchmal, abwechselnd – vom Server bestimmt)
   if (typeof m.reply === 'number' && m.reply >= 0) setTimeout(() => playVoice(AHMET_REPLIES[m.reply % AHMET_REPLIES.length], 0.9), 2000);
   items.forEach((item, k) => world.order(m.seat, item, variants[k] ?? 0));
@@ -2146,11 +2164,13 @@ function pistiFeedback(prev: any | null, v: any) {
       break;
     case 'pisti':
       sfx.slam();
+      sayLine(e.seat, 'pisti');
       world.emote(e.seat, 'slam');
       pistiNote(`Pişti · ${who} +${e.points}`);
       break;
     case 'bluff':
       sfx.tile();
+      sayLine(e.seat, 'pisti');
       pistiNote(de ? `${who}: verdeckt – „Pişti!“` : `${who}: kapalı – “Pişti!”`);
       break;
     case 'bluffBelieved':

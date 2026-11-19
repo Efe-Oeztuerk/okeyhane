@@ -13,6 +13,7 @@ import { World } from './scene.ts';
 import { KITS } from './avatar.ts';
 import { REAL_BASES, REAL_HAIR } from './realbody.ts';
 import type { Profile } from './settings.ts';
+import { VOICES, playPreview, stopPreview } from './voices.ts';
 
 type Opt = { key: keyof Avatar; values: string[]; labels: Record<string, string>; only?: 'm' | 'f' };
 const OPTIONS: Opt[] = [
@@ -84,6 +85,29 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
   function build() {
     opts.innerHTML = '';
     opts.append(h('label', {}, t('yourName')), nameInput);
+    // Stimme: antippen = auswählen + kurz reinhören
+    opts.append(
+      h('label', {}, bi('Ses · Stimme')),
+      h(
+        'div',
+        { class: 'chips' },
+        h('div', { class: 'chip' + (!p.avatar.voice ? ' on' : ''), onclick: () => ((p.avatar.voice = undefined), stopPreview(), refresh()) }, bi('Yok · Keine')),
+        VOICES.map((v) =>
+          h(
+            'div',
+            {
+              class: 'chip' + (p.avatar.voice === v.id ? ' on' : ''),
+              onclick: () => {
+                p.avatar.voice = v.id;
+                playPreview(v.id);
+                refresh();
+              },
+            },
+            '🔊 ' + v.label,
+          ),
+        ),
+      ),
+    );
     const swatchRow = (label: string, key: keyof Avatar, colors: string[]) => {
       opts.append(
         h('label', {}, bi(label)),
@@ -307,6 +331,7 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
   document.getElementById('ui')!.append(root);
   requestAnimationFrame(() => preview.resize());
   function close() {
+    stopPreview();
     preview.dispose();
     root.remove();
   }

@@ -81,6 +81,7 @@ export const CREDITS = [
   { what: 'Universal Base Characters (realistische Figuren, CC0)', author: 'Quaternius', url: 'https://quaternius.com' },
   { what: 'low poly cars vol 01 (Autos, Royalty Free)', author: 'ilkhom23', url: 'https://www.cgtrader.com/free-3d-models/car/concept-car/cars-pack-41-objects-cars-tyres-trucks-lowpoly' },
   { what: 'Ahmet, der Çaycı (Avaturn-Avatar)', author: 'Efe Öztürk / avaturn.me', url: 'https://avaturn.me' },
+  { what: 'Stimmen der Spielfiguren (KI-Stimmen)', author: 'ElevenLabs', url: 'https://elevenlabs.io' },
   { what: 'Playing Cards – Pişti-Karten (CC BY)', author: 'DudleyLong', url: 'https://sketchfab.com/3d-models/playing-cards-793274af15df4f20848d83ab6d127493' },
   { what: 'Glass of water (CC BY)', author: 'Hoshi_Takase_Moppy', url: 'https://sketchfab.com/3d-models/glass-of-water-90a9fc57892e4811aca10922fec6f084' },
   { what: 'Bowl of nuts (CC BY)', author: 'Bastian_01', url: 'https://sketchfab.com/3d-models/bowl-of-nuts-fa80b79d252740b4a2d1d3dfa915c515' },

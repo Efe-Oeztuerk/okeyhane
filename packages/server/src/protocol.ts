@@ -25,6 +25,8 @@ export interface Avatar {
   /** Retro-Trikot-Variante (nur bei shirt = trikot) */
   kit?: 'aYildiz' | 'sariKirmizi' | 'sariLacivert' | 'siyahBeyaz' | 'duz';
   /** eigene Nargile neben dem Stuhl */
+  /** Stimme der Figur (Ordner unter /voices/) */
+  voice?: string;
   shisha?: 'classic' | 'gold' | 'crystal' | 'ruby' | 'emerald' | 'black' | 'saray' | 'usta' | 'sultan';
   /** 'real' = realistische Figur statt Cartoon */
   style?: 'cartoon' | 'real';
