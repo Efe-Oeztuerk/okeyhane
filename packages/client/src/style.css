@@ -520,3 +520,8 @@ body.phone .sheet th { font-size: 17px; line-height: 1.1; }
 body.phone .sheet .total td { font-size: 21px; }
 body.phone .sheet td.note { font-size: 13px; }
 .popmenu .pm-item.on { background: rgba(70,160,90,0.35); outline: 1px solid rgba(120,220,140,0.5); }
+.tbtn.off { display: none !important; }
+.btnpick { display: flex; flex-direction: column; gap: 6px; margin: 6px 0; }
+.btnpick .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.btnpick .chip { padding: 6px 10px; border-radius: 16px; background: rgba(255,255,255,.07); font-size: 13px; }
+.btnpick .chip.on { background: var(--gold); color: #2a1a0e; }

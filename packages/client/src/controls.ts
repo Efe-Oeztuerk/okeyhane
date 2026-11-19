@@ -474,17 +474,20 @@ function setupTouch(world: World, api: ControlApi) {
   const tap = (label: string, title: string, fn: () => void, cls = '') => h('button', { class: 'tbtn ' + cls, title, onclick: fn }, label);
   // 👁: frei umschauen (bleibt so, bis man nochmal drückt) – normales Wischen federt zurück
   const lookBtn = tap('👁', 'Umschauen / Brett', () => (world.focus || !world.freeLook ? world.setFocus(false, true) : world.setFocus(true)), 'seated-only');
-  const btns = h(
-    'div',
-    { class: 'tbtns' },
-    hold('🔍', 'Zoom', () => world.setZoom(true), () => world.setZoom(false)),
-    hold('🎥', '3rd Person', () => world.setThird('back'), () => world.setThird(null)),
-    hold('🪞', 'Von vorne', () => world.setThird('front'), () => world.setThird(null)),
-    tap('☕', 'Ahmet (Çaycı)', () => api.openCayci()),
-    tap('💨', 'Nargile', () => api.emote('nargile'), 'seated-only'),
-    tap('📝', 'Zettel / Puan', () => api.toggleSheet(), 'started-only'),
-    tap('💬', 'Chat', () => api.toggleChat()),
-  );
+  // Knöpfe rechts – welche sichtbar sind, stellt man in den Einstellungen ein
+  const allBtns: Record<string, HTMLElement> = {
+    look: lookBtn,
+    zoom: hold('🔍', 'Zoom', () => world.setZoom(true), () => world.setZoom(false)),
+    third: hold('🎥', '3rd Person', () => world.setThird('back'), () => world.setThird(null)),
+    front: hold('🪞', 'Von vorne', () => world.setThird('front'), () => world.setThird(null)),
+    cayci: tap('☕', 'Ahmet (Çaycı)', () => api.openCayci()),
+    nargile: tap('💨', 'Nargile', () => api.emote('nargile'), 'seated-only'),
+    emotes: tap('😊', 'Emotes', () => (wheelIsOpen() ? closeWheel() : api.openEmotes()), 'seated-only'),
+    sheet: tap('📝', 'Zettel / Puan', () => api.toggleSheet(), 'started-only'),
+    chat: tap('💬', 'Chat', () => api.toggleChat()),
+  };
+  const btns = h('div', { class: 'tbtns' }, Object.values(allBtns));
+
   const sitBtn = h('button', { class: 'sitbtn hidden', onclick: () => world.interact() }, '🪑 ' + (de() ? 'Hinsetzen' : 'Otur'));
   root.append(stick, btns, sitBtn);
   document.body.append(root);
@@ -495,6 +498,7 @@ function setupTouch(world: World, api: ControlApi) {
     document.body.classList.toggle('phone', touchActive() && Math.min(innerWidth, innerHeight) <= 540);
     root.classList.toggle('seated', world.seated !== null);
     lookBtn.classList.toggle('on', !world.focus && world.freeLook);
+    for (const [k, b] of Object.entries(allBtns)) b.classList.toggle('off', !settings.touchBtns.includes(k));
     root.classList.toggle('started', !!api.started());
     sitBtn.classList.toggle('hidden', !on || !world.chairAhead());
   };

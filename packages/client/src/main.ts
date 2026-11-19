@@ -12,7 +12,7 @@ import { openEditor } from './editor.ts';
 import { MediaPlayer, parseTwitch, parseYouTube } from './media.ts';
 import { Voice } from './voice.ts';
 import { sfx, unlockAudio } from './sound.ts';
-import { settings, saveSettings, vol, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
+import { settings, saveSettings, vol, TOUCH_BTNS, defaultAvatar, loadProfile, saveProfile, keyLabel, defaultKeys, type Profile, type KeyBinds } from './settings.ts';
 import { tileElement } from './tileArt.ts';
 import { isCompleteMelds, isCompletePairs, looseSum, rackIsFinished } from '@okeyhane/engine';
 import { CREDITS } from './models.ts';
@@ -795,6 +795,28 @@ function openSettings() {
       slider('volMusic', t('volumeMusic')),
       slider('volNpc', t('volumeNpc')),
       check('smoke', t('smoke')),
+      // Touch: Knöpfe rechts selbst auswählen
+      document.body.classList.contains('touch')
+        ? h(
+            'div',
+            { class: 'btnpick' },
+            h('div', { class: 'muted' }, getLang() === 'de' ? 'Knöpfe rechts (antippen = an/aus)' : 'Sağdaki düğmeler (dokun = aç/kapa)'),
+            h(
+              'div',
+              { class: 'chips' },
+              TOUCH_BTNS.map((b) => {
+                const chip = h('button', { class: 'chip' + (settings.touchBtns.includes(b.key) ? ' on' : '') }, `${b.icon} ${getLang() === 'de' ? b.de : b.tr}`);
+                chip.onclick = () => {
+                  const on = settings.touchBtns.includes(b.key);
+                  settings.touchBtns = on ? settings.touchBtns.filter((k) => k !== b.key) : [...settings.touchBtns, b.key];
+                  chip.classList.toggle('on', !on);
+                  saveSettings();
+                };
+                return chip;
+              }),
+            ),
+          )
+        : null,
       check('pushToTalk', t('pushToTalk')),
       check('menuMusic', getLang() === 'de' ? '🎶 Musik im Menü' : '🎶 Menüde müzik'),
       check('musicMuted', getLang() === 'de' ? '🔇 Menümusik & Radio stumm' : '🔇 Menü müziği & radyo sessiz'),

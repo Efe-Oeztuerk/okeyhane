@@ -41,7 +41,21 @@ export interface Settings {
   radioStation: string;
   /** Menümusik + Radio stumm */
   musicMuted: boolean;
+  /** Touch: welche Knöpfe rechts angezeigt werden (Reihenfolge fest) */
+  touchBtns: string[];
 }
+/** alle möglichen Knöpfe rechts (Touch) */
+export const TOUCH_BTNS: { key: string; icon: string; tr: string; de: string }[] = [
+  { key: 'look', icon: '👁', tr: 'Serbest bak', de: 'Frei umschauen' },
+  { key: 'zoom', icon: '🔍', tr: 'Yakınlaştır', de: 'Zoom' },
+  { key: 'third', icon: '🎥', tr: 'Arkadan', de: '3rd Person' },
+  { key: 'front', icon: '🪞', tr: 'Önden', de: 'Von vorne' },
+  { key: 'cayci', icon: '☕', tr: 'Ahmet (çaycı)', de: 'Ahmet (Çaycı)' },
+  { key: 'nargile', icon: '💨', tr: 'Nargile', de: 'Shisha' },
+  { key: 'emotes', icon: '😊', tr: 'Hareketler', de: 'Emotes' },
+  { key: 'sheet', icon: '📝', tr: 'Puan kâğıdı', de: 'Zettel' },
+  { key: 'chat', icon: '💬', tr: 'Sohbet', de: 'Chat' },
+];
 
 export interface KeyBinds {
   // Bewegung / Ansicht
@@ -157,6 +171,7 @@ const defaults: Settings = {
   hideChat: false,
   radioStation: 'okeyhane',
   musicMuted: false,
+  touchBtns: ['look', 'third', 'front', 'cayci', 'nargile', 'sheet', 'chat'],
 };
 /** Touchgerät (Handy/Tablet) */
 export const isTouch = typeof matchMedia !== 'undefined' && (matchMedia('(pointer: coarse)').matches || navigator.maxTouchPoints > 1);
