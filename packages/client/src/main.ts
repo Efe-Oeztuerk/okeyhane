@@ -250,9 +250,8 @@ world.onAhmetClear = () => {
 /** Stimme der Figur auf einem Platz */
 function voiceOfSeat(seat: number | null | undefined): string | undefined {
   if (seat === null || seat === undefined) return undefined;
-  const pl = table?.seats[seat] as any;
-  // nur echte Spieler sprechen, Bots nicht
-  return pl && !pl.bot ? pl.avatar?.voice : undefined;
+  // Spieler und Bots an meinem Tisch (andere Tische schicken keine Ereignisse)
+  return (table?.seats[seat] as any)?.avatar?.voice;
 }
 /** Satz in der Stimme dieser Figur – false, wenn sie keinen dafür hat */
 function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): boolean {
@@ -280,8 +279,8 @@ on('order', (m) => {
       a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
       void a.play().catch(() => {});
     } catch {}
-  // Antwort von Ahmet kurz nach dem Ruf (nur manchmal, abwechselnd – vom Server bestimmt)
-  if (typeof m.reply === 'number' && m.reply >= 0) setTimeout(() => playVoice(AHMET_REPLIES[m.reply % AHMET_REPLIES.length], 0.9), 2000);
+  // Ahmet antwortet 3 s nach dem Ruf (abwechselnd – vom Server bestimmt)
+  if (typeof m.reply === 'number' && m.reply >= 0) setTimeout(() => playVoice(AHMET_REPLIES[m.reply % AHMET_REPLIES.length], 0.9), 3000);
   items.forEach((item, k) => world.order(m.seat, item, variants[k] ?? 0));
   addLog(h('div', { class: 'sys' }, `${m.from}: ${items.map(orderLabel).join(', ')} ${getLang() === 'de' ? 'bestellt' : 'söyledi'}`));
   if (m.seat === you.seat) sfx.bell();

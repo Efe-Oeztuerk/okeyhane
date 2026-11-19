@@ -102,6 +102,8 @@ function broadcast(t: Table, msg: unknown, except?: Client) {
 
 const BOT_NAMES = ['Hasan Abi', 'Kemal Usta', 'Rıza Dayı', 'Cemil', 'Nuri Bey', 'Selami', 'Fatma Teyze', 'Hatice Abla', 'Emine Hanım'];
 const FEMALE_BOTS = new Set(['Fatma Teyze', 'Hatice Abla', 'Emine Hanım']);
+/** feste Stimme je Bot-Name */
+const BOT_VOICES: Record<string, string> = { 'Hasan Abi': 'abi', 'Kemal Usta': 'kayseri', 'Rıza Dayı': 'koylu', Cemil: 'genco', 'Nuri Bey': 'kayseri', Selami: 'karadeniz', 'Fatma Teyze': 'teyze', 'Hatice Abla': 'istanbullu', 'Emine Hanım': 'teyze' };
 function botInfo(seat: number, taken: string[] = []): PlayerInfo {
   const skins = ['#e0b48f', '#c99068', '#a26e4a', '#f1c9a5'];
   const avatar: Avatar = {
@@ -140,6 +142,7 @@ function botInfo(seat: number, taken: string[] = []): PlayerInfo {
       glasses: i % 3 === 0 ? 'reading' : 'none',
     });
   }
+  avatar.voice = BOT_VOICES[name];
   return { id: 'bot-' + seat, name, avatar, signature: null, bot: true };
 }
 
@@ -821,9 +824,9 @@ function handle(c: Client, m: Msg) {
         (c as any).lastOrder = now;
         // İçecek: Ahmet bringt eine zufällige Dose (für alle dieselbe)
         const variants = list.map((x) => (x === 'icecek' ? Math.floor(Math.random() * 7) : 0));
-        // Ahmet antwortet nur manchmal – und dann abwechselnd (für alle gleich)
+        // Ahmet antwortet immer – abwechselnd (für alle gleich)
         let reply = -1;
-        if (Math.random() < 0.5) reply = (t as any).ahmetReply = (((t as any).ahmetReply ?? -1) + 1) % 2;
+        reply = (t as any).ahmetReply = (((t as any).ahmetReply ?? -1) + 1) % 2;
         broadcast(t, { type: 'order', seat: c.seat, items: list, item: list[0], from: c.info.name, variants, variant: variants[0], reply });
         return;
       }
