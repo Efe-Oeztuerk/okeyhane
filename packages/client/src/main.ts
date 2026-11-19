@@ -273,7 +273,8 @@ on('order', (m) => {
   const variants: number[] = m.variants ?? [m.variant ?? 0];
   // nur Dosen bestellt → „bi kola getir“, sonst der Tee-Ruf; ohne eigene Stimme der alte Ruf
   const line: VoiceLine = items.every((x) => x === 'icecek') ? 'kola' : 'cay';
-  if (!sayLine(m.seat, line))
+  // Charakter-Stimmen auf 0 → auch kein Ruf nach Ahmet
+  if (vol('volChar') > 0 && !sayLine(m.seat, line))
     try {
       const a = ahmetCall.cloneNode(true) as HTMLAudioElement;
       a.volume = Math.min(1, vol('volSfx') * (m.seat === you.seat ? 1 : 0.8));
