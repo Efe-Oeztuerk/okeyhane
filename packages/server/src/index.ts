@@ -1028,8 +1028,35 @@ const MIME: Record<string, string> = {
   '.webp': 'image/webp',
 };
 
+/** TURN-Zugang von Metered (Umgebungsvariablen METERED_APP + METERED_API_KEY auf Render), 1 h zwischengespeichert */
+let iceCache: { at: number; ice: unknown[] } | null = null;
+async function iceServers(): Promise<unknown[]> {
+  const app = process.env.METERED_APP;
+  const key = process.env.METERED_API_KEY;
+  if (!app || !key) return [];
+  if (iceCache && Date.now() - iceCache.at < 3600_000) return iceCache.ice;
+  try {
+    const host = app.includes('.') ? app : `${app}.metered.live`;
+    const r = await fetch(`https://${host}/api/v1/turn/credentials?apiKey=${encodeURIComponent(key)}`);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const ice = (await r.json()) as unknown[];
+    if (Array.isArray(ice) && ice.length) iceCache = { at: Date.now(), ice };
+    return ice;
+  } catch (e) {
+    console.error('TURN-Zugang von Metered fehlgeschlagen', e);
+    return iceCache?.ice ?? [];
+  }
+}
+
 const server = http.createServer((req, res) => {
   const url = new URL(req.url ?? '/', 'http://x');
+  if (url.pathname === '/api/ice') {
+    void iceServers().then((ice) => {
+      res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
+      res.end(JSON.stringify(ice));
+    });
+    return;
+  }
   if (url.pathname === '/health') {
     res.end('ok');
     return;

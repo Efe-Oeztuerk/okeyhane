@@ -6,11 +6,18 @@
 import { send, on } from './net.ts';
 import { settings, vol } from './settings.ts';
 
-const ICE: RTCIceServer[] = [
+let ICE: RTCIceServer[] = [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
-  // öffentliches Test-Relay (Open Relay Project) – hilft, wenn kein direkter Weg möglich ist
+  // altes öffentliches Relay (Open Relay Project) – nur als Rückfall
   { urls: ['turn:openrelay.metered.ca:80', 'turn:openrelay.metered.ca:443', 'turn:openrelay.metered.ca:443?transport=tcp'], username: 'openrelayproject', credential: 'openrelayproject' },
 ];
+// eigener TURN-Zugang (Metered) vom Server holen – damit klappt es auch über mobile Daten / strenge Netze
+fetch('/api/ice')
+  .then((r) => r.json())
+  .then((ice: RTCIceServer[]) => {
+    if (Array.isArray(ice) && ice.length) ICE = [...ice, ICE[0]];
+  })
+  .catch(() => {});
 
 export type PeerState = 'connecting' | 'connected' | 'failed';
 
