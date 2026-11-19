@@ -199,7 +199,7 @@ on('state', (m) => {
     const wasEndedB = prev?.view?.kind === 'batak' && prev.view.phase === 'handOver';
     if (endedB && !wasEndedB) holdResult(2900);
     if (!endedB && wasEndedB) sheetOpen = false;
-    if (v.current === you.seat && prev?.view.current !== you.seat && !endedB) sfx.bell();
+    if ((v.actor ?? v.current) === you.seat && (prev?.view.actor ?? prev?.view.current) !== you.seat && !endedB) sfx.bell();
     if (v.handNo !== batakHandNo) {
       batakHandNo = v.handNo;
       batakBurySel.clear();
@@ -2664,7 +2664,9 @@ function batakFeedback(prev: any | null, v: any) {
 }
 function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLElement, result: HTMLElement) {
   const de = getLang() === 'de';
-  const isMe = v.current === you.seat;
+  // Eşli: beim Partner des Bieters ist der Bieter dran
+  const isMe = (v.actor ?? v.current) === you.seat;
+  const forDummy = isMe && v.dummy !== null && v.current === v.dummy && v.phase === 'play';
   const over = v.phase === 'handOver';
   let timer = '';
   if (st.turnDeadline) timer = ` · ${Math.max(0, Math.ceil((st.turnDeadline - Date.now()) / 1000))}s`;
@@ -2677,7 +2679,18 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     bury: ['4 Karten weglegen (gömmek)', '4 kart göm'],
     play: ['🂠 Du bist dran', '🂠 Sıra sende'],
   };
-  const turnText = over ? (v.gameOver ? t('gameOver') : t('handOver')) : isMe ? phaseText[v.phase]?.[de ? 0 : 1] ?? '' : `${t('waitingFor')}: ${nameOf(v.current)}`;
+  if (forDummy) phaseText.play = ['🂠 Leg für deinen Partner', '🂠 Eşin için at'];
+  const turnText = over
+    ? v.gameOver
+      ? t('gameOver')
+      : t('handOver')
+    : isMe
+      ? phaseText[v.phase]?.[de ? 0 : 1] ?? ''
+      : v.current === you.seat && v.dummy === you.seat
+        ? de
+          ? `${nameOf(v.actor)} legt deine Karte`
+          : `${nameOf(v.actor)} senin kartını atıyor`
+        : `${t('waitingFor')}: ${nameOf(v.actor ?? v.current)}`;
   const scoreBox = (label: string, val: number, mine: boolean) => h('div', { class: 'score' + (mine ? ' mine' : '') }, h('div', { class: 'muted' }, label), String(val));
   const info = h(
     'div',
@@ -2788,6 +2801,25 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     }
     hand.append(el);
   });
+  // Eşli: als Bieter siehst du die offenen Karten deines Partners hier groß und legst sie selbst
+  if (v.open && you.seat !== null && v.contract?.seat === you.seat) {
+    const dl = new Set<number>(v.dummyLegal ?? []);
+    const row = h('div', { class: 'pisti-hand batak-hand batak-dummy' + (forDummy ? ' myturn' : '') });
+    (v.open.cards as PCard[]).forEach((c) => {
+      const el = cardElement(c);
+      if (forDummy) {
+        if (dl.has(c.id)) {
+          el.classList.add('playable');
+          el.onclick = () => {
+            el.classList.add('thrown');
+            act({ action: 'play', cardId: c.id });
+          };
+        } else el.classList.add('dim');
+      }
+      row.append(el);
+    });
+    wrap.append(h('div', { class: 'dummy-label' + (forDummy ? ' myturn' : '') }, (de ? 'Partner: ' : 'Eş: ') + (nameOf(v.open.seat) ?? '')), row);
+  }
   wrap.append(bar, hand);
   zones.classList.add('hidden');
   // --- Handende (kurz warten, damit man den letzten Stich und wohin er ging noch sieht)

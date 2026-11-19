@@ -316,9 +316,11 @@ function scheduleBots(t: Table) {
     return;
   }
   const seat = g.hand.current;
-  if (t.seats[seat].bot) {
+  // Batak Eşli: beim Partner des Bieters handelt der Bieter
+  const actor = isBatak(g) ? g.actor : seat;
+  if (t.seats[actor].bot) {
     t.botTimer = setTimeout(() => {
-      if (t.game !== g || g.hand.current !== seat || !t.seats[seat].bot) return;
+      if (t.game !== g || g.hand.current !== seat || !t.seats[actor].bot) return;
       try {
         if (isPisti(g)) pistiBotTurn(g, seat);
         else if (isBatak(g)) batakBotTurn(g, seat);
@@ -350,7 +352,7 @@ function scheduleTurnTimer(t: Table) {
   const secs = t.rules.turnTimerSec;
   if (!g || g.gameOver || !secs || g.hand.phase === 'handOver') return;
   const seat = g.hand.current;
-  if (t.seats[seat].bot) return;
+  if (t.seats[isBatak(g) ? g.actor : seat].bot) return;
   t.turnDeadline = Date.now() + secs * 1000;
   const handNo = g.handNo;
   t.turnTimer = setTimeout(() => {
@@ -802,7 +804,13 @@ function handle(c: Client, m: Msg) {
             if (m.action === 'bid') g.bid(seat, m.bid === null || m.bid === undefined ? null : Number(m.bid));
             else if (m.action === 'trump') g.chooseTrump(seat, m.suit);
             else if (m.action === 'bury') g.bury(seat, (Array.isArray(m.cardIds) ? m.cardIds : []).map(Number));
-            else if (m.action === 'play') g.play(seat, Number(m.cardId));
+            else if (m.action === 'play') {
+              // Eşli: der Bieter spielt auch die offenen Karten seines Partners
+              if (g.phase === 'play' && g.dummy !== null && g.current === g.dummy) {
+                if (seat !== g.contract!.seat) throw new GameError(seat === g.dummy ? 'Dein Partner legt deine Karten' : 'Nicht dran');
+                g.play(g.dummy, Number(m.cardId));
+              } else g.play(seat, Number(m.cardId));
+            }
             else throw new GameError('Unbekannte Aktion');
           } catch (e) {
             if (e instanceof BatakError) throw new GameError(e.message);

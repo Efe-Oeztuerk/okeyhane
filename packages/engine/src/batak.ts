@@ -110,6 +110,14 @@ export class BatakGame {
     return this.winner;
   }
 
+  /** Eşli: Partner des Bieters (seine Karten liegen offen, der Bieter spielt sie) */
+  get dummy(): number | null {
+    return this.team && this.contract ? (this.contract.seat + 2) % 4 : null;
+  }
+  /** wer gerade handeln darf (beim Partner des Bieters: der Bieter) */
+  get actor(): number {
+    return this.phase === 'play' && this.dummy === this.current ? this.contract!.seat : this.current;
+  }
   get team(): boolean {
     return this.rules.mode === 'esli';
   }
@@ -393,6 +401,10 @@ export class BatakGame {
       handNo: this.handNo,
       myHand: mine ? this.hands[seat] : [],
       legal: mine ? this.legal(seat).map((c) => c.id) : [],
+      actor: this.actor,
+      dummy: this.dummy,
+      // Bieter: welche Karten vom Partner er jetzt legen darf
+      dummyLegal: this.dummy !== null && this.contract && seat === this.contract.seat && this.current === this.dummy ? this.legal(this.dummy).map((c) => c.id) : [],
       handCounts: this.hands.map((h) => h.length),
       bids: this.bids.map((b) => (b === undefined ? 'wait' : b)),
       nextMinBid: this.nextMinBid,

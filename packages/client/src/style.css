@@ -619,3 +619,9 @@ body.phone .bk-tc .pcard { width: 28px; height: 40px; }
 .bk-trick.big { transform: scale(2.6); z-index: 60; background: rgba(28,18,10,.92); padding: 4px 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); }
 @media (hover: hover) { .bk-trick:hover { transform: scale(2.6); z-index: 60; background: rgba(28,18,10,.92); padding: 4px 6px; box-shadow: 0 10px 30px rgba(0,0,0,.6); } }
 .okeyinfo:has(.bk-trick.big), .okeyinfo:has(.bk-trick:hover) { z-index: 60; position: relative; overflow: visible; }
+.batak-dummy { transform: scale(.82); transform-origin: bottom center; margin-bottom: -10px; opacity: .97; }
+.batak-dummy:not(.myturn) .pcard { filter: brightness(.8); }
+.dummy-label { text-align: center; font-size: 12px; font-weight: 700; color: var(--gold); }
+/* Handy: Partner-Karten nur einblenden, wenn du für ihn legen musst (sonst zu wenig Platz) */
+body.phone .batak-dummy:not(.myturn), body.phone .dummy-label:not(.myturn) { display: none; }
+body.phone .batak-dummy { transform: scale(.78); margin-bottom: -18px; }
