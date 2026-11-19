@@ -1757,16 +1757,7 @@ function renderLobby() {
   const rules = h(
     'div',
     { class: 'rules' },
-    h(
-      'label',
-      { class: 'full' },
-      t('mode'),
-      h(
-        'select',
-        { disabled: dis, onchange: (e: Event) => send({ type: 'setRules', rules: { mode: (e.target as HTMLSelectElement).value } }) },
-        ['standard', 'okey101', 'perisan', 'pisti'].map((m) => h('option', { value: m, selected: r.mode === m }, t(m))),
-      ),
-    ),
+    modePicker(r.mode, dis),
   );
   if (r.mode === 'pisti') {
     const de = getLang() === 'de';
@@ -2180,6 +2171,36 @@ function pistiFeedback(prev: any | null, v: any) {
 }
 
 /** welche Austeilung gerade läuft (4 Spieler: 3×, 2 Spieler: 6×) */
+/** Spielauswahl: zwei Gruppen (Okey / Kartenspiele) – gespielt wird immer genau eins */
+const MODE_GROUPS: { key: string; de: string; tr: string; modes: string[] }[] = [
+  { key: 'okey', de: '🀄 Okey', tr: '🀄 Okey', modes: ['standard', 'okey101', 'perisan'] },
+  { key: 'cards', de: '🃏 Kartenspiele', tr: '🃏 Kart oyunları', modes: ['pisti'] },
+];
+function modePicker(mode: string, dis: boolean) {
+  const de = getLang() === 'de';
+  return h(
+    'div',
+    { class: 'full mode-groups' },
+    MODE_GROUPS.map((g) => {
+      const active = g.modes.includes(mode);
+      return h(
+        'label',
+        { class: 'mode-group' + (active ? ' active' : '') },
+        h('span', {}, de ? g.de : g.tr),
+        h(
+          'select',
+          { disabled: dis, onchange: (e: Event) => {
+            const v = (e.target as HTMLSelectElement).value;
+            if (v) send({ type: 'setRules', rules: { mode: v } });
+          } },
+          active ? null : h('option', { value: '', selected: true }, de ? '– auswählen –' : '– seç –'),
+          g.modes.map((m) => h('option', { value: m, selected: m === mode }, t(m))),
+        ),
+      );
+    }),
+  );
+}
+
 function pistiDealLabel(v: any, de: boolean) {
   const n = (v.seats as number[]).length;
   const per = n * 4;

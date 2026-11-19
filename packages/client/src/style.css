@@ -564,3 +564,8 @@ body.phone .pcard.face .pc-mid { font-size: 28px; }
 .pisti-hand .pcard.thrown { transform: translateY(-120px) scale(.7) rotate(8deg); opacity: 0; transition: transform .25s ease-in, opacity .25s; }
 .okeyinfo .pisti-top .pcard { width: 30px; height: 42px; border-radius: 4px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
 body.phone .okeyinfo .pisti-top .pcard { width: 30px; height: 42px; }
+.rules .mode-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.rules .mode-group { flex-direction: column; align-items: stretch !important; gap: 4px !important; padding: 8px; border-radius: 10px; border: 1px solid rgba(255,255,255,.08); background: rgba(0,0,0,.18); opacity: .75; }
+.rules .mode-group.active { opacity: 1; border-color: #e3b04b; background: rgba(227,176,75,.12); }
+.rules .mode-group > span { font-weight: 700; font-size: 13px; }
+.rules .mode-group select { width: 100%; }
