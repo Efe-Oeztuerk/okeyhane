@@ -96,6 +96,8 @@ export class PistiGame {
   gameOver = false;
   winnerTeam: number | null = null;
   lastEvent: PistiEvent | null = null;
+  /** wer die verdeckten Startkarten gewonnen hat, darf sie kurz ansehen */
+  peek: { seat: number; cards: Card[]; seq: number } | null = null;
   private seq = 0;
   /** offen gesehene Karten pro Wert (für Bots) */
   seen: number[] = new Array(14).fill(0);
@@ -134,6 +136,7 @@ export class PistiGame {
     this.pistiPoints = [0, 0];
     this.lastCapture = null;
     this.pending = null;
+    this.peek = null;
     this.seen = new Array(14).fill(0);
     // Mitte: 3 verdeckt + 1 offen; die offene darf keine Vale sein
     this.pile = deck.splice(0, 4);
@@ -208,6 +211,7 @@ export class PistiGame {
       const pisti = this.pile.length === 1 && card.rank === top.rank && !lastCard;
       const points = pisti ? (card.rank === JACK ? 20 : 10) : 0;
       const count = this.pile.length + 1;
+      if (this.hiddenInPile > 0) this.peek = { seat, cards: this.pile.slice(0, this.hiddenInPile), seq: this.seq + 1 };
       this.captured[team].push(...this.pile, card);
       this.pile = [];
       this.hiddenInPile = 0;
@@ -339,6 +343,8 @@ export class PistiGame {
       bluff: this.rules.bluff,
       pending: this.pending ? { seat: this.pending.seat, claimJack: this.pending.claimJack } : null,
       lastEvent: this.lastEvent,
+      // nur der Gewinner der verdeckten Startkarten sieht sie (kurz, im Client)
+      peek: this.peek && this.peek.seat === seat ? this.peek : null,
       lastResult: this.lastResult,
       history: this.history.map((x) => ({ points: x.points, result: x.result })),
       gameOver: this.gameOver,

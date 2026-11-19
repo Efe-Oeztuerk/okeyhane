@@ -1759,6 +1759,57 @@ export class World {
   private prevDiscards: number[] = [];
   private flyers: { m: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; spin: number }[] = [];
 
+  /** Pişti: Animationen (fliegende Karten, Stapel rutscht zum Gewinner) */
+  private pistiFx = new THREE.Group();
+  private pistiAnims: { t: number; dur: number; step: (e: number, t: number) => void; done?: () => void }[] = [];
+  private pistiTopHidden: THREE.Object3D | null = null;
+  private pistiViewer = 0;
+
+  private pistiSeed(id: number, k: number) {
+    return (Math.sin(id * 12.9898 + k * 78.233) * 43758.5453) % 1;
+  }
+  /** Mitte für jeden etwas näher zu sich (jeder sieht den Tisch aus seiner Sicht) */
+  private pistiCenter() {
+    const vd = seatPos(this.pistiViewer);
+    return new THREE.Vector3(vd.x * 0.1, 0, vd.z * 0.1);
+  }
+  /** Lage einer Karte im Stapel (back = 0 → oberste) – gleich für Tisch und Animation */
+  private pistiPose(m: THREE.Object3D, c: PCard | null, layerIdx: number, back: number, hidden: boolean) {
+    const vd = seatPos(this.pistiViewer);
+    const readRot = Math.atan2(vd.x, vd.z);
+    const C = this.pistiCenter();
+    const Y = TABLE_Y + 0.002;
+    const sd = (k: number) => this.pistiSeed(c ? c.id : layerIdx + 100, k);
+    m.scale.setScalar(1.8);
+    if (hidden) {
+      m.position.set(C.x + sd(1) * 0.01, Y + layerIdx * 0.0013, C.z + sd(2) * 0.01);
+      m.rotation.set(0, readRot + sd(3) * 0.15, 0);
+      return;
+    }
+    const side = new THREE.Vector3(vd.z, 0, -vd.x);
+    const fan = back < 3 ? back * 0.055 : 0.16 + sd(1) * 0.02;
+    m.position.set(C.x - side.x * fan + sd(2) * 0.01, Y + layerIdx * 0.002, C.z - side.z * fan + sd(4) * 0.01);
+    m.rotation.set(0, readRot + (back < 3 ? back * 0.08 : sd(3) * 0.35), 0);
+    if (back === 0) {
+      // oberste Karte: hintere Kante hoch → Gesicht schaut zu mir, gut lesbar
+      m.rotation.set(0, readRot, 0);
+      m.rotateX(0.85);
+      m.scale.setScalar(2.1);
+      m.position.y += 0.1 * Math.sin(0.85);
+    }
+  }
+  /** wo die gestochenen Karten eines Teams liegen */
+  private pistiStackPos(v: any, team: number) {
+    const seat = (v.seats as number[]).find((s) => v.teamOfSeat[s] === team) ?? 0;
+    const dd = seatPos(seat);
+    const side = new THREE.Vector3(dd.z, 0, -dd.x);
+    return { pos: new THREE.Vector3(dd.x * 0.32 - side.x * 0.2, TABLE_Y + 0.004, dd.z * 0.32 - side.z * 0.2), rot: Math.atan2(dd.x, dd.z) + Math.PI / 2 };
+  }
+  private seatHandPos(seat: number) {
+    const dd = seatPos(seat);
+    return new THREE.Vector3(dd.x * 0.45, TABLE_Y + 0.14, dd.z * 0.45);
+  }
+
   /** Pişti-Tisch: Mitte (Stapel), Talon, gestochene Karten, Handkarten der anderen (Rückseiten) */
   setPisti(v: any | null, mySeat: number | null) {
     this.visual = null;
@@ -1766,45 +1817,32 @@ export class World {
     this.gameGroup.clear();
     this.clickables = [];
     this.sideObj = null;
-    if (!v) return;
+    this.pistiTopHidden = null;
+    if (!this.pistiFx.parent) this.tableRoot.add(this.pistiFx);
+    if (!v) {
+      this.pistiFx.clear();
+      this.pistiAnims = [];
+      return;
+    }
     const viewer = mySeat ?? 0;
-    const vd = seatPos(viewer);
-    const readRot = Math.atan2(vd.x, vd.z);
+    this.pistiViewer = viewer;
     const Y = TABLE_Y + 0.002;
-    const seeded = (id: number, k: number) => (Math.sin(id * 12.9898 + k * 78.233) * 43758.5453) % 1;
-    // Mitte für jeden etwas näher zu sich (jeder sieht den Tisch aus seiner Sicht)
-    const C = new THREE.Vector3(vd.x * 0.1, 0, vd.z * 0.1);
-    // Mitte: verdeckte Startkarten + offener Stapel, oberste Karte groß und zu mir geneigt
-    const total = v.hiddenCount + v.pile.length;
+    // Mitte: verdeckte Startkarten + offener Stapel
     let layer = 0;
     for (let i = 0; i < v.hiddenCount; i++) {
       const m = cardMesh(null, false);
-      m.scale.setScalar(1.8);
-      m.position.set(C.x + seeded(i, 1) * 0.01, Y + layer++ * 0.0013, C.z + seeded(i, 2) * 0.01);
-      m.rotation.y = readRot + seeded(i, 3) * 0.15;
+      this.pistiPose(m, null, layer++, 9, true);
       this.gameGroup.add(m);
     }
-    // Mitte gut lesbar: größer, die letzten Karten leicht aufgefächert, oberste schräg zu mir
     const n = v.pile.length;
     v.pile.forEach((c: PCard, i: number) => {
-      const isTop = i === n - 1;
-      const back = n - 1 - i; // 0 = oberste
       const m = cardMesh(c, true);
-      m.scale.setScalar(1.8);
-      const side = new THREE.Vector3(vd.z, 0, -vd.x);
-      const fan = back < 3 ? back * 0.055 : 0.16 + seeded(c.id, 1) * 0.02;
-      m.position.set(C.x - side.x * fan + seeded(c.id, 2) * 0.01, Y + layer++ * 0.002, C.z - side.z * fan + seeded(c.id, 4) * 0.01);
-      m.rotation.y = readRot + (back < 3 ? back * 0.08 : seeded(c.id, 3) * 0.35);
-      if (isTop) {
-        // oberste Karte: hintere Kante hoch → Gesicht schaut zu mir, gut lesbar
-        m.rotation.set(0, readRot, 0);
-        m.rotateX(0.85);
-        m.scale.setScalar(2.1);
-        m.position.y += 0.1 * Math.sin(0.85);
-      }
+      this.pistiPose(m, c, layer++, n - 1 - i, false);
       this.gameGroup.add(m);
+      if (i === n - 1) this.pistiTopHidden = m;
     });
-    if (!total) {
+    if (!v.hiddenCount && !n) {
+      const C = this.pistiCenter();
       const ring = new THREE.Mesh(new THREE.RingGeometry(0.075, 0.085, 32), new THREE.MeshBasicMaterial({ color: '#e8d9b0', transparent: true, opacity: 0.5 }));
       ring.rotation.x = -Math.PI / 2;
       ring.position.set(C.x, Y, C.z);
@@ -1814,9 +1852,10 @@ export class World {
     if (v.stockCount > 0) {
       const dd = seatPos(v.dealer);
       const side = new THREE.Vector3(dd.z, 0, -dd.x);
-      const n = Math.max(1, Math.round(v.stockCount / 3));
-      for (let i = 0; i < n; i++) {
+      const k = Math.max(1, Math.round(v.stockCount / 3));
+      for (let i = 0; i < k; i++) {
         const m = cardMesh(null, false);
+        m.scale.setScalar(1.25);
         m.position.set(dd.x * 0.2 + side.x * 0.17, Y + i * 0.0035, dd.z * 0.2 + side.z * 0.17);
         m.rotation.y = Math.atan2(dd.x, dd.z) + 0.25;
         this.gameGroup.add(m);
@@ -1824,15 +1863,13 @@ export class World {
     }
     // gestochene Karten je Team: verdeckter Stapel rechts vor dem ersten Spieler des Teams
     for (const team of [0, 1]) {
-      const seat = (v.seats as number[]).find((s) => v.teamOfSeat[s] === team);
-      if (seat === undefined) continue;
-      const dd = seatPos(seat);
-      const side = new THREE.Vector3(dd.z, 0, -dd.x);
-      const n = Math.ceil(v.capturedCounts[team] / 4);
-      for (let i = 0; i < n; i++) {
+      const sp = this.pistiStackPos(v, team);
+      const k = Math.ceil(v.capturedCounts[team] / 4);
+      for (let i = 0; i < k; i++) {
         const m = cardMesh(null, false);
-        m.position.set(dd.x * 0.32 - side.x * 0.2, Y + i * 0.0035, dd.z * 0.32 - side.z * 0.2);
-        m.rotation.y = Math.atan2(dd.x, dd.z) + Math.PI / 2 + (i % 3) * 0.05;
+        m.scale.setScalar(1.25);
+        m.position.copy(sp.pos).setY(Y + i * 0.0035);
+        m.rotation.y = sp.rot + (i % 3) * 0.05;
         this.gameGroup.add(m);
       }
     }
@@ -1840,25 +1877,193 @@ export class World {
     for (const s of v.seats as number[]) {
       const dd = seatPos(s);
       if (s !== mySeat) {
-        const n = v.handCounts[s];
+        const k = v.handCounts[s];
         const g = new THREE.Group();
-        for (let i = 0; i < n; i++) {
+        for (let i = 0; i < k; i++) {
           const m = cardMesh(null, false);
+          m.scale.setScalar(1.2);
           m.rotation.x = -1.15;
-          m.rotation.z = (i - (n - 1) / 2) * 0.12;
-          m.position.set((i - (n - 1) / 2) * 0.03, 0.05, -i * 0.002);
+          m.rotation.z = (i - (k - 1) / 2) * 0.12;
+          m.position.set((i - (k - 1) / 2) * 0.035, 0.06, -i * 0.002);
           g.add(m);
         }
         g.position.set(dd.x * 0.43, TABLE_Y, dd.z * 0.43);
         facing(g, dd.x, dd.z);
         this.gameGroup.add(g);
       }
-      // wer dran ist
       if (s === v.current && v.phase !== 'handOver' && v.phase !== 'gameOver') {
         const ring = new THREE.Mesh(new THREE.RingGeometry(0.06, 0.075, 24), new THREE.MeshBasicMaterial({ color: '#ffd27a' }));
         ring.rotation.x = -Math.PI / 2;
         ring.position.set(dd.x * 0.27, TABLE_Y + 0.002, dd.z * 0.27);
         this.gameGroup.add(ring);
+      }
+    }
+  }
+
+  /** Animation zum letzten Ereignis (nach setPisti aufrufen) */
+  pistiAnimate(prev: any | null, v: any) {
+    const e = v.lastEvent;
+    if (!e) return;
+    const anim = (dur: number, step: (k: number, t: number) => void, done?: () => void) => this.pistiAnims.push({ t: 0, dur, step, done });
+    const ease = (k: number) => 1 - Math.pow(1 - k, 3);
+    const fly = (m: THREE.Object3D, from: THREE.Vector3, to: THREE.Vector3, toQ: THREE.Quaternion, toS: number, dur: number, arc = 0.12, done?: () => void) => {
+      const fromQ = m.quaternion.clone();
+      const fromS = m.scale.x;
+      m.position.copy(from);
+      anim(
+        dur,
+        (k) => {
+          const q = ease(k);
+          m.position.lerpVectors(from, to, q);
+          m.position.y += Math.sin(k * Math.PI) * arc;
+          m.quaternion.slerpQuaternions(fromQ, toQ, q);
+          m.scale.setScalar(fromS + (toS - fromS) * q);
+        },
+        done,
+      );
+    };
+    const poseOf = (c: PCard | null, layerIdx: number, back: number, hidden = false) => {
+      const tmp = new THREE.Object3D();
+      this.pistiPose(tmp, c, layerIdx, back, hidden);
+      return tmp;
+    };
+    /** alter Stapel als Kopie (für „erst drauf, dann zum Gewinner“) */
+    const oldPile = () => {
+      const g = new THREE.Group();
+      if (!prev) return { g, layers: 0 };
+      let layer = 0;
+      for (let i = 0; i < prev.hiddenCount; i++) {
+        const m = cardMesh(null, false);
+        this.pistiPose(m, null, layer++, 9, true);
+        g.add(m);
+      }
+      const n = prev.pile.length;
+      prev.pile.forEach((c: PCard, i: number) => {
+        const m = cardMesh(c, true);
+        // die alte oberste Karte rutscht eine Position nach hinten (die neue liegt drauf)
+        this.pistiPose(m, c, layer++, n - i, false);
+        g.add(m);
+      });
+      return { g, layers: layer };
+    };
+    const slideToStack = (g: THREE.Group, team: number, delay: number) => {
+      const sp = this.pistiStackPos(v, team);
+      const start = g.children.map((c) => ({ p: c.position.clone(), q: c.quaternion.clone(), s: c.scale.x }));
+      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, sp.rot, 0));
+      anim(delay, () => {}, () =>
+        anim(
+          0.55,
+          (k) => {
+            const q = ease(k);
+            g.children.forEach((c, i) => {
+              const st = start[i];
+              const to = sp.pos.clone().setY(TABLE_Y + 0.004 + i * 0.0015);
+              c.position.lerpVectors(st.p, to, q);
+              c.position.y += Math.sin(k * Math.PI) * 0.05;
+              c.quaternion.slerpQuaternions(st.q, target, q);
+              c.scale.setScalar(st.s + (1.25 - st.s) * q);
+            });
+          },
+          () => this.pistiFx.remove(g),
+        ),
+      );
+    };
+    const pulse = () => {
+      // dezenter goldener Kreis, der sich ausbreitet (Pişti)
+      const C = this.pistiCenter();
+      const ring = new THREE.Mesh(new THREE.RingGeometry(0.09, 0.1, 40), new THREE.MeshBasicMaterial({ color: '#f2cf7a', transparent: true, opacity: 0.8, depthWrite: false }));
+      ring.rotation.x = -Math.PI / 2;
+      ring.position.set(C.x, TABLE_Y + 0.004, C.z);
+      this.pistiFx.add(ring);
+      anim(
+        0.9,
+        (k) => {
+          ring.scale.setScalar(1 + k * 1.8);
+          (ring.material as THREE.MeshBasicMaterial).opacity = 0.8 * (1 - k);
+        },
+        () => this.pistiFx.remove(ring),
+      );
+    };
+    const from = this.seatHandPos(e.seat);
+    switch (e.kind) {
+      case 'play':
+      case 'bluffFalse': {
+        for (const c of [...this.pistiFx.children]) if ((c as any).isBluffCard) this.pistiFx.remove(c);
+        // Karte fliegt vom Spieler auf den Stapel; die echte oberste Karte erscheint bei der Landung
+        const top = this.pistiTopHidden;
+        if (!top) return;
+        top.visible = false;
+        const m = cardMesh(e.card, e.kind === 'play');
+        m.scale.setScalar(1.3);
+        m.rotation.set(0, this.pistiSeed(e.card.id, 7) * 2, 0);
+        this.pistiFx.add(m);
+        const target = poseOf(e.card, 0, 0);
+        fly(m, from, target.position, target.quaternion, target.scale.x, e.kind === 'play' ? 0.42 : 0.3, 0.12, () => {
+          this.pistiFx.remove(m);
+          top.visible = true;
+        });
+        break;
+      }
+      case 'bluff': {
+        // verdeckte Karte fliegt auf die einzelne Karte
+        const m = cardMesh(null, false);
+        m.scale.setScalar(1.3);
+        this.pistiFx.add(m);
+        const target = poseOf(null, 3, 0);
+        target.position.y += 0.01;
+        fly(m, from, target.position, target.quaternion, target.scale.x, 0.42, 0.12);
+        // bleibt liegen, bis der Bluff beantwortet ist (dann kommt ein neues Ereignis)
+        anim(60, () => {}, () => this.pistiFx.remove(m));
+        (m as any).isBluffCard = true;
+        break;
+      }
+      case 'capture':
+      case 'pisti':
+      case 'bluffBelieved':
+      case 'bluffTrue': {
+        // offene Bluff-Karte vom Tisch nehmen (sie wird gleich Teil der Animation)
+        for (const c of [...this.pistiFx.children]) if ((c as any).isBluffCard) this.pistiFx.remove(c);
+        const team = v.teamOfSeat[e.seat];
+        const { g, layers } = oldPile();
+        this.pistiFx.add(g);
+        const card = e.kind === 'bluffBelieved' ? null : e.card;
+        const m = cardMesh(card, !!card);
+        m.scale.setScalar(1.3);
+        g.add(m);
+        const target = poseOf(card, layers, 0);
+        const flyIn = e.kind === 'bluffBelieved' || e.kind === 'bluffTrue' ? 0.25 : 0.42;
+        fly(m, e.kind === 'bluffTrue' || e.kind === 'bluffBelieved' ? target.position.clone().setY(target.position.y + 0.06) : from, target.position, target.quaternion, target.scale.x, flyIn, 0.12, () => {
+          if (e.kind === 'pisti' || e.kind === 'bluffTrue' || e.kind === 'bluffBelieved') pulse();
+          if (e.kind === 'pisti' || e.kind === 'bluffTrue') {
+            // kleiner Hüpfer der Karte
+            const y0 = m.position.y;
+            anim(0.35, (k) => (m.position.y = y0 + Math.sin(k * Math.PI) * 0.03));
+          }
+        });
+        // erst kurz liegen lassen (man sieht, womit gestochen wurde), dann alles zum Gewinner
+        slideToStack(g, team, flyIn + (e.kind === 'pisti' ? 1.1 : 0.85));
+        break;
+      }
+      case 'deal': {
+        // Karten fliegen vom Talon zu den Spielern
+        const dd = seatPos(v.dealer);
+        const side = new THREE.Vector3(dd.z, 0, -dd.x);
+        const src = new THREE.Vector3(dd.x * 0.2 + side.x * 0.17, TABLE_Y + 0.03, dd.z * 0.2 + side.z * 0.17);
+        (v.seats as number[]).forEach((s, si) => {
+          for (let i = 0; i < 4; i++) {
+            const m = cardMesh(null, false);
+            m.scale.setScalar(1.2);
+            m.visible = false;
+            this.pistiFx.add(m);
+            const to = this.seatHandPos(s);
+            const delay = (si * 4 + i) * 0.06;
+            anim(delay, () => {}, () => {
+              m.visible = true;
+              fly(m, src, to, new THREE.Quaternion().setFromEuler(new THREE.Euler(0, Math.atan2(seatPos(s).x, seatPos(s).z), 0)), 1, 0.32, 0.06, () => this.pistiFx.remove(m));
+            });
+          }
+        });
+        break;
       }
     }
   }
@@ -2301,6 +2506,17 @@ export class World {
       this.camera.position.y += Math.sin(t * 90) * 0.004;
     }
 
+    // Pişti-Animationen
+    for (let i = this.pistiAnims.length - 1; i >= 0; i--) {
+      const an = this.pistiAnims[i];
+      an.t += dt;
+      const k = Math.min(1, an.t / an.dur);
+      an.step(k, an.t);
+      if (k >= 1) {
+        this.pistiAnims.splice(i, 1);
+        an.done?.();
+      }
+    }
     // geworfene Steine fliegen im Bogen auf den Abwurfstapel
     for (let i = this.flyers.length - 1; i >= 0; i--) {
       const f = this.flyers[i];

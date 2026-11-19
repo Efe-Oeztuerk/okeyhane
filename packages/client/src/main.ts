@@ -2089,6 +2089,18 @@ function handsPanel(v: any): HTMLElement {
 
 let pistiBluffArmed = false;
 let pistiLastSeq = -1;
+let pistiPeekSeq = -1;
+let pistiHandIds = new Set<number>();
+
+/** die drei verdeckten Startkarten kurz zeigen (Vorteil für den, der sie gewonnen hat) */
+function showPistiPeek(cards: PCard[]) {
+  document.querySelector('.pisti-peek')?.remove();
+  const de = getLang() === 'de';
+  const box = h('div', { class: 'pisti-peek' }, h('div', {}, de ? '👀 Die verdeckten Karten, die du gewonnen hast:' : '👀 Kazandığın kapalı kartlar:'), h('div', { class: 'pk-cards' }, cards.map((c) => cardElement(c))));
+  document.getElementById('ui')!.append(box);
+  setTimeout(() => box.classList.add('out'), 3800);
+  setTimeout(() => box.remove(), 4400);
+}
 
 function pistiTeamName(v: any, team: number, short = false) {
   return (v.seats as number[])
@@ -2116,6 +2128,12 @@ function pistiFeedback(prev: any | null, v: any) {
   const first = pistiLastSeq === -1 && prev === null;
   pistiLastSeq = e.seq;
   if (first && e.kind !== 'deal') return;
+  world.pistiAnimate(prev, v);
+  // verdeckte Startkarten gewonnen → kurz ansehen (nur der Gewinner bekommt sie vom Server)
+  if (v.peek && v.peek.seq !== pistiPeekSeq) {
+    pistiPeekSeq = v.peek.seq;
+    setTimeout(() => showPistiPeek(v.peek.cards), 900);
+  }
   const de = getLang() === 'de';
   const who = nameOf(e.seat);
   switch (e.kind) {
@@ -2228,17 +2246,25 @@ function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     );
   }
   const hand = h('div', { class: 'pisti-hand' + (isMe && v.phase === 'play' ? ' myturn' : '') });
-  for (const c of v.myHand as PCard[]) {
+  const fresh = (v.myHand as PCard[]).filter((c) => !pistiHandIds.has(c.id));
+  pistiHandIds = new Set((v.myHand as PCard[]).map((c) => c.id));
+  (v.myHand as PCard[]).forEach((c, idx) => {
     const el = cardElement(c);
+    // neu ausgeteilte Karten fliegen herein
+    if (fresh.length >= 2 && fresh.some((x) => x.id === c.id)) {
+      el.classList.add('dealt');
+      el.style.animationDelay = `${0.35 + idx * 0.09}s`;
+    }
     if (isMe && v.phase === 'play') {
       el.classList.add('playable');
       el.onclick = () => {
+        el.classList.add('thrown');
         act({ action: 'play', cardId: c.id, bluff: pistiBluffArmed });
         pistiBluffArmed = false;
       };
     }
     hand.append(el);
-  }
+  });
   wrap.append(bar, hand);
   zones.classList.add('hidden');
 

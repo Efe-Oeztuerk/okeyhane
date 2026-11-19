@@ -291,7 +291,7 @@ function scheduleBots(t: Table) {
         console.error('Bot-Fehler', e);
       }
       afterAction(t);
-    }, isPisti(g) ? 1100 + Math.random() * 900 : 900 + Math.random() * 700);
+    }, isPisti(g) ? 1900 + Math.random() * 900 : 900 + Math.random() * 700);
   }
 }
 

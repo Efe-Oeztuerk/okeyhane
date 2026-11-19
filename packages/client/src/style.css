@@ -528,21 +528,25 @@ body.phone .sheet td.note { font-size: 13px; }
 
 /* ---------- Pişti ---------- */
 .pisti-hand { display: flex; justify-content: center; gap: 10px; padding: 10px 14px 12px; background: linear-gradient(#8a5a2e, #6e4421); border-radius: 14px; box-shadow: inset 0 2px 0 rgba(255,255,255,.12), 0 6px 18px rgba(0,0,0,.45); min-height: 120px; align-items: flex-end; }
-.pcard { width: 76px; height: 106px; border-radius: 8px; background: #fbf7ee; border: 1px solid #d8ccb2; box-shadow: 0 3px 0 #c9b48a, 0 6px 12px rgba(0,0,0,.35); position: relative; user-select: none; -webkit-user-select: none; font-family: Georgia, serif; transition: transform .12s ease, box-shadow .12s; flex: 0 0 auto; }
-.pcard.red { color: #c8102e; }
-.pcard.black { color: #141414; }
-.pcard .pc-corner { position: absolute; left: 7px; top: 5px; display: flex; flex-direction: column; align-items: center; line-height: 1; }
-.pcard .pc-corner b { font-size: 26px; font-weight: 900; }
-.pcard .pc-corner span { font-size: 22px; }
-.pcard .pc-mid { position: absolute; right: 8px; bottom: 6px; font-size: 44px; line-height: 1; }
-.pcard.face .pc-mid { font-weight: 900; font-size: 40px; border: 2px solid currentColor; border-radius: 6px; padding: 2px 6px; }
-.pcard.back { background: repeating-linear-gradient(45deg, #7d1420 0 6px, #8e1c2a 6px 12px); border: 4px solid #f4ecd8; }
+.pcard { width: 80px; height: 112px; border-radius: 8px; position: relative; user-select: none; -webkit-user-select: none; transition: transform .14s ease, filter .14s; flex: 0 0 auto; filter: drop-shadow(0 4px 6px rgba(0,0,0,.4)); }
+.pcard img { width: 100%; height: 100%; display: block; pointer-events: none; }
 .pcard.playable { cursor: pointer; }
-.pisti-hand.myturn .pcard.playable:hover, .pisti-hand.myturn .pcard.playable:active { transform: translateY(-14px); box-shadow: 0 3px 0 #c9b48a, 0 14px 22px rgba(0,0,0,.45); }
-.pisti-hand:not(.myturn) .pcard { filter: saturate(.85) brightness(.92); }
+.pisti-hand.myturn .pcard.playable:hover, .pisti-hand.myturn .pcard.playable:active { transform: translateY(-16px) rotate(-1.5deg); filter: drop-shadow(0 12px 14px rgba(0,0,0,.5)); }
+.pisti-hand:not(.myturn) .pcard { filter: drop-shadow(0 4px 6px rgba(0,0,0,.4)) brightness(.9); }
+.pisti-hand .pcard.dealt { animation: pc-deal .45s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes pc-deal { from { transform: translateY(-60px) rotate(8deg) scale(.6); opacity: 0; } to { transform: none; opacity: 1; } }
 .pisti-bar { justify-content: center; gap: 8px; align-items: center; min-height: 36px; }
 .pisti-bar .pb-text { font-weight: 700; color: #f3e3c3; text-shadow: 0 1px 2px #000; }
 .pisti-info span { margin: 0 2px; }
+/* verdeckte Startkarten kurz ansehen */
+.pisti-peek { position: fixed; left: 50%; top: 42%; transform: translate(-50%, -50%); z-index: 47; background: rgba(28,18,10,.9); border: 1px solid rgba(255,255,255,.16); border-radius: 16px; padding: 12px 16px; text-align: center; color: #f3e3c3; animation: pk-in .3s ease both; pointer-events: none; }
+.pisti-peek .pk-cards { display: flex; gap: 10px; justify-content: center; margin-top: 8px; }
+.pisti-peek .pcard { animation: pk-flip .5s ease both; }
+.pisti-peek .pcard:nth-child(2) { animation-delay: .12s; }
+.pisti-peek .pcard:nth-child(3) { animation-delay: .24s; }
+.pisti-peek.out { opacity: 0; transition: opacity .5s; }
+@keyframes pk-in { from { opacity: 0; transform: translate(-50%, -46%); } to { opacity: 1; transform: translate(-50%, -50%); } }
+@keyframes pk-flip { from { transform: rotateY(90deg); } to { transform: none; } }
 /* dezenter Hinweis (z. B. „Pişti · Efe +10“) */
 .pisti-note { position: fixed; top: calc(env(safe-area-inset-top, 0px) + 78px); left: 50%; transform: translateX(-50%); z-index: 41; background: rgba(28,18,10,.82); color: #f3e3c3; border: 1px solid rgba(255,255,255,.14); padding: 5px 14px; border-radius: 16px; font-weight: 700; font-size: 14px; pointer-events: none; transition: opacity .5s; }
 .pisti-note.out { opacity: 0; }
@@ -554,9 +558,7 @@ body.phone .pisti-note { top: calc(env(safe-area-inset-top, 0px) + 50px); font-s
 .pisti-result td:first-child { text-align: left; color: #cbb892; }
 .pisti-result tr.sum td { border-top: 1px solid rgba(255,255,255,.18); font-weight: 800; }
 body.phone .pisti-hand { min-height: 0; padding: 6px 10px 8px; gap: 7px; }
-body.phone .pcard { width: 58px; height: 81px; }
-body.phone .pcard .pc-corner b { font-size: 21px; }
-body.phone .pcard .pc-corner span { font-size: 17px; }
-body.phone .pcard .pc-mid { font-size: 32px; }
+body.phone .pcard { width: 60px; height: 84px; }
 body.phone .pcard.face .pc-mid { font-size: 28px; }
 .pisti-info { white-space: nowrap; flex-wrap: nowrap; display: flex; align-items: center; gap: 4px; font-weight: 700; }
+.pisti-hand .pcard.thrown { transform: translateY(-120px) scale(.7) rotate(8deg); opacity: 0; transition: transform .25s ease-in, opacity .25s; }
