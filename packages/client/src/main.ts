@@ -258,7 +258,14 @@ function voiceOfSeat(seat: number | null | undefined): string | undefined {
 function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): boolean {
   const v = voiceOfSeat(seat);
   if (!hasLine(v, line)) return false;
-  playVoice(voiceUrl(v!, line), gain * (seat === you.seat ? 1 : 0.85));
+  // in den Einstellungen leiser/aus stellbar (aus = die normalen Töne wie vorher)
+  const cv = vol('volChar');
+  if (cv <= 0) return false;
+  try {
+    const a = new Audio(voiceUrl(v!, line));
+    a.volume = Math.max(0, Math.min(1, cv * gain * (seat === you.seat ? 1 : 0.85)));
+    void a.play().catch(() => {});
+  } catch {}
   return true;
 }
 on('order', (m) => {
@@ -836,6 +843,7 @@ function openSettings() {
       slider('volTv', t('volumeTv')),
       slider('volMusic', t('volumeMusic')),
       slider('volNpc', t('volumeNpc')),
+      slider('volChar', t('volumeChar')),
       check('smoke', t('smoke')),
       // Touch: Knöpfe rechts selbst auswählen
       document.body.classList.contains('touch')

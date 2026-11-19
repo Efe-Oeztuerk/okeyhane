@@ -9,6 +9,8 @@ export interface Settings {
   volTv: number;
   volMusic: number;
   volNpc: number;
+  /** Stimmen der Spielfiguren (Pişti!, Okey!, Bestellungen) – 0 = aus */
+  volChar: number;
   smoke: boolean;
   quality: 'low' | 'high';
   timeOfDay: 'auto' | 'day' | 'evening' | 'night';
@@ -150,6 +152,7 @@ const defaults: Settings = {
   volTv: 60,
   volMusic: 50,
   volNpc: 30,
+  volChar: 80,
   smoke: true,
   quality: 'high',
   timeOfDay: 'auto',
@@ -240,5 +243,5 @@ export function saveProfile(p: Profile) {
   localStorage.setItem('profile', JSON.stringify(p));
 }
 
-export const vol = (k: 'volSfx' | 'volVoice' | 'volTv' | 'volMusic' | 'volNpc') =>
+export const vol = (k: 'volSfx' | 'volVoice' | 'volTv' | 'volMusic' | 'volNpc' | 'volChar') =>
   (settings[k] / 100) * (settings.volMaster / 100);
