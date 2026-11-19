@@ -60,13 +60,35 @@ export class Voice {
   }
 
   async enableMic(on: boolean) {
+    // iPhone: mit Audio-Session „playback“ verweigert Safari das Mikrofon → beim Sprechen „play-and-record“
+    try {
+      const as = (navigator as any).audioSession;
+      if (as) as.type = on ? 'play-and-record' : 'playback';
+    } catch {}
     if (on && !this.stream) {
       try {
+        // direkt im Tipp aufrufen → der Browser zeigt seine Erlaubnis-Abfrage
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
         this.meter(this.stream);
-      } catch {
+      } catch (e: any) {
         this.micOn = false;
-        throw new Error('Kein Mikrofonzugriff – bitte im Browser erlauben');
+        try {
+          const as = (navigator as any).audioSession;
+          if (as) as.type = 'playback';
+        } catch {}
+        const de = (localStorage.getItem('lang') ?? 'tr') === 'de';
+        const ios = /iPhone|iPad|iPod/.test(navigator.userAgent);
+        if (e?.name === 'NotAllowedError')
+          throw new Error(
+            ios
+              ? de
+                ? 'Mikro gesperrt: in Safari auf „aA“ (bzw. ☰) › Website-Einstellungen › Mikrofon › Erlauben, dann neu laden'
+                : 'Mikrofon engelli: Safari’de „aA“ (☰) › Web sitesi ayarları › Mikrofon › İzin ver, sonra yenile'
+              : de
+                ? 'Mikro gesperrt: beim Schloss-Symbol in der Adressleiste Mikrofon erlauben, dann neu laden'
+                : 'Mikrofon engelli: adres çubuğundaki kilit simgesinden izin ver, sonra yenile',
+          );
+        throw new Error(de ? 'Kein Mikrofon gefunden' : 'Mikrofon bulunamadı');
       }
     }
     this.micOn = on;

@@ -502,7 +502,7 @@ function setupTouch(world: World, api: ControlApi) {
     root.classList.toggle('seated', world.seated !== null);
     lookBtn.classList.toggle('on', !world.focus && world.freeLook);
     allBtns.mic.classList.toggle('on', api.micOn());
-    allBtns.mic.textContent = api.micOn() ? '🎙️' : '🔇';
+    allBtns.mic.classList.toggle('muted', !api.micOn());
     for (const [k, b] of Object.entries(allBtns)) b.classList.toggle('off', !settings.touchBtns.includes(k));
     root.classList.toggle('started', !!api.started());
     sitBtn.classList.toggle('hidden', !on || !world.chairAhead());

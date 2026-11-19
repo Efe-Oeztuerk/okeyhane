@@ -633,3 +633,8 @@ body.phone .dummy-box .pcard { width: 52px; height: 73px; }
 .hud-left:not(.compact) .fold { position: absolute; }
 body.touch .hud-left .fold::before { content: ''; position: absolute; top: -10px; bottom: -10px; left: -34px; right: -8px; }
 body.touch .hud-left:not(.compact) .fold::before { left: -90px; bottom: -14px; }
+/* Mikro-Knopf: immer das Mikro-Symbol; aus = durchgestrichen, an = grün leuchtend */
+.tbtn.mic { position: relative; }
+.tbtn.mic.muted { opacity: .85; }
+.tbtn.mic.muted::after { content: ''; position: absolute; left: 22%; right: 22%; top: 50%; height: 4px; margin-top: -2px; background: #e0413a; border-radius: 2px; transform: rotate(-45deg); box-shadow: 0 0 0 2px rgba(0,0,0,.35); }
+.tbtn.mic.on { box-shadow: 0 0 0 3px #4cd07a, 0 0 14px rgba(76,208,122,.6); }
