@@ -2687,7 +2687,6 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     bury: ['4 Karten weglegen (gömmek)', '4 kart göm'],
     play: ['🂠 Du bist dran', '🂠 Sıra sende'],
   };
-  if (forDummy) phaseText.play = ['🂠 Leg für deinen Partner', '🂠 Eşin için at'];
   const turnText = over
     ? v.gameOver
       ? t('gameOver')
