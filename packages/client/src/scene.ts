@@ -1574,6 +1574,13 @@ export class World {
     }
   }
 
+  /** Bildschirmposition der Tischmitte (etwas über dem Tuch) */
+  screenOfTableCenter(): { x: number; y: number } | null {
+    const p = new THREE.Vector3(0, TABLE_Y + 0.12, 0).add(this.tableRoot.position).project(this.camera);
+    if (p.z > 1 || p.z < -1) return null;
+    const r = this.renderer.domElement.getBoundingClientRect();
+    return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+  }
   /** Bildschirmposition über dem Kopf eines Platzes (null = hinter mir / ich selbst) */
   screenOfSeat(seat: number): { x: number; y: number } | null {
     const local = seatPos(seat).multiplyScalar(1.15);

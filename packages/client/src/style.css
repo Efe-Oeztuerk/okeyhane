@@ -609,3 +609,8 @@ body.phone .batak-hand .pcard { margin-left: -26px; }
 .bk-koz { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; padding: 1px 10px; border-radius: 10px; background: #f6ecd6; color: #2a1a0e; font-weight: 900; }
 .bk-koz .suit { font-size: 22px; line-height: 1; }
 .bk-koz .suit.black { color: #1d1209; }
+.bk-trick { display: inline-flex; gap: 6px; margin-left: 10px; vertical-align: middle; }
+.bk-tc { display: inline-flex; flex-direction: column; align-items: center; }
+.bk-tc .pcard { width: 34px; height: 48px; border-radius: 4px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
+.bk-tn { font-size: 10px; opacity: .8; line-height: 1.1; max-width: 46px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.phone .bk-tc .pcard { width: 28px; height: 40px; }

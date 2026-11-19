@@ -2581,7 +2581,9 @@ function batakName(v: any, seatOrTeam: number, short = false) {
 }
 /** Sprechblase über einem Spieler (Gebot / Pas) */
 function batakBubble(seat: number, text: string, kind: 'pas' | 'bid' | 'win') {
-  const pos = seat === you.seat ? null : world.screenOfSeat(seat);
+  // immer an derselben Stelle: Mitte vom Tisch (die vorige Blase verschwindet sofort)
+  document.querySelectorAll('.bk-bubble').forEach((x) => x.remove());
+  const pos = world.screenOfTableCenter();
   const el = h('div', { class: 'bk-bubble ' + kind }, h('div', { class: 'bk-who' }, nameOf(seat) ?? ''), h('div', { class: 'bk-what' }, text));
   if (pos) {
     el.style.left = pos.x + 'px';
@@ -2667,6 +2669,16 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     you.seat !== null && v.phase === 'play' ? h('span', { class: 'muted' }, ` · ${de ? 'Stiche' : 'El'} ${v.team ? v.tricks[you.seat] + v.tricks[(you.seat + 2) % 4] : v.tricks[you.seat]}`) : null,
     h('span', { class: 'muted ok-meta' }, v.rules.handLimit ? ` · ${de ? 'Hand' : 'El'} ${v.history.length + (v.phase === 'handOver' ? 0 : 1)}/${v.rules.handLimit}` : ` · ${de ? 'bis' : 'hedef'} ${v.rules.target}`),
   );
+  // aktueller Stich klein oben (falls man es auf dem Tisch schlecht erkennt)
+  if (v.phase === 'play' && (v.trick as any[]).length) {
+    info.append(
+      h(
+        'span',
+        { class: 'bk-trick' },
+        (v.trick as { seat: number; card: PCard }[]).map((tc) => h('span', { class: 'bk-tc' }, cardElement(tc.card), h('span', { class: 'bk-tn' }, (nameOf(tc.seat) ?? '?').split(' ')[0]))),
+      ),
+    );
+  }
   if (v.team) {
     const mt = you.seat !== null ? you.seat % 2 : -1;
     top.append(scoreBox(batakName(v, 0, true), v.scores[0], mt === 0), h('div', { class: 'turn' + (isMe && !over ? ' me' : '') }, turnText, timer), info, scoreBox(batakName(v, 1, true), v.scores[1], mt === 1));
