@@ -697,7 +697,7 @@ function handle(c: Client, m: Msg) {
           const maxB = r.batakMode === 'gommeli' ? 16 : 13;
           r.batakMinBid = Math.max(1, Math.min(maxB, Math.round(Number(r.batakMinBid) || 5)));
           r.batakOverLimit = Math.max(0, Math.min(13, Math.round(Number(r.batakOverLimit) || 0)));
-          r.batakMustTrump = !!r.batakMustTrump;
+          r.batakMustTrump = true;
           r.batakTrumpBreak = r.batakTrumpBreak !== false;
           r.batakZeroBatar = r.batakZeroBatar !== false;
           if (r.mode === 'batak' && r.batakMode === 'gommeli') t.seats[3].bot = null;

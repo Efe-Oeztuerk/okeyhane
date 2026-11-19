@@ -1886,16 +1886,16 @@ function renderLobby() {
             ? [
                 'Ass ist die höchste Karte, dann K, D, B, 10 … 2.',
                 'Farbe bedienen ist Pflicht – und wenn du kannst, musst du höher gehen.',
-                'Hast du die Farbe nicht, darfst du Koz (Trumpf) spielen; liegt schon Koz, musst du überstechen, wenn du Koz spielst.',
-                'Ihale: Jeder sagt, wie viele Stiche er macht (mind. das Mindestgebot) oder passt. Wer am meisten bietet, wählt den Koz und spielt aus.',
+                'Hast du die Farbe nicht, musst du Koz (Trumpf) spielen – liegt schon Koz, musst du überstechen, wenn du kannst. Nur ohne Koz darfst du eine andere Farbe abwerfen.',
+                'Ihale: Reihum sagt jeder, wie viele Stiche er macht (mind. das Mindestgebot), oder „Pas“. Wer am meisten bietet, wählt den Koz und spielt aus. Passen alle, bekommt der, der angefangen hat, die Ihale mit dem Mindestgebot.',
                 'Schafft er sein Gebot: + Stiche. Sonst: minus Gebot (batık). Wer sonst keinen Stich macht, ist auch batık (einstellbar).',
                 'Eşli: 2 gegen 2, die Karten vom Partner des Bieters liegen offen. Gömmeli: zu dritt, der Bieter nimmt 4 verdeckte Karten und legt 4 weg.',
               ]
             : [
                 'En büyük kart As, sonra K, Q, J, 10 … 2.',
                 'Yerdeki renge uymak zorunlu – ve varsa daha yüksek kart atmak zorunlu.',
-                'Renk yoksa koz atabilirsin; yerde koz varsa koz atarken yükseltmek zorunlu.',
-                'İhale: Herkes kaç el alacağını söyler (en az minimum) ya da pas der. En yüksek ihaleyi alan kozu seçer ve ilk eli açar.',
+                'Renk yoksa koz atmak zorunlu – yerde koz varsa yükseltmek zorunlu. Koz da yoksa başka renk atılır.',
+                'İhale: Sırayla herkes kaç el alacağını söyler (en az minimum) ya da pas der. En yüksek ihaleyi alan kozu seçer ve ilk eli açar. Herkes pas derse ihale, ilk söyleyene minimumdan kalır.',
                 'Tutturursa: aldığı el kadar artı. Tutturamazsa: ihale kadar eksi (batar). Hiç el alamayan da batar (ayarlanır).',
                 'Eşli: 2’ye 2, ihaleyi alanın eşinin kartları açılır. Gömmeli: 3 kişi, ihaleyi alan 4 kapalı kartı alır ve 4 kart gömer.',
               ]
@@ -1925,7 +1925,6 @@ function renderLobby() {
       num('batakMinBid', de ? 'Mindestgebot' : 'En az ihale', 1, r.batakMode === 'gommeli' ? 16 : 13),
       num('batakOverLimit', de ? 'Zu viel = batık ab +Stichen (0 = aus)' : 'Fazla alırsa batar: +el (0 = kapalı)', 0, 13),
       chk('batakZeroBatar', de ? 'Kein Stich = batık' : 'Hiç el alamayan batar'),
-      chk('batakMustTrump', de ? 'Koz-Pflicht (Farbe fehlt → Koz)' : 'Koz zorunlu (renk yoksa)'),
       chk('batakTrumpBreak', de ? 'Koz erst ausspielen, wenn gefallen' : 'Koz kırılmadan koz açılmaz'),
       h('label', {}, t('timer'), h('input', { type: 'number', min: 0, max: 300, value: r.turnTimerSec ?? 0, disabled: dis, onchange: (e: Event) => set({ turnTimerSec: Number((e.target as HTMLInputElement).value) || null }) })),
       chk('allowBots', t('bots')),

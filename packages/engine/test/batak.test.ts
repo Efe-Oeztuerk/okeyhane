@@ -18,10 +18,11 @@ describe('Batak', () => {
     for (const s of [0, 1, 2, 3]) expect(g.hands[s].length).toBe(13);
     expect(g.phase).toBe('bid');
   });
-  it('alle passen → Geber spielt mit Mindestgebot', () => {
+  it('alle passen → wer angefangen hat, spielt mit Mindestgebot', () => {
     const g = new BatakGame({ minBid: 5 }, 7);
+    const opener = g.current;
     for (let i = 0; i < 4; i++) g.bid(g.current, null);
-    expect(g.contract).toEqual({ seat: g.dealer, bid: 5 });
+    expect(g.contract).toEqual({ seat: opener, bid: 5 });
     expect(g.phase).toBe('trump');
   });
   it('Farbe bedienen und höher gehen ist Pflicht', () => {
@@ -35,6 +36,25 @@ describe('Batak', () => {
     const legal = g.legal(s);
     const follow = g.hands[s].filter((c) => c.suit === lead.suit);
     if (follow.length) expect(legal.every((c) => c.suit === lead.suit)).toBe(true);
+  });
+  it('Farbe fehlt + Koz vorhanden → nur Koz erlaubt', () => {
+    for (let seed = 1; seed < 40; seed++) {
+      const g = new BatakGame({}, seed);
+      g.bid(g.current, 5);
+      while (g.phase === 'bid') g.bid(g.current, null);
+      g.chooseTrump(g.current, 'H');
+      let guard = 0;
+      while (g.phase === 'play' && guard++ < 60) {
+        const s = g.current;
+        if (g.trick.length) {
+          const led = g.trick[0].card.suit;
+          const has = g.hands[s].some((c) => c.suit === led);
+          const trumps = g.hands[s].some((c) => c.suit === 'H');
+          if (!has && trumps) expect(g.legal(s).every((c) => c.suit === 'H')).toBe(true);
+        }
+        g.play(s, g.legal(s)[0].id);
+      }
+    }
   });
   it('spielt komplette Spiele mit Bots (alle Varianten)', () => {
     for (const mode of ['ihaleli', 'esli', 'gommeli'] as const) {

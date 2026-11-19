@@ -65,7 +65,7 @@ export function defaultRules(mode: Mode): TableRules {
     batakMode: 'ihaleli',
     batakTarget: 51,
     batakMinBid: 5,
-    batakMustTrump: false,
+    batakMustTrump: true,
     batakTrumpBreak: true,
     batakOverLimit: 0,
     batakZeroBatar: true,

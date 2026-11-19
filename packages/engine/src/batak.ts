@@ -14,7 +14,7 @@ export interface BatakRules {
   target: number;
   /** kleinstes Gebot (İhaleli üblich 5, Eşli 8, Gömmeli 4) */
   minBid: number;
-  /** wer die Farbe nicht hat, muss Koz spielen (sonst freiwillig) */
+  /** (immer an) wer die Farbe nicht hat, muss Koz spielen */
   mustTrump: boolean;
   /** Koz darf erst ausgespielt werden, wenn schon einmal Koz gefallen ist */
   trumpBreak: boolean;
@@ -24,7 +24,7 @@ export interface BatakRules {
   zeroBatar: boolean;
 }
 
-export const DEFAULT_BATAK: BatakRules = { mode: 'ihaleli', target: 51, minBid: 5, mustTrump: false, trumpBreak: true, overLimit: 0, zeroBatar: true };
+export const DEFAULT_BATAK: BatakRules = { mode: 'ihaleli', target: 51, minBid: 5, mustTrump: true, trumpBreak: true, overLimit: 0, zeroBatar: true };
 
 /** Wert für den Vergleich: Ass am höchsten */
 export const rankValue = (r: number) => (r === 1 ? 14 : r);
@@ -175,9 +175,10 @@ export class BatakGame {
     const open = this.seats.filter((s) => this.bids[s] !== null);
     const allSpoken = this.seats.every((s) => this.bids[s] !== undefined);
     if (passed.length === this.seats.length) {
-      // alle gepasst → der Geber muss mit dem Mindestgebot spielen
-      this.bids[this.dealer] = this.rules.minBid;
-      return this.setContract(this.dealer, this.rules.minBid);
+      // alle gepasst → wer die Runde angefangen hat, bekommt die Ihale mit dem Mindestgebot
+      const opener = this.next(this.dealer);
+      this.bids[opener] = this.rules.minBid;
+      return this.setContract(opener, this.rules.minBid);
     }
     if (open.length === 1 && allSpoken && typeof this.bids[open[0]] === 'number') return this.setContract(open[0], this.bids[open[0]] as number);
     if (value === this.maxBid) return this.setContract(seat, value);
@@ -251,10 +252,8 @@ export class BatakGame {
       // liegt schon Koz: wer Koz spielt, muss überstechen, wenn möglich
       const highT = this.trick.filter((t) => t.card.suit === trump).map((t) => rankValue(t.card.rank));
       const over = highT.length ? trumps.filter((c) => rankValue(c.rank) > Math.max(...highT)) : trumps;
-      const trumpChoices = over.length ? over : trumps;
-      if (this.rules.mustTrump) return over.length || !highT.length ? trumpChoices : hand;
-      // freiwillig: Koz (nach Überstech-Regel) oder irgendeine andere Karte
-      return [...trumpChoices, ...hand.filter((c) => c.suit !== trump)];
+      // Farbe fehlt, Koz vorhanden → Koz ist Pflicht (überstechen, wenn möglich)
+      return over.length ? over : trumps;
     }
     return hand;
   }
