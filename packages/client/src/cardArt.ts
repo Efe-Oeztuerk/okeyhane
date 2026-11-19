@@ -272,19 +272,20 @@ function sideMat(c: PCard | null) {
   const key = c ? `${c.suit}${c.rank}` : 'back';
   let m = matCache.get(key);
   if (!m) {
-    const map = cardTexture(c);
-    const mat = new THREE.MeshStandardMaterial({ map, alphaTest: 0.5, transparent: false, roughness: 0.5, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.32 });
-    m = mat;
+    {
+      // Vorder- und Rückseite: nur das echte Kartenbild – keine Ersatz-Zeichnung darunter (sonst zwei Designs ineinander)
+      const mat = new THREE.MeshStandardMaterial({ color: '#f4f1ea', alphaTest: 0.5, roughness: 0.5, emissive: '#ffffff', emissiveIntensity: 0.32 });
+      m = mat;
+      new THREE.TextureLoader().load(cardUrl(key), (t) => {
+        t.colorSpace = THREE.SRGBColorSpace;
+        t.anisotropy = 16;
+        mat.color.set('#ffffff');
+        mat.map = t;
+        mat.emissiveMap = t;
+        mat.needsUpdate = true;
+      });
+    }
     matCache.set(key, m);
-    // echte Kartengrafik (Sketchfab-Deck) als eigene, neue Textur nachladen und dann austauschen –
-    // die gezeichnete Karte ist nur der Ersatz bis dahin (nie dieselbe Textur wiederverwenden → keine Reste)
-    new THREE.TextureLoader().load(cardUrl(key), (t) => {
-      t.colorSpace = THREE.SRGBColorSpace;
-      t.anisotropy = 16;
-      mat.map = t;
-      mat.emissiveMap = t;
-      mat.needsUpdate = true;
-    });
   }
   return m;
 }
@@ -305,7 +306,7 @@ export function cardMesh(c: PCard | null, faceUp = true): THREE.Group {
 
 /** Pfad der Kartengrafik (Deck: „Playing Cards“ von DudleyLong, CC BY 4.0) */
 function cardUrl(key: string) {
-  return `/cards/${key}.webp`;
+  return `/cards/${key}.webp?v=3`;
 }
 
 /** HTML-Karte für die Hand (dieselbe Grafik wie auf dem Tisch) */
