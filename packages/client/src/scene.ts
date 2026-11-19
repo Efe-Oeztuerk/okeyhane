@@ -1811,7 +1811,17 @@ export class World {
   }
 
   /** Pişti-Tisch: Mitte (Stapel), Talon, gestochene Karten, Handkarten der anderen (Rückseiten) */
+  /** Pişti: höhere Renderauflösung, damit die Karten auf dem Handy scharf sind (Szene ist ohne Steine leicht) */
+  sharpCards(on: boolean) {
+    const pr = Math.min(devicePixelRatio, on ? (settings.quality === 'high' ? 2.5 : 1.75) : settings.quality === 'high' ? 2 : 1);
+    if (Math.abs(this.renderer.getPixelRatio() - pr) > 0.01) {
+      this.renderer.setPixelRatio(pr);
+      this.resize();
+    }
+  }
+
   setPisti(v: any | null, mySeat: number | null) {
+    this.sharpCards(!!v);
     this.visual = null;
     this.flyers = [];
     this.gameGroup.clear();

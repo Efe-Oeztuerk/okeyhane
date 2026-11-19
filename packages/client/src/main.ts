@@ -181,6 +181,7 @@ on('state', (m) => {
     renderAll();
     return;
   }
+  world.sharpCards(false);
   const okey: OkeyIdentity = m.okey;
   if (v.handNo !== lastHandNo || (prev && prev.view.phase === 'handOver' && v.phase !== 'handOver')) {
     if (prev && v.phase !== 'handOver' && prev.view.indicator?.id !== v.indicator?.id) istaka.clear();
@@ -2172,6 +2173,15 @@ function pistiFeedback(prev: any | null, v: any) {
   }
 }
 
+/** welche Austeilung gerade läuft (4 Spieler: 3×, 2 Spieler: 6×) */
+function pistiDealLabel(v: any, de: boolean) {
+  const n = (v.seats as number[]).length;
+  const per = n * 4;
+  const total = Math.round(48 / per);
+  const cur = Math.min(total, Math.max(1, Math.round((48 - v.stockCount) / per)));
+  return `${de ? 'Austeilung' : 'Dağıtım'} ${cur}/${total}`;
+}
+
 function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLElement, result: HTMLElement) {
   const de = getLang() === 'de';
   const myTeam = you.seat !== null ? v.teamOfSeat[you.seat] : -1;
@@ -2205,8 +2215,9 @@ function renderPisti(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
       'div',
       { class: 'okeyinfo pisti-info' },
       h('span', {}, (de ? 'Mitte ' : 'Yerde ') + v.pileCount),
+      v.pile?.length ? h('span', { class: 'pisti-top' }, cardElement(v.pile[v.pile.length - 1])) : v.pileCount ? h('span', { class: 'pisti-top' }, cardElement(null)) : null,
       h('span', { class: 'muted' }, '·'),
-      h('span', {}, (de ? 'Talon ' : 'Deste ') + v.stockCount),
+      h('span', {}, pistiDealLabel(v, de)),
       h('span', { class: 'muted ok-meta' }, `· ${de ? 'bis' : 'hedef'} ${v.target}`),
     ),
     h('div', { class: 'score' + (myTeam === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, pistiTeamName(v, 1)), String(v.scores[1])),

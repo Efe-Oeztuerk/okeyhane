@@ -562,3 +562,5 @@ body.phone .pcard { width: 60px; height: 84px; }
 body.phone .pcard.face .pc-mid { font-size: 28px; }
 .pisti-info { white-space: nowrap; flex-wrap: nowrap; display: flex; align-items: center; gap: 4px; font-weight: 700; }
 .pisti-hand .pcard.thrown { transform: translateY(-120px) scale(.7) rotate(8deg); opacity: 0; transition: transform .25s ease-in, opacity .25s; }
+.okeyinfo .pisti-top .pcard { width: 30px; height: 42px; border-radius: 4px; filter: drop-shadow(0 2px 3px rgba(0,0,0,.45)); }
+body.phone .okeyinfo .pisti-top .pcard { width: 30px; height: 42px; }

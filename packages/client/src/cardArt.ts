@@ -263,10 +263,10 @@ export function cardTexture(c: PCard | null): THREE.CanvasTexture {
     const t = tex;
     const img = new Image();
     img.onload = () => {
-      const cv = t.image as HTMLCanvasElement;
-      const g = cv.getContext('2d')!;
-      g.clearRect(0, 0, cv.width, cv.height);
-      g.drawImage(img, 0, 0, cv.width, cv.height);
+      // Bild direkt als Textur (kein zweites Umrechnen über die Zeichenfläche → schärfer)
+      t.image = img;
+      t.generateMipmaps = true;
+      t.minFilter = THREE.LinearMipmapLinearFilter;
       t.needsUpdate = true;
     };
     img.src = cardUrl(key);
