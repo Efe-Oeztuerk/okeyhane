@@ -1921,7 +1921,18 @@ function renderLobby() {
           h('option', { value: 'gommeli', selected: r.batakMode === 'gommeli' }, de ? 'Gömmeli (zu dritt)' : 'Gömmeli (3 kişi)'),
         ),
       ),
-      num('batakTarget', de ? 'Spiel bis (Punkte)' : 'Oyun sonu (puan)', 5, 1000),
+      h(
+        'label',
+        {},
+        de ? 'Spielende' : 'Oyun sonu',
+        h(
+          'select',
+          { disabled: dis, onchange: (e: Event) => set({ batakHands: (e.target as HTMLSelectElement).value === 'hands' ? r.batakHands || 10 : 0 }) },
+          h('option', { value: 'points', selected: !r.batakHands }, de ? 'nach Punkten' : 'puana göre'),
+          h('option', { value: 'hands', selected: !!r.batakHands }, de ? 'nach Anzahl Hände' : 'el sayısına göre'),
+        ),
+      ),
+      r.batakHands ? num('batakHands', de ? 'Anzahl Hände' : 'El sayısı', 1, 50) : num('batakTarget', de ? 'Spiel bis (Punkte)' : 'Oyun sonu (puan)', 5, 1000),
       num('batakMinBid', de ? 'Mindestgebot' : 'En az ihale', 1, r.batakMode === 'gommeli' ? 16 : 13),
       num('batakOverLimit', de ? 'Zu viel = batık ab +Stichen (0 = aus)' : 'Fazla alırsa batar: +el (0 = kapalı)', 0, 13),
       chk('batakZeroBatar', de ? 'Kein Stich = batık' : 'Hiç el alamayan batar'),
@@ -2627,7 +2638,7 @@ function renderBatak(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     v.contract ? h('span', {}, `İhale: ${batakName(v, v.contract.seat, true)} ${v.contract.bid}`) : h('span', {}, de ? 'Ihale läuft' : 'İhale'),
     v.trump ? h('span', {}, ' · Koz ', suitHtml(v.trump)) : null,
     you.seat !== null && v.phase === 'play' ? h('span', { class: 'muted' }, ` · ${de ? 'Stiche' : 'El'} ${v.team ? v.tricks[you.seat] + v.tricks[(you.seat + 2) % 4] : v.tricks[you.seat]}`) : null,
-    h('span', { class: 'muted ok-meta' }, ` · ${de ? 'bis' : 'hedef'} ${v.rules.target}`),
+    h('span', { class: 'muted ok-meta' }, v.rules.handLimit ? ` · ${de ? 'Hand' : 'El'} ${v.history.length + (v.phase === 'handOver' ? 0 : 1)}/${v.rules.handLimit}` : ` · ${de ? 'bis' : 'hedef'} ${v.rules.target}`),
   );
   if (v.team) {
     const mt = you.seat !== null ? you.seat % 2 : -1;
@@ -2767,7 +2778,7 @@ function renderBatakSheet(el: HTMLElement, v: any) {
   });
   tbl.append(h('tr', { class: 'total' }, h('td', {}, 'Σ'), ...cols.map((c) => h('td', {}, String(v.scores[c])))));
   seenRows = v.history.length;
-  el.append(h('div', { class: 'tear' }, `— ✂ — Batak · ${v.rules.target}`), tbl);
+  el.append(h('div', { class: 'tear' }, `— ✂ — Batak · ${v.rules.handLimit ? v.rules.handLimit + (getLang() === 'de' ? ' Hände' : ' el') : v.rules.target}`), tbl);
 }
 
 function renderPistiSheet(el: HTMLElement, v: any) {

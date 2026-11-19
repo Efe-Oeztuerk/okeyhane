@@ -65,6 +65,12 @@ describe('Batak', () => {
       expect(g.winner).not.toBeNull();
     }
   });
+  it('Spielende nach Anzahl Hände', () => {
+    const g = new BatakGame({ handLimit: 3, target: 9999 }, 21);
+    playOut(g);
+    expect(g.gameOver).toBe(true);
+    expect(g.history.length).toBeGreaterThanOrEqual(3);
+  });
   it('Stichzahl pro Hand stimmt', () => {
     const g = new BatakGame({ mode: 'gommeli', minBid: 4 }, 9);
     while (g.phase !== 'handOver') batakBotTurn(g, g.current, () => 0.5);

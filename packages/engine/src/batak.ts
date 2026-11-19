@@ -12,6 +12,8 @@ export interface BatakRules {
   mode: BatakMode;
   /** Spiel bis zu diesen Punkten */
   target: number;
+  /** > 0: Spiel endet nach so vielen Händen (statt nach Punkten) */
+  handLimit: number;
   /** kleinstes Gebot (İhaleli üblich 5, Eşli 8, Gömmeli 4) */
   minBid: number;
   /** (immer an) wer die Farbe nicht hat, muss Koz spielen */
@@ -24,7 +26,7 @@ export interface BatakRules {
   zeroBatar: boolean;
 }
 
-export const DEFAULT_BATAK: BatakRules = { mode: 'ihaleli', target: 51, minBid: 5, mustTrump: true, trumpBreak: true, overLimit: 0, zeroBatar: true };
+export const DEFAULT_BATAK: BatakRules = { mode: 'ihaleli', target: 51, handLimit: 0, minBid: 5, mustTrump: true, trumpBreak: true, overLimit: 0, zeroBatar: true };
 
 /** Wert für den Vergleich: Ass am höchsten */
 export const rankValue = (r: number) => (r === 1 ? 14 : r);
@@ -337,7 +339,9 @@ export class BatakGame {
     // Spielende: jemand hat das Ziel erreicht und es gibt einen eindeutigen Besten
     const vals = this.team ? [this.scores[0], this.scores[1]] : this.seats.map((s) => this.scores[s]);
     const max = Math.max(...vals);
-    if (max >= this.rules.target && vals.filter((v) => v === max).length === 1) {
+    // nach Punkten (Ziel erreicht) oder nach Anzahl Hände – bei Gleichstand wird weitergespielt
+    const done = this.rules.handLimit > 0 ? this.history.length >= this.rules.handLimit : max >= this.rules.target;
+    if (done && vals.filter((v) => v === max).length === 1) {
       this.gameOver = true;
       this.winner = this.team ? vals.indexOf(max) : this.seats[vals.indexOf(max)];
     }

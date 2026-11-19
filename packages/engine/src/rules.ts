@@ -36,6 +36,8 @@ export interface TableRules {
   /** Batak-Variante */
   batakMode: 'ihaleli' | 'esli' | 'gommeli';
   batakTarget: number;
+  /** 0 = nach Punkten, sonst Anzahl Hände */
+  batakHands: number;
   batakMinBid: number;
   batakMustTrump: boolean;
   batakTrumpBreak: boolean;
@@ -64,6 +66,7 @@ export function defaultRules(mode: Mode): TableRules {
     pistiBluff: false,
     batakMode: 'ihaleli',
     batakTarget: 51,
+    batakHands: 0,
     batakMinBid: 5,
     batakMustTrump: true,
     batakTrumpBreak: true,
