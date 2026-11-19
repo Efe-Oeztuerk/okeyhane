@@ -259,6 +259,17 @@ export function cardTexture(c: PCard | null): THREE.CanvasTexture {
     tex.colorSpace = THREE.SRGBColorSpace;
     tex.anisotropy = 16;
     texCache.set(key, tex);
+    // echte Kartengrafik (Sketchfab-Deck) nachladen, die Zeichnung bleibt bis dahin als Ersatz
+    const t = tex;
+    const img = new Image();
+    img.onload = () => {
+      const cv = t.image as HTMLCanvasElement;
+      const g = cv.getContext('2d')!;
+      g.clearRect(0, 0, cv.width, cv.height);
+      g.drawImage(img, 0, 0, cv.width, cv.height);
+      t.needsUpdate = true;
+    };
+    img.src = cardUrl(key);
   }
   return tex;
 }
@@ -293,14 +304,19 @@ export function cardMesh(c: PCard | null, faceUp = true): THREE.Group {
   return g;
 }
 
-/** HTML-Karte für die Hand (dieselbe Zeichnung) */
-const urlCache = new Map<string, string>();
+/** Pfad der Kartengrafik (Deck: „Playing Cards“ von DudleyLong, CC BY 4.0) */
+function cardUrl(key: string) {
+  return `/cards/${key}.webp`;
+}
+
+/** HTML-Karte für die Hand (dieselbe Grafik wie auf dem Tisch) */
 export function cardElement(c: PCard | null): HTMLElement {
   const key = c ? `${c.suit}${c.rank}` : 'back';
-  let url = urlCache.get(key);
-  if (!url) {
-    url = cardCanvas(c).toDataURL('image/png');
-    urlCache.set(key, url);
-  }
-  return h('div', { class: 'pcard' + (c ? '' : ' back') }, h('img', { src: url, alt: c ? rankLabel(c.rank) + SUIT_SYM[c.suit] : '', draggable: 'false' }));
+  const img = h('img', { src: cardUrl(key), alt: c ? rankLabel(c.rank) + SUIT_SYM[c.suit] : '', draggable: 'false' }) as HTMLImageElement;
+  // Ersatz, falls die Datei nicht lädt: selbst gezeichnete Karte
+  img.onerror = () => {
+    img.onerror = null;
+    img.src = cardCanvas(c).toDataURL('image/png');
+  };
+  return h('div', { class: 'pcard' + (c ? '' : ' back') }, img);
 }
