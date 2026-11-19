@@ -16,7 +16,11 @@ export interface Settings {
   smoke: boolean;
   quality: 'low' | 'high';
   timeOfDay: 'auto' | 'day' | 'evening' | 'night';
-  tvMode: 'table' | 'off';
+  tvMode: 'table' | 'off' | 'own';
+  /** eigenes Fernsehprogramm (nur man selbst sieht es) */
+  ownTvUrl: string;
+  /** als Zuschauer Istaka/Karten ausblenden (nur im Raum sein) */
+  spectHide: boolean;
   musicMode: 'table' | 'off' | 'own';
   ownMusicUrl: string;
   pushToTalk: boolean;
@@ -161,6 +165,8 @@ const defaults: Settings = {
   quality: 'high',
   timeOfDay: 'auto',
   tvMode: 'table',
+  ownTvUrl: '',
+  spectHide: false,
   musicMode: 'table',
   ownMusicUrl: '',
   pushToTalk: false,

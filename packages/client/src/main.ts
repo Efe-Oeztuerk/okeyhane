@@ -2,7 +2,7 @@
 
 import './style.css';
 import type { Tile, OkeyIdentity } from '@okeyhane/engine';
-import type { MediaState, PlayerInfo } from '../../server/src/protocol.ts';
+import type { Avatar, MediaState, PlayerInfo } from '../../server/src/protocol.ts';
 import { connect, send, on } from './net.ts';
 import { h, toast } from './dom.ts';
 import { cardElement, preloadCards, SUIT_SYM, type PCard } from './cardArt.ts';
@@ -31,7 +31,7 @@ interface TableSummary {
   ownerId: string;
   isPublic: boolean;
   seats: (PlayerInfo | null)[];
-  spectators: { id: string; name: string; watching: number | null }[];
+  spectators: { id: string; name: string; watching: number | null; lounge?: string | null; wantSeat?: number | null; avatar?: Avatar }[];
   rules: any;
   started: boolean;
   tv: MediaState;
@@ -178,8 +178,8 @@ on('table', (m) => {
     seenRows = 0;
     lastHandNo = -1;
   }
-  if (prevStarted && !table!.started) {
-    // Spiel beendet → alle stehen auf
+  if (prevStarted && !table!.started && !world.lounge) {
+    // Spiel beendet → alle stehen auf (Zuschauer auf ihren Stühlen bleiben sitzen)
     world.sitAt(null);
     toast(getLang() === 'de' ? '🚶 Spiel beendet – ihr seid aufgestanden. Zum Weiterspielen wieder hinsetzen.' : '🚶 Oyun bitti – kalktınız. Tekrar oynamak için oturun.', '#2d5a3a');
   }
@@ -190,6 +190,9 @@ on('table', (m) => {
   }
   voice.syncMembers([...table!.seats.map((s) => s?.id ?? ''), ...table!.spectators.map((s) => s.id)]);
   world.keepWalkers([...table!.seats.map((s) => s?.id ?? ''), ...table!.spectators.map((s) => s.id)]);
+  world.setLounge(table!.spectators, myId);
+  // inzwischen Spieler → Zuschauer-Stuhl verlassen
+  if (you.seat !== null && world.lounge) world.sitLounge(null);
   applyMedia();
   renderAll();
 });
@@ -199,7 +202,7 @@ on('state', (m) => {
   const v = m.view;
   if (v.kind === 'batak') {
     preloadCards();
-    world.setBatak(v, you.seat);
+    world.setBatak(v, you.seat ?? you.watching);
     batakFeedback(prev?.view?.kind === 'batak' ? prev.view : null, v);
     const endedB = v.phase === 'handOver';
     const wasEndedB = prev?.view?.kind === 'batak' && prev.view.phase === 'handOver';
@@ -215,7 +218,7 @@ on('state', (m) => {
   }
   if (v.kind === 'pisti') {
     preloadCards();
-    world.setPisti(v, you.seat);
+    world.setPisti(v, you.seat ?? you.watching);
     pistiFeedback(prev?.view?.kind === 'pisti' ? prev.view : null, v);
     const endedP = v.phase === 'handOver' || v.phase === 'gameOver';
     const wasEndedP = prev && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
@@ -418,6 +421,15 @@ on('accuse', (m) => {
   toast(`${nameOf(m.by)} → ${nameOf(m.target)}: ${m.caught ? t('caught') : t('falseAccuse')}`, m.caught ? '#2d5a3a' : '#7a1a1a');
   world.emote(m.by, 'slam');
 });
+on('seatQueued', (m) => {
+  toast(getLang() === 'de' ? `🪑 Platz von ${nameOf(m.seat)} vorgemerkt – du setzt dich, sobald diese Runde fertig ist` : `🪑 ${nameOf(m.seat)} yeri ayrıldı – bu el bitince oturursun`, '#2d5a3a');
+  renderAll();
+});
+on('seated', (m) => {
+  world.sitAt(m.seat);
+  toast(getLang() === 'de' ? '🪑 Die Runde ist fertig – du spielst jetzt mit!' : '🪑 El bitti – artık sen de oynuyorsun!', '#2d5a3a');
+  renderAll();
+});
 on('tv', (m) => {
   if (table) table.tv = m.state;
   applyMedia();
@@ -526,20 +538,48 @@ function addLog(el: HTMLElement) {
 
 // ------------------------------------------------------------------ Medien
 
+/** eigenes Fernsehprogramm (nur für einen selbst, z. B. als Zuschauer) */
+const ownTv: MediaState = { source: null, playing: false, position: 0, at: Date.now(), volume: 80 };
+function ownTvSource(url: string): MediaState['source'] {
+  const id = parseYouTube(url);
+  if (id) return { kind: 'youtube', id };
+  const ch = parseTwitch(url);
+  if (ch) return { kind: 'twitch', channel: ch };
+  return null;
+}
+if (settings.ownTvUrl) ownTv.source = ownTvSource(settings.ownTvUrl);
+function ownTvDo(action: 'play' | 'pause' | 'seek' | 'volume' | 'stop', val = 0) {
+  const now = Date.now();
+  const cur = ownTv.playing ? ownTv.position + (now - ownTv.at) / 1000 : ownTv.position;
+  if (action === 'play') Object.assign(ownTv, { position: cur, playing: true });
+  else if (action === 'pause') Object.assign(ownTv, { position: cur, playing: false });
+  else if (action === 'seek') ownTv.position = Math.max(0, cur + val);
+  else if (action === 'volume') Object.assign(ownTv, { position: cur, volume: val });
+  else if (action === 'stop') {
+    Object.assign(ownTv, { source: null, playing: false, position: 0 });
+    settings.ownTvUrl = '';
+    settings.tvMode = 'table';
+    saveSettings();
+  }
+  ownTv.at = now;
+  applyMedia();
+}
+
 function applyMedia() {
   if (!table) {
     tv.stopAll();
     music.stopAll();
-    world.setTvPower(settings.tvMode === 'table');
+    world.setTvPower(settings.tvMode !== 'off');
     world.setTvVisible(false);
     spotify.close();
     bgm.setBusy(false);
     return;
   }
-  tv.enabled = settings.tvMode === 'table';
-  tv.apply(table.tv);
+  const tvState = settings.tvMode === 'own' ? ownTv : table.tv;
+  tv.enabled = settings.tvMode !== 'off';
+  tv.apply(tvState);
   world.setTvPower(tv.enabled);
-  world.setTvVisible(tv.enabled && !!table.tv.source);
+  world.setTvVisible(tv.enabled && !!tvState.source);
   music.enabled = settings.musicMode === 'table';
   music.apply(table.music);
   const spUri = parseSpotify(settings.ownMusicUrl);
@@ -550,7 +590,7 @@ function applyMedia() {
   else if (spotify.isOpen() && settings.musicMode !== 'own') spotify.pause();
   // Radio macht automatisch Platz, sobald andere Musik oder der Fernseher läuft
   const tableMusic = music.enabled && !!table.music.source && table.music.playing;
-  const tableTv = tv.enabled && !!table.tv.source && table.tv.playing;
+  const tableTv = tv.enabled && !!tvState.source && tvState.playing;
   bgm.setBusy(ownOn || tableMusic || tableTv || spotify.playing);
 }
 setInterval(() => {
@@ -1212,9 +1252,12 @@ function enterCafe() {
     const occ = table.seats[seat];
     if (you.seat === null) {
       // Zuschauer: Bot ablösen (laufendes Spiel) oder zuschauen
-      if (table.started && occ?.bot) send({ type: 'sit', seat });
-      else {
+      if (table.started && occ?.bot) {
+        if (myWantSeat() === seat) send({ type: 'cancelSeat' });
+        else send({ type: 'sit', seat });
+      } else {
         send({ type: 'watch', seat });
+        if (world.lounge) send({ type: 'lounge', spot: null });
         world.sitAt(null);
         watchAt(seat);
       }
@@ -1242,6 +1285,8 @@ function enterCafe() {
     });
     return true;
   };
+  world.onLounge = (k) => sitLounge(k);
+  world.onLoungeStand = () => sitLounge(null);
   world.onPile = () => act({ action: 'drawPile' });
   world.onSide = () => act({ action: 'drawDiscard' });
   world.onMeld = (index) => {
@@ -1274,6 +1319,117 @@ function enterCafe() {
     layoutTimer = window.setTimeout(() => you.seat !== null && st && send({ type: 'layout', slots }), 400);
   };
   renderAll();
+}
+
+// ------------------------------------------------------------------ Zuschauer
+
+const isSpectator = () => !!table && you.seat === null;
+const meSpect = () => table?.spectators.find((s) => s.id === myId);
+const myWantSeat = () => meSpect()?.wantSeat ?? null;
+/** Spiel-Anzeige (Istaka/Karten/Punkte) für Zuschauer ausgeblendet? */
+function spectHud(): boolean {
+  if (!isSpectator()) return true;
+  if (settings.spectHide) return false;
+  return !(world.lounge ?? '').startsWith('tv');
+}
+function sitLounge(k: string | null) {
+  if (!table || you.seat !== null) return;
+  if (k && table.spectators.some((s) => s.id !== myId && s.lounge === k)) {
+    toast(getLang() === 'de' ? 'Da sitzt schon jemand' : 'Orada biri oturuyor');
+    return;
+  }
+  send({ type: 'lounge', spot: k });
+  if (k) world.sitLounge(k);
+  else {
+    world.sitLounge(null);
+    world.sitAt(null);
+  }
+  renderAll();
+}
+function freeLounge(prefix: 'tv' | 'c'): string | null {
+  const keys = prefix === 'tv' ? ['tv0', 'tv1'] : ['c0', 'c1', 'c2', 'c3'];
+  if (world.lounge?.startsWith(prefix)) return world.lounge;
+  return keys.find((k) => !table!.spectators.some((s) => s.id !== myId && s.lounge === k)) ?? null;
+}
+/** Leiste für Zuschauer: Spiel verfolgen, Fernseher, Ecke, aufstehen, Steine ausblenden, mitspielen */
+function renderSpect() {
+  const el = slot('spect', 'spect-bar');
+  if (!isSpectator()) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.innerHTML = '';
+  const de = getLang() === 'de';
+  const following = world.seated !== null;
+  const lg = world.lounge;
+  const btn = (on: boolean, icon: string, label: string, title: string, fn: () => void) => h('button', { class: 'small ' + (on ? 'primary' : 'ghost'), title, onclick: fn }, icon, h('span', { class: 'lbl' }, ' ' + label));
+  const want = myWantSeat();
+  const g = st?.view;
+  const midHand = !!table!.started && !!g && g.phase !== 'handOver' && g.phase !== 'gameOver' && !g.gameOver;
+  appendAll(
+    el,
+    h('span', { class: 'muted spect-title' }, '👁 ' + (de ? 'Zuschauer' : 'İzleyici')),
+    table!.started
+      ? btn(following, '🎴', de ? 'Mitschauen' : 'Takip et', de ? 'Spiel verfolgen (am Platz eines Spielers)' : 'Oyunu takip et', () => {
+          if (lg) send({ type: 'lounge', spot: null });
+          const s = you.watching ?? 0;
+          send({ type: 'watch', seat: s });
+          watchAt(s);
+        })
+      : null,
+    btn(!!lg?.startsWith('tv'), '📺', de ? 'Fernseher' : 'Televizyon', de ? 'Vor den Fernseher setzen' : 'Televizyonun önüne otur', () => {
+      const k = freeLounge('tv');
+      if (!k) return toast(de ? 'Beide Stühle am Fernseher sind besetzt' : 'TV önündeki sandalyeler dolu');
+      sitLounge(k);
+    }),
+    btn(!!lg?.startsWith('c'), '🪑', de ? 'Ecke' : 'Köşe', de ? 'In die Ecke zwischen zwei Spieler setzen (nochmal = nächste Ecke)' : 'İki oyuncunun arasına otur (tekrar = sonraki köşe)', () => {
+      if (lg?.startsWith('c')) {
+        // nochmal = nächste Ecke
+        const keys = ['c0', 'c1', 'c2', 'c3'];
+        const start = keys.indexOf(lg);
+        for (let i = 1; i <= 4; i++) {
+          const k = keys[(start + i) % 4];
+          if (!table!.spectators.some((s) => s.id !== myId && s.lounge === k)) return sitLounge(k);
+        }
+        return;
+      }
+      const k = freeLounge('c');
+      if (!k) return toast(de ? 'Alle Ecken sind besetzt' : 'Tüm köşeler dolu');
+      sitLounge(k);
+    }),
+    following || lg ? btn(false, '🚶', de ? 'Aufstehen' : 'Kalk', de ? 'Aufstehen und herumlaufen' : 'Kalk ve dolaş', () => sitLounge(null)) : null,
+    table!.started
+      ? btn(settings.spectHide, '🙈', settings.spectHide ? (de ? 'Spiel einblenden' : 'Oyunu göster') : de ? 'Spiel ausblenden' : 'Oyunu gizle', settings.spectHide ? (de ? 'Steine/Karten wieder einblenden' : 'Taşları/kartları göster') : de ? 'Steine/Karten ausblenden – nur im Raum sein' : 'Taşları/kartları gizle – sadece odada ol', () => {
+          settings.spectHide = !settings.spectHide;
+          saveSettings();
+          renderAll();
+        })
+      : null,
+    want !== null
+      ? h(
+          'span',
+          { class: 'spect-want' },
+          (de ? `⏳ Nach der Runde: Platz von ${nameOf(want)}` : `⏳ El bitince: ${nameOf(want)} yeri`) + ' ',
+          h('button', { class: 'small ghost', title: de ? 'Abbrechen' : 'Vazgeç', onclick: () => send({ type: 'cancelSeat' }) }, '✕'),
+        )
+      : table!.started && table!.seats.some((p) => p?.bot)
+        ? h(
+            'button',
+            {
+              class: 'small',
+              title: de ? 'Einen Bot ablösen' : 'Bir botun yerine geç',
+              onclick: () => {
+                const bots = table!.seats.map((p, s) => (p?.bot ? s : -1)).filter((s) => s >= 0);
+                if (bots.length === 1) return send({ type: 'sit', seat: bots[0] });
+                popupMenu(de ? 'Welchen Platz übernehmen?' : 'Hangi yere geçeceksin?', bots.map((s) => ({ label: '🤖 ' + nameOf(s), fn: () => send({ type: 'sit', seat: s }) })));
+              },
+            },
+            '🎲',
+            h('span', { class: 'lbl' }, ' ' + (de ? (midHand ? 'Mitspielen (nach der Runde)' : 'Mitspielen') : midHand ? 'Oyna (el bitince)' : 'Oyna')),
+          )
+        : null,
+  );
 }
 
 function watchAt(seat: number) {
@@ -1365,6 +1521,7 @@ function renderAll() {
   renderGame();
   renderSheet();
   renderHint();
+  renderSpect();
 }
 
 function renderFocusBadge() {
@@ -2078,6 +2235,13 @@ function renderGame() {
   // Partner-Karten (Batak Eşli) nur, solange sie offen liegen
   if (!(playing && st.view.kind === 'batak' && st.view.open)) els.dummy?.remove();
   wrap.classList.toggle('hidden', !playing || (you.seat === null && you.watching === null));
+  if (playing && !spectHud()) {
+    // Zuschauer will nur im Raum sein: keine Istaka/Karten/Punkte
+    for (const e of [top, wrap, zones, result]) e.classList.add('hidden');
+    els.dummy?.remove();
+    document.querySelector('.bk-trick')?.classList.add('hidden');
+    return;
+  }
   if (!playing) {
     zones.classList.add('hidden');
     result.classList.add('hidden');
@@ -3029,8 +3193,10 @@ function openMedia() {
     );
   modal(
     h('h2', {}, '📺 ' + t('tv')),
-    h('label', { class: 'row' }, t('tv') + ':', modeSel('tvMode', [['table', t('forAll')], ['off', t('off')]])),
-    isOwner ? h('div', { class: 'col', style: { margin: '8px 0 16px' } }, h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, tvInput, h('button', { class: 'primary small', onclick: () => loadSrc('tv', tvInput.value) }, t('load'))), controls('tv')) : h('div', { class: 'muted', style: { marginBottom: '14px' } }, t('onlyOwner')),
+    h('label', { class: 'row' }, t('tv') + ':', modeSel('tvMode', [['table', t('forAll')], ['own', getLang() === 'de' ? 'Eigenes Programm (nur du)' : 'Kendi yayının (sadece sen)'], ['off', t('off')]])),
+    isOwner ? h('div', { class: 'col', style: { margin: '8px 0 16px' } }, h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, tvInput, h('button', { class: 'primary small', onclick: () => loadSrc('tv', tvInput.value) }, t('load'))), controls('tv')) : you.seat !== null ? h('div', { class: 'muted', style: { marginBottom: '14px' } }, t('onlyOwner')) : null,
+    // Zuschauer (und wer „Eigenes Programm“ gewählt hat): eigenes YouTube/Twitch auf dem Fernseher, nur für sich
+    you.seat === null || settings.tvMode === 'own' || !isOwner ? ownTvBlock() : null,
     h('h2', {}, '📻 Radio'),
     h(
       'div',
@@ -3062,6 +3228,39 @@ function openMedia() {
           : 'Sadece sen duyarsın. Spotify: liste linkini yapıştır, oynatıcıda ▶ bas – Spotify girişiyle tam şarkı, yoksa 30 sn önizleme. Radyo otomatik susar.',
       ),
     ),
+  );
+}
+
+function ownTvBlock() {
+  const de = getLang() === 'de';
+  const input = h('input', { placeholder: 'YouTube / Twitch', value: settings.ownTvUrl, style: { flex: '1' } }) as HTMLInputElement;
+  const load = () => {
+    const src = ownTvSource(input.value.trim());
+    if (!src) return toast(de ? 'Der Fernseher spielt YouTube- und Twitch-Links' : 'Televizyon YouTube ve Twitch linklerini oynatır');
+    settings.ownTvUrl = input.value.trim();
+    settings.tvMode = 'own';
+    saveSettings();
+    Object.assign(ownTv, { source: src, position: 0, playing: true, at: Date.now() });
+    applyMedia();
+    closeOverlays();
+  };
+  return h(
+    'div',
+    { class: 'col', style: { margin: '6px 0 16px' } },
+    h('label', {}, '📺 ' + (de ? 'Dein eigenes Programm – nur du siehst es' : 'Kendi yayının – sadece sen görürsün')),
+    h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, input, h('button', { class: 'primary small', onclick: load }, t('load'))),
+    settings.tvMode === 'own' && ownTv.source
+      ? h(
+          'div',
+          { class: 'row' },
+          h('button', { class: 'small', onclick: () => ownTvDo('play') }, '▶'),
+          h('button', { class: 'small', onclick: () => ownTvDo('pause') }, '⏸'),
+          h('button', { class: 'small', onclick: () => ownTvDo('seek', -10) }, '⏪ 10s'),
+          h('button', { class: 'small', onclick: () => ownTvDo('seek', 10) }, '10s ⏩'),
+          h('button', { class: 'small danger', title: de ? 'Zurück zum gemeinsamen Programm' : 'Ortak yayına dön', onclick: () => (ownTvDo('stop'), closeOverlays()) }, '⏹'),
+          h('input', { type: 'range', min: 0, max: 100, value: ownTv.volume, onchange: (e: Event) => ownTvDo('volume', Number((e.target as HTMLInputElement).value)) }),
+        )
+      : null,
   );
 }
 

@@ -1206,6 +1206,7 @@ export class World {
 
   sitAt(seat: number | null) {
     this.seated = seat;
+    this.lounge = null;
     if (seat === null) {
       this.camTarget = null;
       const sp = SPOTS[this.spot];
@@ -1248,11 +1249,124 @@ export class World {
     this.spot = spot;
     this.tableRoot.position.set(SPOTS[spot].x, 0, SPOTS[spot].z);
     this.tableRoot.updateMatrixWorld(true);
+    for (const [k, c] of this.loungeChairs) {
+      const sp = this.loungeSpot(k);
+      c.position.set(sp.pos.x, 0, sp.pos.z);
+      facing(c, sp.pos.x - sp.look.x, sp.pos.z - sp.look.z);
+    }
+    if (this.lounge) this.sitLounge(this.lounge);
     if (this.seated !== null) {
       this.camTarget = this.seatCam(this.seated);
       this.camera.position.copy(this.camTarget.pos);
       this.camLook.copy(this.camTarget.look);
     }
+  }
+
+  // ------------------------------------------------------------ Zuschauer-Stühle (Fernseher / Ecken)
+
+  /** eigener Zuschauer-Platz (null = steht / läuft oder schaut am Platz eines Spielers zu) */
+  lounge: string | null = null;
+  onLounge: ((key: string) => void) | null = null;
+  onLoungeStand: (() => void) | null = null;
+  private loungeChairs = new Map<string, THREE.Group>();
+  private loungeAvatars = new Map<string, { av: Avatar3D; key: string }>();
+  private loungeOn = false;
+
+  /** Stuhl-Position (Welt) + Blickziel für einen Zuschauer-Platz am aktuellen Tisch */
+  private loungeSpot(key: string): { pos: THREE.Vector3; look: THREE.Vector3; corner: boolean } {
+    const off = this.tableRoot.position;
+    if (key[0] === 'c') {
+      const k = Number(key[1]);
+      const dir = seatPos(k).add(seatPos((k + 1) % 4)).normalize();
+      return { pos: dir.clone().multiplyScalar(1.42).add(off), look: new THREE.Vector3(off.x, TABLE_Y, off.z), corner: true };
+    }
+    const i = key === 'tv1' ? 1 : 0;
+    // je Tisch der nächste Fernseher, Stühle mit Abstand davor
+    const TV = [
+      { tv: 0, p: [[-1.65, -2.7], [-0.85, -2.7]] },
+      { tv: 0, p: [[-1.65, -2.7], [-0.85, -2.7]] },
+      { tv: 2, p: [[-2.1, 6.1], [-1.4, 6.1]] },
+      { tv: 3, p: [[4.4, 6.25], [5.1, 6.25]] },
+    ][this.spot] ?? { tv: 0, p: [[-1.65, -2.7], [-0.85, -2.7]] };
+    const [x, z] = TV.p[i];
+    return { pos: new THREE.Vector3(x, 0, z), look: (this.tvs[TV.tv]?.pos ?? new THREE.Vector3(-1.2, 2.2, -4.9)).clone(), corner: false };
+  }
+
+  /** Zuschauer-Stühle nur, solange jemand zuschaut; sitzende Zuschauer als Figuren */
+  setLounge(list: { id: string; name: string; avatar?: Avatar; lounge?: string | null }[], myId: string) {
+    const show = list.length > 0;
+    const keys = ['tv0', 'tv1', 'c0', 'c1', 'c2', 'c3'];
+    if (show && !this.loungeChairs.size) {
+      for (const k of keys) {
+        const c = this.chair();
+        c.traverse((o) => (o.userData.lounge = k));
+        this.scene.add(c);
+        this.loungeChairs.set(k, c);
+      }
+    }
+    for (const [k, c] of this.loungeChairs) {
+      const sp = this.loungeSpot(k);
+      c.position.set(sp.pos.x, 0, sp.pos.z);
+      facing(c, sp.pos.x - sp.look.x, sp.pos.z - sp.look.z);
+      c.visible = show;
+      const i = this.chairs.indexOf(c);
+      if (show && i < 0) this.chairs.push(c);
+      if (!show && i >= 0) this.chairs.splice(i, 1);
+    }
+    this.loungeOn = show;
+    // sitzende Zuschauer (nicht man selbst)
+    const want = new Map<string, { key: string; name: string; avatar: Avatar }>();
+    for (const p of list) if (p.lounge && p.id !== myId && p.avatar) want.set(p.lounge, { key: p.id + JSON.stringify(p.avatar) + p.name, name: p.name, avatar: p.avatar });
+    for (const [k, a] of this.loungeAvatars) {
+      if (want.get(k)?.key === a.key) continue;
+      this.scene.remove(a.av.root);
+      this.loungeAvatars.delete(k);
+    }
+    for (const [k, w] of want) {
+      let a = this.loungeAvatars.get(k);
+      if (!a) {
+        const av = new Avatar3D(w.avatar, w.name);
+        a = { av, key: w.key };
+        this.scene.add(av.root);
+        this.loungeAvatars.set(k, a);
+      }
+      const sp = this.loungeSpot(k);
+      const d = new THREE.Vector3(sp.pos.x - sp.look.x, 0, sp.pos.z - sp.look.z).normalize();
+      a.av.root.position.set(sp.pos.x - d.x * 0.03, 0.45, sp.pos.z - d.z * 0.03);
+      facing(a.av.root, d.x, d.z);
+    }
+    if (this.lounge && !show) this.sitLounge(null);
+  }
+
+  /** sich als Zuschauer auf einen Raum-Stuhl setzen (null = aufstehen) */
+  sitLounge(key: string | null) {
+    this.lounge = key;
+    if (key === null) {
+      if (this.seated === null) this.camTarget = null;
+      return;
+    }
+    this.seated = null;
+    const sp = this.loungeSpot(key);
+    const d = new THREE.Vector3(sp.pos.x - sp.look.x, 0, sp.pos.z - sp.look.z).normalize();
+    const eye = sp.pos.clone().addScaledVector(d, sp.corner ? 0.1 : 0.05);
+    eye.y = sp.corner ? 1.45 : 1.2;
+    this.camTarget = { pos: eye, look: sp.corner ? sp.look.clone() : sp.look.clone().add(new THREE.Vector3(0, -0.15, 0)) };
+    // direkt hinsetzen (nicht quer durch Tisch und Spieler fliegen)
+    this.camera.position.copy(this.camTarget.pos);
+    this.camLook.copy(this.camTarget.look);
+    this.focus = true;
+    this.seatYaw = 0;
+    this.seatPitch = 0;
+    this.stopLook();
+    // Lauf-Position neben den Stuhl, damit man beim Aufstehen dort steht
+    this.walkPos.set(sp.pos.x + d.x * 0.6, 1.6, sp.pos.z + d.z * 0.6);
+    this.yaw = Math.atan2(d.x, d.z);
+    this.avatars.forEach((a, s) => a && (a.root.visible = s !== this.mySeat || !!this.third));
+  }
+
+  private updateLounge(dt: number) {
+    if (!this.loungeOn) return;
+    for (const a of this.loungeAvatars.values()) a.av.update(dt);
   }
 
   // ------------------------------------------------------------ Mitspieler, die herumlaufen
@@ -1262,7 +1376,7 @@ export class World {
 
   /** eigene Position zum Senden (null = sitzt) */
   myPose(): { x: number; z: number; yaw: number } | null {
-    return this.seated === null ? { x: this.walkPos.x, z: this.walkPos.z, yaw: this.yaw } : null;
+    return this.seated === null && !this.lounge ? { x: this.walkPos.x, z: this.walkPos.z, yaw: this.yaw } : null;
   }
 
   /** Position eines anderen Spielers (läuft = sichtbar als stehende Figur) */
@@ -1312,6 +1426,7 @@ export class World {
   }
 
   private updateWalkers(dt: number) {
+    this.updateLounge(dt);
     for (const w of this.walkers.values()) {
       const p = w.av.root.position;
       const dx = w.tx - p.x;
@@ -1626,13 +1741,21 @@ export class World {
       }
     }
     const at = touch ? this.ndcOf(e) : new THREE.Vector2(0, 0);
+    if (this.lounge) {
+      // auf einem Zuschauer-Stuhl: anderen Stuhl antippen = umsetzen
+      const hit = this.pickNdc(this.ndcOf(e), this.chairs);
+      if (hit?.userData.lounge !== undefined) this.onLounge?.(hit.userData.lounge);
+      else if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
+      return;
+    }
     if (this.seated === null) {
       if (!touch && !this.isLooking()) {
         this.startLook();
         return;
       }
       const hit = this.pickNdc(at, this.chairs);
-      if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
+      if (hit?.userData.lounge !== undefined) this.onLounge?.(hit.userData.lounge);
+      else if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
       return;
     }
     if (!this.focus) {
@@ -1661,7 +1784,7 @@ export class World {
   lookDelta(dx: number, dy: number) {
     const sens = 0.0022 * (settings.sensitivity / 100) * (this.zooming ? 0.45 : 1);
     const inv = settings.invertY ? -1 : 1;
-    if (this.seated === null) {
+    if (this.seated === null && !this.lounge) {
       this.yaw -= dx * sens;
       this.pitch = Math.max(-1.3, Math.min(1.3, this.pitch - dy * sens * inv));
     } else if (!this.focus) {
@@ -1675,7 +1798,8 @@ export class World {
     const c = new THREE.Vector2(0, 0);
     if (this.seated === null) {
       const hit = this.pickNdc(c, this.chairs);
-      if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
+      if (hit?.userData.lounge !== undefined) this.onLounge?.(hit.userData.lounge);
+      else if (hit?.userData.seat !== undefined) this.onChair?.(hit.userData.seat, hit.userData.spot ?? 0);
       return !!hit;
     }
     if (!this.focus) {
@@ -1750,7 +1874,7 @@ export class World {
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length || hits[0].distance > 5) return null;
     let o: THREE.Object3D | null = hits[0].object;
-    while (o && o.userData.seat === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
+    while (o && o.userData.seat === undefined && o.userData.lounge === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
     return o;
   }
 
@@ -1765,7 +1889,7 @@ export class World {
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length) return null;
     let o: THREE.Object3D | null = hits[0].object;
-    while (o && o.userData.seat === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
+    while (o && o.userData.seat === undefined && o.userData.lounge === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
     return o;
   }
 
@@ -2632,6 +2756,12 @@ export class World {
       if (this.selfAvatar) this.selfAvatar.root.visible = false;
       if (this.moveInput.x || this.moveInput.y) this.watchTv(null);
     } else if (this.camTarget) {
+      // Zuschauer-Stuhl: losgehen = aufstehen
+      if (this.lounge) {
+        const K = settings.keys;
+        const mv = this.moveInput.x || this.moveInput.y || [K.forward, K.back, K.left, K.right, 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].some((k) => this.keys.has(k));
+        if (mv) this.onLoungeStand?.();
+      }
       const pos = this.camTarget.pos;
       let look: THREE.Vector3;
       if (this.focus) look = this.camTarget.look.clone();

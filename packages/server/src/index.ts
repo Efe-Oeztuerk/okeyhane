@@ -25,6 +25,10 @@ interface Client {
   seat: number | null;
   /** Zuschauer: hinter welchem Platz */
   watching: number | null;
+  /** Zuschauer: Sitzplatz im Raum (tv0/tv1 = vor dem Fernseher, c0..c3 = Ecke zwischen zwei Spielern), null = steht/läuft */
+  lounge: string | null;
+  /** Zuschauer: möchte nach der laufenden Runde diesen Platz (Bot) übernehmen */
+  wantSeat: number | null;
   /** stabile Sitzungs-ID des Browsers/der App (überlebt Verbindungsabbrüche) */
   sid: string;
   /** angemeldeter Account (null = Gast) */
@@ -156,7 +160,7 @@ function tableSummary(t: Table) {
     ownerId: t.ownerId,
     isPublic: t.isPublic,
     seats: t.seats.map(seatInfo),
-    spectators: [...t.spectators].map((c) => ({ id: c.id, name: c.info.name, watching: c.watching })),
+    spectators: [...t.spectators].map((c) => ({ id: c.id, name: c.info.name, watching: c.watching, lounge: c.lounge, wantSeat: c.wantSeat, avatar: c.info.avatar })),
     rules: t.rules,
     started: t.started,
     tv: t.tv,
@@ -193,8 +197,8 @@ function pushState(t: Table) {
   const pg = t.game;
   if (isCards(pg)) {
     for (const c of members(t)) {
+      // Zuschauer sehen die Karten des Spielers, dem sie zuschauen (setzen dürfen sie sich erst nach der Runde)
       const view: any = pg.viewFor(c.seat ?? c.watching ?? 0);
-      if (c.seat === null) view.myHand = [];
       send(c, { type: 'state', view, spectator: c.seat === null, turnDeadline: t.turnDeadline, lastResult: pg.lastResult });
     }
     return;
@@ -202,9 +206,8 @@ function pushState(t: Table) {
   const og = pg;
   for (const c of members(t)) {
     const seat = c.seat ?? c.watching ?? 0;
+    // Zuschauer sehen die Steine des Spielers, dem sie zuschauen (setzen dürfen sie sich erst nach der Runde)
     const view: any = og.viewFor(seat);
-    // Zuschauer sehen keine Steine (sonst könnte man spicken und sich dann setzen)
-    if (c.seat === null && og.hand.phase !== 'handOver' && !og.gameOver) view.myHand = [];
     send(c, {
       type: 'state',
       view,
@@ -273,6 +276,8 @@ function removeFromTable(c: Client) {
   c.table = null;
   c.seat = null;
   c.watching = null;
+  c.lounge = null;
+  c.wantSeat = null;
   if (humanCount(t) === 0 && t.spectators.size === 0) {
     // kurz warten: am Handy reißt die Verbindung oft kurz ab (App im Hintergrund, Funkloch)
     if (t.closeTimer) clearTimeout(t.closeTimer);
@@ -294,12 +299,35 @@ function removeFromTable(c: Client) {
 
 // ------------------------------------------------------------------ Bots & Timer
 
+/** Zuschauer, die auf einen Platz warten, setzen sich (nur zwischen zwei Runden / nach dem Spiel) */
+function seatQueued(t: Table): boolean {
+  let any = false;
+  for (const sp of [...t.spectators]) {
+    const s = sp.wantSeat;
+    if (s === null) continue;
+    sp.wantSeat = null;
+    const seat = t.seats[s];
+    if (!seat || seat.client || !seat.bot || !activeSeats(t).includes(s)) continue;
+    seat.bot = null;
+    seat.client = sp;
+    t.spectators.delete(sp);
+    t.ready.delete(s);
+    sp.seat = s;
+    sp.watching = null;
+    sp.lounge = null;
+    send(sp, { type: 'seated', seat: s });
+    any = true;
+  }
+  return any;
+}
+
 function scheduleBots(t: Table) {
   if (t.botTimer) clearTimeout(t.botTimer);
   t.botTimer = null;
   const g = t.game;
   if (!g || g.gameOver) return;
   if (g.hand.phase === 'handOver') {
+    if (seatQueued(t)) pushState(t);
     // nächste Hand erst, wenn alle Menschen bereit sind (Bots sind es sofort) oder der Tischbesitzer startet
     t.seats.forEach((s, i) => s.bot && t.ready.add(i));
     // Bots legen ihr Brett sichtbar geordnet hin (wie ein Mensch, der umgestellt hat)
@@ -377,6 +405,7 @@ function afterAction(t: Table) {
       if (s.client && g.winnerTeam !== null) recordResult(s.client.info.name, t.rules.mode, team === g.winnerTeam);
     });
   }
+  if (g?.gameOver && seatQueued(t)) pushTable(t);
   scheduleTurnTimer(t);
   pushState(t);
   scheduleBots(t);
@@ -604,6 +633,8 @@ function handle(c: Client, m: Msg) {
         table.spectators.add(c);
         c.seat = null;
         c.watching = 0;
+        c.lounge = null;
+        c.wantSeat = null;
       }
       pushTable(table);
       if (table.game) pushState(table);
@@ -657,18 +688,44 @@ function handle(c: Client, m: Msg) {
         // Vor dem Start nur freie Plätze; im laufenden Spiel darf man einen Bot ablösen
         if (seat.bot && !t.started) throw new GameError('Platz besetzt');
         if (t.started && (!seat.bot || c.seat !== null)) throw new GameError('Spiel läuft schon');
+        // Mitten in der Runde: Platz vormerken – hingesetzt wird erst, wenn die Runde fertig ist
+        const g = t.game;
+        if (t.started && g && !g.gameOver && g.hand.phase !== 'handOver') {
+          if ([...t.spectators].some((x) => x !== c && x.wantSeat === s)) throw new GameError('Diesen Platz hat schon jemand vorgemerkt');
+          c.wantSeat = s;
+          pushTable(t);
+          send(c, { type: 'seatQueued', seat: s });
+          return;
+        }
         seat.bot = null;
         if (c.seat !== null) t.seats[c.seat].client = null;
         t.spectators.delete(c);
+        t.ready.delete(s);
         seat.client = c;
         c.seat = s;
         c.watching = null;
+        c.lounge = null;
+        c.wantSeat = null;
         pushTable(t);
         if (t.game) {
           pushState(t);
           scheduleBots(t);
           scheduleTurnTimer(t);
         }
+        return;
+      }
+      case 'cancelSeat':
+        c.wantSeat = null;
+        pushTable(t);
+        return;
+      case 'lounge': {
+        // Zuschauer setzt sich in den Raum (Fernseher / Ecke) oder steht auf (null)
+        if (c.seat !== null) throw new GameError('Du sitzt am Tisch');
+        const k = m.spot === null || m.spot === undefined ? null : String(m.spot);
+        if (k !== null && !['tv0', 'tv1', 'c0', 'c1', 'c2', 'c3'].includes(k)) return;
+        if (k && [...t.spectators].some((x) => x !== c && x.lounge === k)) throw new GameError('Der Stuhl ist besetzt');
+        c.lounge = k;
+        pushTable(t);
         return;
       }
       case 'watch': {
@@ -1121,6 +1178,8 @@ wss.on('connection', (ws) => {
     table: null,
     seat: null,
     watching: null,
+    lounge: null,
+    wantSeat: null,
     sid: '',
     user: null,
     token: null,
