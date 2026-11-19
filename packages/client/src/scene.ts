@@ -1988,7 +1988,9 @@ export class World {
     const slideToStack = (g: THREE.Group, team: number, delay: number) => {
       const sp = this.pistiStackPos(v, team);
       const start = g.children.map((c) => ({ p: c.position.clone(), q: c.quaternion.clone(), s: c.scale.x }));
-      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, sp.rot, 0));
+      // umgedreht (Rückseite oben) auf den Stapel – oben drauf, nicht hinein
+      const target = new THREE.Quaternion().setFromEuler(new THREE.Euler(0, sp.rot, Math.PI));
+      const topY = TABLE_Y + 0.006 + Math.ceil((v.capturedCounts[team] as number) / 4) * 0.0035;
       // Wartezeit merken: kommt schon der nächste Zug, rutscht der Stapel sofort weg (sonst liegen zwei Karten übereinander)
       g.userData.wait = anim(delay, () => {}, () =>
         anim(
@@ -1997,7 +1999,7 @@ export class World {
             const q = ease(k);
             g.children.forEach((c, i) => {
               const st = start[i];
-              const to = sp.pos.clone().setY(TABLE_Y + 0.004 + i * 0.0015);
+              const to = sp.pos.clone().setY(topY + i * 0.0006);
               c.position.lerpVectors(st.p, to, q);
               c.position.y += Math.sin(k * Math.PI) * 0.05;
               c.quaternion.slerpQuaternions(st.q, target, q);

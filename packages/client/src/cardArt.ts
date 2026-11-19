@@ -264,6 +264,8 @@ export function cardTexture(c: PCard | null): THREE.CanvasTexture {
     const img = new Image();
     img.onload = () => {
       // Bild direkt als Textur (kein zweites Umrechnen über die Zeichenfläche → schärfer)
+      // alte GPU-Textur freigeben: sonst bleibt die Größe der Zeichenfläche und Reste der alten Karte sind zu sehen
+      t.dispose();
       t.image = img;
       t.generateMipmaps = true;
       t.minFilter = THREE.LinearMipmapLinearFilter;
