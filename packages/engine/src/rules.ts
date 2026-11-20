@@ -33,6 +33,8 @@ export interface TableRules {
   pistiPlayers: 2 | 4;
   pistiTarget: number;
   pistiBluff: boolean;
+  /** Pişti mit der letzten Karte der Runde zählt (Standard: ja) */
+  pistiLastCounts: boolean;
   /** Batak-Variante */
   batakMode: 'ihaleli' | 'esli' | 'gommeli';
   batakTarget: number;
@@ -66,6 +68,7 @@ export function defaultRules(mode: Mode): TableRules {
     pistiPlayers: 4,
     pistiTarget: 151,
     pistiBluff: false,
+    pistiLastCounts: true,
     batakMode: 'ihaleli',
     batakTarget: 51,
     batakHands: 0,

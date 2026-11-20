@@ -254,7 +254,7 @@ function newGame(t: Table): OkeyGame | PistiGame | BatakGame {
     const r = t.rules;
     return new BatakGame({ mode: r.batakMode, target: r.batakTarget, handLimit: r.batakHands, minBid: r.batakMinBid, mustTrump: r.batakMustTrump, trumpBreak: r.batakTrumpBreak, overLimit: r.batakOverLimit, zeroBatar: r.batakZeroBatar, rebid: r.batakRebid }, seed);
   }
-  if (t.rules.mode === 'pisti') return new PistiGame({ players: t.rules.pistiPlayers === 2 ? 2 : 4, target: t.rules.pistiTarget || 151, bluff: !!t.rules.pistiBluff }, seed);
+  if (t.rules.mode === 'pisti') return new PistiGame({ players: t.rules.pistiPlayers === 2 ? 2 : 4, target: t.rules.pistiTarget || 151, bluff: !!t.rules.pistiBluff, lastPisti: t.rules.pistiLastCounts !== false }, seed);
   return new OkeyGame(t.rules, seed);
 }
 
@@ -748,6 +748,7 @@ function handle(c: Client, m: Msg) {
         t.rules = { ...base, ...(m.rules ?? {}) };
         t.rules.pistiPlayers = t.rules.pistiPlayers === 2 ? 2 : 4;
         t.rules.pistiTarget = Math.max(10, Math.min(1000, Math.round(Number(t.rules.pistiTarget) || 151)));
+        t.rules.pistiLastCounts = t.rules.pistiLastCounts !== false;
         if (t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2) for (const i of [1, 3]) t.seats[i].bot = null;
         {
           const r = t.rules;

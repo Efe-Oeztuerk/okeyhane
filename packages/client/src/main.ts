@@ -2171,6 +2171,12 @@ function renderLobby() {
         h('span', {}, de ? 'Bluff (Kapalı Pişti) ' : 'Blöf (Kapalı Pişti) ', h('button', { class: 'info-i', type: 'button', title: 'Info', onclick: (e: Event) => (e.preventDefault(), info()) }, 'i')),
         h('input', { type: 'checkbox', checked: !!r.pistiBluff, disabled: dis, onchange: (e: Event) => set({ pistiBluff: (e.target as HTMLInputElement).checked }) }),
       ),
+      h(
+        'label',
+        { title: de ? 'Aus: Ein Pişti mit der allerletzten Karte der Runde gibt keine Pişti-Punkte (die Karten bekommt man trotzdem).' : 'Kapalı: elin son kartıyla yapılan pişti puan getirmez (kartlar yine alınır).' },
+        h('span', {}, de ? 'Pişti mit letzter Karte zählt' : 'Son kartla pişti sayılır'),
+        h('input', { type: 'checkbox', checked: r.pistiLastCounts !== false, disabled: dis, onchange: (e: Event) => set({ pistiLastCounts: (e.target as HTMLInputElement).checked }) }),
+      ),
       h('label', {}, t('timer'), h('input', { type: 'number', min: 0, max: 300, value: r.turnTimerSec ?? 0, disabled: dis, onchange: (e: Event) => set({ turnTimerSec: Number((e.target as HTMLInputElement).value) || null }) })),
       chk('allowBots', t('bots')),
     );

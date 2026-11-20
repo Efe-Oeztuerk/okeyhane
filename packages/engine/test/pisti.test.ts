@@ -124,3 +124,22 @@ describe('Pişti mit der letzten Karte', () => {
     expect(g.lastResult!.teams[0].pistiPoints).toBeGreaterThanOrEqual(10);
   });
 });
+
+describe('Pişti mit der letzten Karte – ausgeschaltet', () => {
+  test('zählt nicht, Karten gibt es trotzdem', () => {
+    const g = setup(2);
+    (g as any).rules.lastPisti = false;
+    const S = g.seats;
+    (g as any).stock = [];
+    g.pile = [c(900, 'H', 7)];
+    (g as any).hiddenInPile = 0;
+    g.hands[S[0]] = [c(901, 'S', 7)];
+    g.hands[S[1]] = [];
+    (g as any).current = S[0];
+    const before = g.pistiCount[0];
+    g.play(S[0], 901);
+    expect(g.lastResult!.teams[0].pistis).toBe(before);
+    expect(g.lastEvent!.kind).toBe('roundEnd');
+    expect((g.lastEvent as any).before.kind).toBe('capture');
+  });
+});

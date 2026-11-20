@@ -19,6 +19,8 @@ export interface PistiRules {
   target: number;
   /** Kapalı Pişti (Bluff) erlaubt */
   bluff: boolean;
+  /** Pişti mit der letzten Karte der Runde zählt (fehlt = ja) */
+  lastPisti?: boolean;
 }
 
 export const JACK = 11;
@@ -207,8 +209,9 @@ export class PistiGame {
     const top = this.pile[this.pile.length - 1];
     this.seen[card.rank]++;
     if (top && (card.rank === top.rank || card.rank === JACK)) {
-      // Pişti: genau eine Karte in der Mitte, gleicher Wert – zählt auch mit der letzten Karte der Runde
-      const pisti = this.pile.length === 1 && card.rank === top.rank;
+      // Pişti: genau eine Karte in der Mitte, gleicher Wert – mit der letzten Karte der Runde nur, wenn eingestellt
+      const lastCard = this.stock.length === 0 && this.handsEmpty();
+      const pisti = this.pile.length === 1 && card.rank === top.rank && (this.rules.lastPisti !== false || !lastCard);
       const points = pisti ? (card.rank === JACK ? 20 : 10) : 0;
       const count = this.pile.length + 1;
       if (this.hiddenInPile > 0) this.peek = { seat, cards: this.pile.slice(0, this.hiddenInPile), seq: this.seq + 1 };
@@ -342,6 +345,7 @@ export class PistiGame {
       teamScores: this.scores,
       target: this.rules.target,
       bluff: this.rules.bluff,
+      lastPisti: this.rules.lastPisti !== false,
       pending: this.pending ? { seat: this.pending.seat, claimJack: this.pending.claimJack } : null,
       lastEvent: this.lastEvent,
       // nur der Gewinner der verdeckten Startkarten sieht sie (kurz, im Client)
