@@ -106,3 +106,21 @@ describe('Pişti', () => {
     expect(g.winnerTeam).toBe(g.scores[0] > g.scores[1] ? 0 : 1);
   });
 });
+
+describe('Pişti mit der letzten Karte', () => {
+  test('zählt als Pişti', () => {
+    const g = setup(2);
+    const S = g.seats;
+    // Ende der Runde nachbauen: Stock leer, eine Karte in der Mitte, jeder Spieler hat nur noch die letzte Karte
+    (g as any).stock = [];
+    g.pile = [c(900, 'H', 7)];
+    (g as any).hiddenInPile = 0;
+    g.hands[S[0]] = [c(901, 'S', 7)];
+    g.hands[S[1]] = [];
+    (g as any).current = S[0];
+    const before = g.pistiCount[0];
+    g.play(S[0], 901);
+    expect(g.lastResult!.teams[0].pistis).toBe(before + 1);
+    expect(g.lastResult!.teams[0].pistiPoints).toBeGreaterThanOrEqual(10);
+  });
+});

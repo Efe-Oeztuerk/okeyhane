@@ -65,7 +65,8 @@ export type PistiEvent =
   | { seq: number; kind: 'bluffBelieved'; seat: number; by: number; points: number }
   | { seq: number; kind: 'bluffTrue'; seat: number; by: number; card: Card; points: number }
   | { seq: number; kind: 'bluffFalse'; seat: number; by: number; card: Card; points: number }
-  | { seq: number; kind: 'roundEnd'; seat: number };
+  /** before = der letzte Zug der Runde (sonst würde das Rundenende ihn überdecken) */
+  | { seq: number; kind: 'roundEnd'; seat: number; before?: PistiEvent | null };
 
 type DistOmit<T, K extends keyof any> = T extends unknown ? Omit<T, K> : never;
 type PistiEventInput = DistOmit<PistiEvent, 'seq'>;
@@ -206,9 +207,8 @@ export class PistiGame {
     const top = this.pile[this.pile.length - 1];
     this.seen[card.rank]++;
     if (top && (card.rank === top.rank || card.rank === JACK)) {
-      // Pişti: genau eine Karte in der Mitte, gleicher Wert – nicht mit der allerletzten Karte der Runde
-      const lastCard = this.stock.length === 0 && this.handsEmpty();
-      const pisti = this.pile.length === 1 && card.rank === top.rank && !lastCard;
+      // Pişti: genau eine Karte in der Mitte, gleicher Wert – zählt auch mit der letzten Karte der Runde
+      const pisti = this.pile.length === 1 && card.rank === top.rank;
       const points = pisti ? (card.rank === JACK ? 20 : 10) : 0;
       const count = this.pile.length + 1;
       if (this.hiddenInPile > 0) this.peek = { seat, cards: this.pile.slice(0, this.hiddenInPile), seq: this.seq + 1 };
@@ -301,7 +301,8 @@ export class PistiGame {
     this.scores = [this.scores[0] + teams[0].total, this.scores[1] + teams[1].total];
     this.history.push({ points: [teams[0].total, teams[1].total], result });
     this.phase = 'handOver';
-    this.event({ kind: 'roundEnd', seat });
+    const before = this.lastEvent && this.lastEvent.kind !== 'roundEnd' && this.lastEvent.kind !== 'deal' ? this.lastEvent : null;
+    this.event({ kind: 'roundEnd', seat, before });
     const [a, b] = this.scores;
     if ((a >= this.rules.target || b >= this.rules.target) && a !== b) {
       this.gameOver = true;

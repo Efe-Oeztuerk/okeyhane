@@ -41,7 +41,8 @@ export type BatakEvent =
   | { seq: number; kind: 'bury'; seat: number }
   | { seq: number; kind: 'play'; seat: number; card: Card }
   | { seq: number; kind: 'trick'; seat: number; cards: { seat: number; card: Card }[] }
-  | { seq: number; kind: 'handEnd'; seat: number };
+  /** before = der letzte Stich der Hand (sonst würde das Handende ihn überdecken) */
+  | { seq: number; kind: 'handEnd'; seat: number; before?: BatakEvent | null };
 
 type DistOmit<T, K extends keyof any> = T extends unknown ? Omit<T, K> : never;
 type BatakEventInput = DistOmit<BatakEvent, 'seq'>;
@@ -365,7 +366,8 @@ export class BatakGame {
     this.history.push(res);
     this.lastResult = res;
     this.phase = 'handOver';
-    this.event({ kind: 'handEnd', seat: c.seat });
+    const before = this.lastEvent && this.lastEvent.kind === 'trick' ? this.lastEvent : null;
+    this.event({ kind: 'handEnd', seat: c.seat, before });
     // Spielende: jemand hat das Ziel erreicht und es gibt einen eindeutigen Besten
     const vals = this.team ? [this.scores[0], this.scores[1]] : this.seats.map((s) => this.scores[s]);
     const max = Math.max(...vals);

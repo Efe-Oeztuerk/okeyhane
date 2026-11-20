@@ -2181,7 +2181,8 @@ export class World {
 
   /** Batak-Animation: Karte fliegt in den Stich; voller Stich bleibt kurz liegen und rutscht zum Gewinner */
   batakAnimate(v: any) {
-    const e = v.lastEvent;
+    // Handende: den letzten Stich trotzdem zeigen
+    const e = v.lastEvent?.kind === 'handEnd' ? v.lastEvent.before : v.lastEvent;
     if (!e) return;
     const anim = (dur: number, step: (k: number, t: number) => void, done?: () => void) => {
       const a = { t: 0, dur, step, done };
@@ -2269,7 +2270,8 @@ export class World {
 
   /** Animation zum letzten Ereignis (nach setPisti aufrufen) */
   pistiAnimate(prev: any | null, v: any) {
-    const e = v.lastEvent;
+    // Rundenende: den letzten Zug trotzdem zeigen
+    const e = v.lastEvent?.kind === 'roundEnd' ? v.lastEvent.before : v.lastEvent;
     if (!e) return;
     const anim = (dur: number, step: (k: number, t: number) => void, done?: () => void) => {
       const a = { t: 0, dur, step, done };
@@ -2366,7 +2368,24 @@ export class World {
       );
     };
     const from = this.seatHandPos(e.seat);
-    switch (e.kind) {
+    // letzte Karte der Runde ohne Stich: sie landet erst sichtbar auf dem Stapel,
+    // dann geht der ganze Rest an den, der zuletzt gestochen hat
+    const ended = v.phase === 'handOver' || v.phase === 'gameOver';
+    const sweepTeam = v.lastResult?.lastCapture ?? null;
+    const endSweep = (e.kind === 'play' || e.kind === 'bluffFalse') && ended && !this.pistiTopHidden && !!prev && (prev.pile.length > 0 || prev.hiddenCount > 0) && sweepTeam !== null;
+    switch (endSweep ? 'endSweep' : e.kind) {
+      case 'endSweep': {
+        for (const c of [...this.pistiFx.children]) if ((c as any).isBluffCard) this.pistiFx.remove(c);
+        const { g, layers } = oldPile();
+        this.pistiFx.add(g);
+        const m = cardMesh(e.card, true);
+        m.scale.setScalar(1.3);
+        g.add(m);
+        const target = poseOf(e.card, layers, 0);
+        fly(m, from, target.position, target.quaternion, target.scale.x, 0.42, 0.12);
+        slideToStack(g, sweepTeam as number, 0.42 + 1.0);
+        break;
+      }
       case 'play':
       case 'bluffFalse': {
         for (const c of [...this.pistiFx.children]) if ((c as any).isBluffCard) this.pistiFx.remove(c);

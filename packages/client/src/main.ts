@@ -2496,10 +2496,13 @@ function pistiNote(text: string) {
 
 /** Töne, Gesten und Hinweise zu dem, was gerade passiert ist */
 function pistiFeedback(prev: any | null, v: any) {
-  const e = v.lastEvent;
-  if (!e || e.seq === pistiLastSeq) return;
+  const raw = v.lastEvent;
+  if (!raw || raw.seq === pistiLastSeq) return;
   const first = pistiLastSeq === -1 && prev === null;
-  pistiLastSeq = e.seq;
+  pistiLastSeq = raw.seq;
+  // Rundenende: Ton/Hinweis zum letzten Zug (z. B. Pişti mit der letzten Karte)
+  const e = raw.kind === 'roundEnd' ? raw.before : raw;
+  if (!e) return;
   if (first && e.kind !== 'deal') return;
   world.pistiAnimate(prev, v);
   // verdeckte Startkarten gewonnen → kurz ansehen (nur der Gewinner bekommt sie vom Server)
@@ -2830,7 +2833,8 @@ function batakFeedback(prev: any | null, v: any) {
       break;
     case 'handEnd': {
       const lr = v.lastResult;
-      if (lr) pistiNote(lr.made ? (de ? `${nameOf(lr.bidder)} hat es geschafft (${lr.bid})` : `${nameOf(lr.bidder)} tutturdu (${lr.bid})`) : de ? `${nameOf(lr.bidder)} ist batık!` : `${nameOf(lr.bidder)} battı!`);
+      if (e.before) setTimeout(() => sfx.slam(), 400);
+      if (lr) setTimeout(() => pistiNote(lr.made ? (de ? `${nameOf(lr.bidder)} hat es geschafft (${lr.bid})` : `${nameOf(lr.bidder)} tutturdu (${lr.bid})`) : de ? `${nameOf(lr.bidder)} ist batık!` : `${nameOf(lr.bidder)} battı!`), e.before ? 1500 : 0);
       break;
     }
   }
