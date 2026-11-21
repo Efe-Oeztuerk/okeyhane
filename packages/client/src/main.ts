@@ -1615,6 +1615,10 @@ function renderAll() {
   renderSheet();
   renderHint();
   renderSpect();
+  // Ergebnis + Zettel gleichzeitig offen → nebeneinander statt übereinander
+  const resOpen = !!document.querySelector('.result.panel:not(.hidden)');
+  const sheetVis = !!document.querySelector('.sheet:not(.hidden)');
+  document.body.classList.toggle('result-sheet', resOpen && sheetVis);
 }
 
 function renderFocusBadge() {
@@ -1816,7 +1820,7 @@ function renderRight() {
       },
       L('🎙️', voice.micOn ? t('voiceOn') : t('voiceOff')),
     ),
-    table!.started ? h('button', { class: 'small', title: t('sheet'), onclick: () => ((sheetOpen = !sheetOpen), renderSheet()) }, L('📝', t('sheet'))) : null,
+    table!.started ? h('button', { class: 'small', title: t('sheet'), onclick: () => ((sheetOpen = !sheetOpen), renderAll()) }, L('📝', t('sheet'))) : null,
     // am PC gibt es keine Touch-Knöpfe rechts → Chat, Çaycı, Emotes hier
     !touch ? h('button', { class: 'small', title: 'Chat (Enter)', onclick: () => setChatOpen(!els.chat?.classList.contains('open')) }, '💬') : null,
     !touch && you.seat !== null ? h('button', { class: 'small', title: de ? 'Ahmet rufen (K)' : 'Ahmet (K)', onclick: () => openCayci() }, '☕') : null,
@@ -2009,7 +2013,7 @@ const controlsApi: any = {
   toggleSheet: () => {
     if (!table?.started) return;
     sheetOpen = !sheetOpen;
-    renderSheet();
+    renderAll();
   },
   openMedia: () => table && openMedia(),
   escape: () => {

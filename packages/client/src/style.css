@@ -661,3 +661,16 @@ body.tv-watch .spect-bar { display: none; }
 .tavla-bar .tv-roll { font-size: 18px; padding: 10px 26px; }
 body.phone .tavla-bar .tv-roll { font-size: 16px; padding: 8px 20px; }
 .tavla-info { white-space: nowrap; gap: 6px; }
+
+/* Ergebnis und Punktezettel nebeneinander */
+body.result-sheet:not(.phone) .result { left: calc(50% - 200px); }
+@media (max-width: 1180px) { body.result-sheet:not(.phone) .result { left: 24px; transform: none; max-width: calc(100vw - 420px); } }
+body.phone.result-sheet .result {
+  left: calc(max(8px, env(safe-area-inset-left)) + 4px);
+  transform: none;
+  top: calc(max(8px, env(safe-area-inset-top)) + 44px);
+  width: calc(100vw - 340px - env(safe-area-inset-left) - env(safe-area-inset-right));
+  min-width: 0;
+  max-height: calc(100dvh - 56px - env(safe-area-inset-top));
+}
+body.phone.result-sheet .sheet { width: 250px; transform: rotate(1deg); }
