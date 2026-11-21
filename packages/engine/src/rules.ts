@@ -2,7 +2,7 @@
 
 import type { Color } from './tiles.ts';
 
-export type Mode = 'standard' | 'okey101' | 'perisan' | 'pisti' | 'batak';
+export type Mode = 'standard' | 'okey101' | 'perisan' | 'pisti' | 'batak' | 'tavla';
 
 export interface TableRules {
   mode: Mode;
@@ -36,6 +36,9 @@ export interface TableRules {
   /** Pişti mit der letzten Karte der Runde zählt (Standard: ja) */
   pistiLastCounts: boolean;
   /** Batak-Variante */
+  /** Tavla: Punkte bis zum Sieg, Mars zählt doppelt */
+  tavlaTarget: number;
+  tavlaMars: boolean;
   batakMode: 'ihaleli' | 'esli' | 'gommeli';
   batakTarget: number;
   /** 0 = nach Punkten, sonst Anzahl Hände */
@@ -69,6 +72,8 @@ export function defaultRules(mode: Mode): TableRules {
     pistiTarget: 151,
     pistiBluff: false,
     pistiLastCounts: true,
+    tavlaTarget: 5,
+    tavlaMars: true,
     batakMode: 'ihaleli',
     batakTarget: 51,
     batakHands: 0,

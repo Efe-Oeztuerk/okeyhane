@@ -69,6 +69,20 @@ export const sfx = {
     noise(0.05, 0.25, 4000);
   },
   draw: () => noise(0.08, 0.2, 2500),
+  /** Würfel klappern auf dem Holzbrett */
+  dice: () => {
+    [0, 70, 150, 240, 360, 470].forEach((t, i) =>
+      setTimeout(() => {
+        click(1300 + Math.random() * 500, 0.03, 0.22 - i * 0.025, 'triangle');
+        noise(0.03, 0.18 - i * 0.02, 3500);
+      }, t),
+    );
+  },
+  /** Pul (Holzstein) wird abgesetzt */
+  checker: () => {
+    click(700, 0.05, 0.28, 'triangle');
+    noise(0.04, 0.22, 1800);
+  },
   slam: () => {
     noise(0.25, 0.9, 600);
     click(90, 0.2, 0.5, 'sine');

@@ -200,6 +200,22 @@ on('state', (m) => {
   const prev = st;
   st = m;
   const v = m.view;
+  if (v.kind !== 'tavla') world.setTavla(null, null);
+  if (v.kind === 'tavla') {
+    world.setTavla(v, you.seat ?? you.watching);
+    tavlaFeedback(prev?.view?.kind === 'tavla' ? prev.view : null, v);
+    // Auswahl nur behalten, wenn der Pul noch ziehen darf
+    if (tavlaSelFrom !== null && !(v.steps ?? []).some((s: any) => s.from === tavlaSelFrom)) {
+      tavlaSelFrom = null;
+      world.setTavlaSel(null, []);
+    } else if (v.current !== you.seat) world.setTavlaSel(null, []);
+    const endedT = v.phase === 'handOver' || v.phase === 'gameOver';
+    const wasEndedT = prev?.view?.kind === 'tavla' && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
+    if (endedT && !wasEndedT) holdResult(2300);
+    if (v.current === you.seat && prev?.view.current !== you.seat && !endedT) sfx.bell();
+    renderAll();
+    return;
+  }
   if (v.kind === 'batak') {
     preloadCards();
     world.setBatak(v, you.seat ?? you.watching);
@@ -831,7 +847,7 @@ function showMenu() {
 
 function openStats() {
   const de = getLang() === 'de';
-  const modes = ['standard', 'okey101', 'perisan', 'pisti', 'batak'];
+  const modes = ['standard', 'okey101', 'perisan', 'pisti', 'batak', 'tavla'];
   const rows = modes.map((m) => {
     const s = stats[m] ?? { wins: 0, losses: 0 };
     const n = s.wins + s.losses;
@@ -1353,6 +1369,7 @@ function enterCafe() {
     return true;
   };
   world.onLounge = (k) => sitLounge(k);
+  world.onTavla = (k) => tavlaClick(k);
   world.onLoungeStand = () => sitLounge(null);
   world.onPile = () => act({ action: 'drawPile' });
   world.onSide = () => act({ action: 'drawDiscard' });
@@ -2064,7 +2081,7 @@ function renderLobby() {
   appendAll(el, h('h2', {}, '🀄 ' + t('rules')), isOwner ? null : h('div', { class: 'muted', style: { marginBottom: '8px' } }, t('onlyOwner')));
   // Plätze
   const seats = h('div', { class: 'seats' });
-  const pistiDuo = r.mode === 'pisti' && r.pistiPlayers === 2;
+  const pistiDuo = (r.mode === 'pisti' && r.pistiPlayers === 2) || r.mode === 'tavla';
   const batakSolo = r.mode === 'batak' && r.batakMode !== 'esli';
   const gommeli3 = r.mode === 'batak' && r.batakMode === 'gommeli';
   table!.seats.forEach((p, s) => {
@@ -2187,6 +2204,31 @@ function renderLobby() {
     if (isOwner) {
       const need = gommeli3 ? [0, 1, 2] : [0, 1, 2, 3];
       const full = need.every((i) => table!.seats[i]);
+      el.append(h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '14px' } }, h('button', { class: 'primary', disabled: !full, onclick: () => (unlockAudio(), send({ type: 'start' })) }, '▶ ' + t('startGame'))));
+    }
+    return;
+  }
+  if (r.mode === 'tavla') {
+    const de = getLang() === 'de';
+    rules.append(
+      h(
+        'label',
+        {},
+        de ? 'Spiel bis (Punkte)' : 'Oyun sonu (puan)',
+        h(
+          'select',
+          { disabled: dis, onchange: (e: Event) => set({ tavlaTarget: Number((e.target as HTMLSelectElement).value) }) },
+          [1, 3, 5, 7, 11].map((n) => h('option', { value: n, selected: (r.tavlaTarget ?? 5) === n }, String(n))),
+        ),
+      ),
+      h('label', { title: de ? 'Hat der Verlierer noch keinen Pul rausgespielt, zählt der Sieg doppelt.' : 'Kaybeden hiç pul toplamadıysa galibiyet iki puan sayılır.' }, h('span', {}, de ? 'Mars zählt doppelt' : 'Mars iki puan'), h('input', { type: 'checkbox', checked: r.tavlaMars !== false, disabled: dis, onchange: (e: Event) => set({ tavlaMars: (e.target as HTMLInputElement).checked }) })),
+      h('label', {}, t('timer'), h('input', { type: 'number', min: 0, max: 300, value: r.turnTimerSec ?? 0, disabled: dis, onchange: (e: Event) => set({ turnTimerSec: Number((e.target as HTMLInputElement).value) || null }) })),
+      chk('allowBots', t('bots')),
+      h('div', { class: 'full muted' }, de ? '🎲 Tavla wird in der Tavla-Ecke gespielt (kleiner Tisch rechts vorne). Würfeln, Pul antippen, Ziel antippen.' : '🎲 Tavla, sağ öndeki tavla köşesinde oynanır. Zar at, pula dokun, hedefe dokun.'),
+    );
+    el.append(rules);
+    if (isOwner) {
+      const full = [0, 2].every((i) => table!.seats[i]);
       el.append(h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '14px' } }, h('button', { class: 'primary', disabled: !full, onclick: () => (unlockAudio(), send({ type: 'start' })) }, '▶ ' + t('startGame'))));
     }
     return;
@@ -2323,6 +2365,7 @@ function renderGame() {
   const v = st.view;
   if (v.kind === 'pisti') return renderPisti(v, top, wrap, zones, result);
   if (v.kind === 'batak') return renderBatak(v, top, wrap, zones, result);
+  if (v.kind === 'tavla') return renderTavla(v, top, wrap, zones, result);
   const mine = you.seat !== null ? you.seat % 2 : -1;
   const teamName = (team: number) => [team, team + 2].map((s) => table!.seats[s]?.name ?? '?').join(' & ');
   top.innerHTML = '';
@@ -2628,6 +2671,7 @@ function pistiFeedback(prev: any | null, v: any) {
 const MODE_GROUPS: { key: string; de: string; tr: string; modes: string[] }[] = [
   { key: 'okey', de: '🀄 Okey', tr: '🀄 Okey', modes: ['standard', 'okey101', 'perisan'] },
   { key: 'cards', de: '🃏 Kartenspiele', tr: '🃏 Kart oyunları', modes: ['pisti', 'batak'] },
+  { key: 'tavla', de: '🎲 Tavla', tr: '🎲 Tavla', modes: ['tavla'] },
 ];
 function modePicker(mode: string, dis: boolean) {
   const de = getLang() === 'de';
@@ -2651,6 +2695,160 @@ function modePicker(mode: string, dis: boolean) {
         ),
       );
     }),
+  );
+}
+
+// ------------------------------------------------------------------ Tavla
+
+let tavlaSelFrom: any = null;
+const tavlaPlace = (key: string): any => (key === 'bar' ? 'bar' : key === 'off' ? 'off' : Number(key.slice(1)));
+const tavlaName = (seat: number) => nameOf(seat);
+
+/** Klick aufs Brett: Pul wählen, dann Ziel – bei nur einem Ziel sofort ziehen */
+function tavlaClick(key: string) {
+  const v = st?.view;
+  if (!v || v.kind !== 'tavla' || you.seat === null || v.current !== you.seat) return;
+  if (v.phase === 'roll') return act({ action: 'roll' });
+  if (v.phase !== 'move') return;
+  const place = tavlaPlace(key);
+  const steps: { from: any; to: any; die: number }[] = v.steps ?? [];
+  const targetsOf = (f: any) => [...new Set(steps.filter((s) => s.from === f).map((s) => s.to))];
+  const moveTo = (from: any, to: any) => {
+    tavlaSelFrom = null;
+    world.setTavlaSel(null, []);
+    act({ action: 'move', from, to });
+  };
+  if (tavlaSelFrom !== null && targetsOf(tavlaSelFrom).includes(place)) return moveTo(tavlaSelFrom, place);
+  const tg = targetsOf(place);
+  if (tg.length) {
+    if (tg.length === 1) return moveTo(place, tg[0]);
+    tavlaSelFrom = place;
+    world.setTavlaSel(place, tg);
+    sfx.tile();
+    return;
+  }
+  // geschlagener Pul: direkt das Einstiegsfeld antippen
+  const fromBar = steps.filter((s) => s.from === 'bar' && s.to === place);
+  if (fromBar.length) return moveTo('bar', place);
+  // Ziel ohne Auswahl: gibt es genau einen Pul, der dorthin kann?
+  const srcs = [...new Set(steps.filter((s) => s.to === place).map((s) => s.from))];
+  if (srcs.length === 1) return moveTo(srcs[0], place);
+  tavlaSelFrom = null;
+  world.setTavlaSel(null, []);
+}
+
+function tavlaFeedback(prev: any | null, v: any) {
+  const e0 = v.lastEvent;
+  if (!e0 || (prev && prev.lastEvent?.seq === e0.seq)) return;
+  const de = getLang() === 'de';
+  const e = e0.kind === 'handEnd' ? e0.before : e0;
+  if (e) {
+    if (e.kind === 'roll' || e.kind === 'opening') sfx.dice();
+    if (e.kind === 'move' || e.kind === 'undo') setTimeout(() => (e.hit ? sfx.slam() : sfx.checker()), 300);
+    if (e.kind === 'opening') pistiNote(de ? `🎲 ${e.dice[0]} : ${e.dice[1]} – ${tavlaName(e.seat)} fängt an` : `🎲 ${e.dice[0]} : ${e.dice[1]} – ${tavlaName(e.seat)} başlıyor`);
+    if (e.kind === 'pass') {
+      sfx.dice();
+      pistiNote(de ? `🎲 ${e.dice.join(' · ')} – ${tavlaName(e.seat)} kann nicht ziehen` : `🎲 ${e.dice.join(' · ')} – ${tavlaName(e.seat)} oynayamıyor`);
+    }
+  }
+  if (e0.kind === 'handEnd') {
+    setTimeout(() => {
+      sfx.finish();
+      pistiNote(e0.mars ? (de ? `🏁 ${tavlaName(e0.seat)} gewinnt mit MARS · +2` : `🏁 ${tavlaName(e0.seat)} MARS yaptı · +2`) : de ? `🏁 ${tavlaName(e0.seat)} gewinnt · +1` : `🏁 ${tavlaName(e0.seat)} kazandı · +1`);
+    }, 500);
+  }
+}
+
+const DIE_FACE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
+function renderTavla(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLElement, result: HTMLElement) {
+  const de = getLang() === 'de';
+  const isMe = v.current === you.seat;
+  const over = v.phase === 'handOver' || v.phase === 'gameOver';
+  let timer = '';
+  if (st.turnDeadline) timer = ` · ${Math.max(0, Math.ceil((st.turnDeadline - Date.now()) / 1000))}s`;
+  const color = (seat: number) => (seat === 0 ? '⚪' : '⚫');
+  // --- oben: Stand, wer dran ist, Würfel, Pips
+  top.innerHTML = '';
+  top.classList.remove('mini');
+  const turnText = over
+    ? v.gameOver
+      ? t('gameOver')
+      : t('handOver')
+    : isMe
+      ? v.phase === 'roll'
+        ? de
+          ? '🎲 Du bist dran – würfeln'
+          : '🎲 Sıra sende – zar at'
+        : de
+          ? '♟ Ziehen: Pul antippen, dann Ziel'
+          : '♟ Oyna: pula dokun, sonra hedefe'
+      : `${t('waitingFor')}: ${tavlaName(v.current)}`;
+  const diceTxt = v.phase === 'move' && v.dice?.length ? (v.dice as number[]).map((d) => DIE_FACE[d]).join(' ') : '';
+  top.append(
+    h('div', { class: 'score' + (you.seat === 0 ? ' mine' : '') }, h('div', { class: 'muted' }, `${color(0)} ${tavlaName(0)}`), String(v.scores[0])),
+    h('div', { class: 'turn' + (isMe && !over ? ' me' : '') }, turnText, timer),
+    h(
+      'div',
+      { class: 'okeyinfo tavla-info' },
+      diceTxt ? h('span', { class: 'tv-dice' }, diceTxt) : null,
+      h('span', { class: 'muted', title: de ? 'Pip-Zählung: wie weit jeder noch ziehen muss' : 'Pip sayısı' }, `Pip ${v.pips[0]}:${v.pips[1]}`),
+      h('span', { class: 'muted ok-meta' }, `· ${de ? 'bis' : 'hedef'} ${v.target}`),
+    ),
+    h('div', { class: 'score' + (you.seat === 2 ? ' mine' : '') }, h('div', { class: 'muted' }, `${color(2)} ${tavlaName(2)}`), String(v.scores[1])),
+  );
+  // --- unten: Würfeln / Zurück / Zuschauer
+  wrap.innerHTML = '';
+  wrap.classList.toggle('hidden', false);
+  const bar = h('div', { class: 'actions-bar tavla-bar' });
+  if (you.seat === null) {
+    bar.append(h('span', { class: 'muted' }, '👁 ' + t('watching')));
+  } else if (!over && isMe && v.phase === 'roll') {
+    bar.append(h('button', { class: 'primary tv-roll', onclick: () => act({ action: 'roll' }) }, de ? '🎲 Würfeln' : '🎲 Zar at'));
+  } else if (!over && isMe && v.phase === 'move') {
+    bar.append(h('span', { class: 'pb-text' }, (de ? 'Würfel: ' : 'Zar: ') + diceTxt));
+    if (v.canUndo) bar.append(h('button', { class: 'ghost', onclick: () => ((tavlaSelFrom = null), world.setTavlaSel(null, []), act({ action: 'undo' })) }, de ? '↶ Zurück' : '↶ Geri al'));
+  } else if (!over) {
+    bar.append(h('span', { class: 'muted' }, `${t('waitingFor')}: ${tavlaName(v.current)}`));
+  }
+  wrap.append(bar);
+  zones.classList.add('hidden');
+  // --- Ergebnis
+  result.classList.toggle('hidden', !over || resultHidden());
+  if (!over || resultHidden()) return;
+  result.innerHTML = '';
+  const isOwner = table!.ownerId === myId;
+  const lr = v.lastResult;
+  result.append(
+    h('h2', {}, v.gameOver ? `🏆 ${t('winner')}: ${tavlaName(v.winnerTeam === 0 ? 0 : 2)}` : lr ? `🏁 ${tavlaName(lr.winner)} ${de ? 'gewinnt' : 'kazandı'}${lr.mars ? ' – MARS!' : ''}` : t('handOver')),
+    h(
+      'table',
+      { class: 'pisti-result' },
+      h('tr', {}, h('th', {}, ''), h('th', {}, `${color(0)} ${tavlaName(0)}`), h('th', {}, `${color(2)} ${tavlaName(2)}`)),
+      lr ? h('tr', {}, h('td', {}, de ? 'Dieses Spiel' : 'Bu oyun'), h('td', {}, lr.winner === 0 ? '+' + lr.points : '0'), h('td', {}, lr.winner === 2 ? '+' + lr.points : '0')) : null,
+      h('tr', { class: 'sum' }, h('td', {}, 'Σ'), h('td', {}, String(v.scores[0])), h('td', {}, String(v.scores[1]))),
+    ),
+    h('div', { class: 'muted', style: { textAlign: 'center', margin: '4px 0 8px' } }, de ? `Gespielt wird bis ${v.target} Punkte · Mars = 2 Punkte` : `${v.target} puana kadar · Mars = 2 puan`),
+  );
+  if (v.gameOver) {
+    result.append(
+      h(
+        'div',
+        { class: 'row', style: { justifyContent: 'center' } },
+        isOwner ? h('button', { class: 'primary', onclick: () => send({ type: 'rematch' }) }, '🔁 ' + t('rematch')) : null,
+        isOwner ? h('button', { onclick: () => send({ type: 'backToLobby' }) }, t('toLobby')) : null,
+      ),
+    );
+    return;
+  }
+  const ready = new Set(table!.ready ?? []);
+  const iAmReady = you.seat !== null && ready.has(you.seat);
+  result.append(
+    h(
+      'div',
+      { class: 'row', style: { justifyContent: 'center' } },
+      you.seat !== null ? h('button', { class: iAmReady ? 'ghost' : 'primary', onclick: () => send({ type: 'ready', ready: !iAmReady }) }, iAmReady ? (de ? '↩ Doch nicht bereit' : '↩ Hazır değilim') : de ? '✓ Nächstes Spiel' : '✓ Sonraki oyun') : null,
+      isOwner ? h('button', { onclick: () => send({ type: 'nextHand' }) }, de ? '▶ Jetzt starten' : '▶ Hemen başlat') : null,
+    ),
   );
 }
 

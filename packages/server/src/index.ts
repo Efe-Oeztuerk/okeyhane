@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, BatakGame, BatakError, batakBotTurn, type TableRules, type Mode } from '@okeyhane/engine';
+import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, BatakGame, BatakError, batakBotTurn, TavlaGame, TavlaError, tavlaBotTurn, type TableRules, type Mode } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from './protocol.ts';
 import { loadStats, recordResult, getStats } from './stats.ts';
 import { accounts, AccountError, type UserRow, type FriendRow } from './accounts.ts';
@@ -54,7 +54,7 @@ interface Table {
   spectators: Set<Client>;
   invited: Set<string>;
   rules: TableRules;
-  game: OkeyGame | PistiGame | BatakGame | null;
+  game: OkeyGame | PistiGame | BatakGame | TavlaGame | null;
   started: boolean;
   tv: MediaState;
   music: MediaState;
@@ -177,8 +177,11 @@ function pushTable(t: Table) {
 }
 
 /** Pişti: welche Plätze spielen mit (2 Spieler = gegenüber 0 + 2) */
+/** die Tavla-Ecke (eigener kleiner Tisch mit zwei Stühlen) */
+const TAVLA_SPOT = 4;
 function activeSeats(t: Table): number[] {
   if (t.rules.mode === 'batak' && t.rules.batakMode === 'gommeli') return [0, 1, 2];
+  if (t.rules.mode === 'tavla') return [0, 2];
   return t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2 ? [0, 2] : [0, 1, 2, 3];
 }
 function isPisti(g: Table['game']): g is PistiGame {
@@ -187,9 +190,12 @@ function isPisti(g: Table['game']): g is PistiGame {
 function isBatak(g: Table['game']): g is BatakGame {
   return !!g && (g as any).kind === 'batak';
 }
-/** Kartenspiel (kein Okey-Brett) */
-function isCards(g: Table['game']): g is PistiGame | BatakGame {
-  return isPisti(g) || isBatak(g);
+function isTavla(g: Table['game']): g is TavlaGame {
+  return !!g && (g as any).kind === 'tavla';
+}
+/** kein Okey-Brett (Kartenspiele und Tavla) */
+function isCards(g: Table['game']): g is PistiGame | BatakGame | TavlaGame {
+  return isPisti(g) || isBatak(g) || isTavla(g);
 }
 
 function pushState(t: Table) {
@@ -248,7 +254,8 @@ setInterval(() => {
   }
 }, 15_000);
 
-function newGame(t: Table): OkeyGame | PistiGame | BatakGame {
+function newGame(t: Table): OkeyGame | PistiGame | BatakGame | TavlaGame {
+  if (t.rules.mode === 'tavla') return new TavlaGame({ target: t.rules.tavlaTarget || 5, mars: t.rules.tavlaMars !== false }, Date.now() ^ Math.floor(Math.random() * 1e9));
   const seed = Date.now() & 0x7fffffff;
   if (t.rules.mode === 'batak') {
     const r = t.rules;
@@ -352,12 +359,13 @@ function scheduleBots(t: Table) {
       try {
         if (isPisti(g)) pistiBotTurn(g, seat);
         else if (isBatak(g)) batakBotTurn(g, seat);
+        else if (isTavla(g)) tavlaBotTurn(g, seat);
         else botTurn(g, seat);
       } catch (e) {
         console.error('Bot-Fehler', e);
       }
       afterAction(t);
-    }, isPisti(g) ? 1900 + Math.random() * 900 : isBatak(g) ? (g.phase === 'play' ? 1300 + Math.random() * 700 : 1700 + Math.random() * 900) : 900 + Math.random() * 700);
+    }, isTavla(g) ? (g.phase === 'roll' ? 900 + Math.random() * 500 : 650 + Math.random() * 350) : isPisti(g) ? 1900 + Math.random() * 900 : isBatak(g) ? (g.phase === 'play' ? 1300 + Math.random() * 700 : 1700 + Math.random() * 900) : 900 + Math.random() * 700);
   }
 }
 
@@ -388,7 +396,10 @@ function scheduleTurnTimer(t: Table) {
     try {
       if (isPisti(g)) pistiBotTurn(g, seat);
       else if (isBatak(g)) batakBotTurn(g, seat);
-      else botTurn(g, seat); // Zeit abgelaufen: automatischer Zug
+      else if (isTavla(g)) {
+        // Zeit abgelaufen: den ganzen Wurf automatisch spielen
+        while (g.current === seat && !g.gameOver && g.phase !== 'handOver') tavlaBotTurn(g, seat);
+      } else botTurn(g, seat); // Zeit abgelaufen: automatischer Zug
     } catch (e) {
       console.error(e);
     }
@@ -404,7 +415,7 @@ function afterAction(t: Table) {
     const losers: number[] = [];
     t.seats.forEach((s, seat) => {
       if (!activeSeats(t).includes(seat) || (!s.client && !s.bot)) return;
-      const team = isPisti(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : seat % 2;
+      const team = isPisti(g) || isTavla(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : seat % 2;
       if (g.winnerTeam === null) return;
       (team === g.winnerTeam ? winners : losers).push(seat);
       const cl = s.client;
@@ -484,7 +495,7 @@ async function handleAccount(c: Client, m: Msg) {
       return;
     }
     if (m.type === 'leaderboard') {
-      const mode = ['standard', 'okey101', 'perisan', 'pisti', 'batak'].includes(m.mode) ? m.mode : 'standard';
+      const mode = ['standard', 'okey101', 'perisan', 'pisti', 'batak', 'tavla'].includes(m.mode) ? m.mode : 'standard';
       const rows = await accounts.leaderboard(mode);
       send(c, { type: 'leaderboard', mode, rows });
       return;
@@ -627,7 +638,7 @@ function handle(c: Client, m: Msg) {
         turnDeadline: null,
         signatures: {},
         recorded: false,
-        spot: Math.max(0, Math.min(3, Number(m.spot) || 0)),
+        spot: (m.mode as Mode) === 'tavla' ? TAVLA_SPOT : Math.max(0, Math.min(3, Number(m.spot) || 0)),
         ready: new Set(),
         layouts: {},
       };
@@ -786,6 +797,13 @@ function handle(c: Client, m: Msg) {
         t.rules.pistiPlayers = t.rules.pistiPlayers === 2 ? 2 : 4;
         t.rules.pistiTarget = Math.max(10, Math.min(1000, Math.round(Number(t.rules.pistiTarget) || 151)));
         t.rules.pistiLastCounts = t.rules.pistiLastCounts !== false;
+        t.rules.tavlaTarget = Math.max(1, Math.min(31, Math.round(Number(t.rules.tavlaTarget) || 5)));
+        t.rules.tavlaMars = t.rules.tavlaMars !== false;
+        // Tavla wird nur in der Tavla-Ecke gespielt
+        if (t.rules.mode === 'tavla') {
+          for (const i of [1, 3]) t.seats[i].bot = null;
+          t.spot = TAVLA_SPOT;
+        } else if (t.spot === TAVLA_SPOT) t.spot = 0;
         if (t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2) for (const i of [1, 3]) t.seats[i].bot = null;
         {
           const r = t.rules;
@@ -914,6 +932,21 @@ function handle(c: Client, m: Msg) {
           afterAction(t);
           return;
         }
+        if (isTavla(g)) {
+          try {
+            const from = m.from === 'bar' ? 'bar' : Number(m.from);
+            const to = m.to === 'off' ? 'off' : Number(m.to);
+            if (m.action === 'roll') g.roll(seat);
+            else if (m.action === 'move') g.move(seat, from, to, m.die === undefined ? undefined : Number(m.die));
+            else if (m.action === 'undo') g.undo(seat);
+            else throw new GameError('Unbekannte Aktion');
+          } catch (e) {
+            if (e instanceof TavlaError) throw new GameError(e.message);
+            throw e;
+          }
+          afterAction(t);
+          return;
+        }
         if (isPisti(g)) {
           try {
             if (m.action === 'play') g.play(seat, Number(m.cardId), !!m.bluff);
@@ -998,7 +1031,17 @@ function handle(c: Client, m: Msg) {
       case 'setSpot': {
         // anderen Tisch wählen – nur vor dem Spielstart
         if (t.started) throw new GameError('Spiel läuft schon');
-        t.spot = Math.max(0, Math.min(3, Number(m.spot) || 0));
+        const spot = Math.max(0, Math.min(TAVLA_SPOT, Number(m.spot) || 0));
+        // Tavla-Ecke ↔ normale Tische: das Spiel wechselt mit (nur der Tischbesitzer)
+        const toTavla = spot === TAVLA_SPOT && t.rules.mode !== 'tavla';
+        const fromTavla = spot !== TAVLA_SPOT && t.rules.mode === 'tavla';
+        if ((toTavla || fromTavla) && !isOwner) throw new GameError(toTavla ? 'Nur der Tischbesitzer kann zu Tavla wechseln' : 'Nur der Tischbesitzer kann das Spiel wechseln');
+        if (toTavla || fromTavla) {
+          const keep = { allowBots: t.rules.allowBots, turnTimerSec: t.rules.turnTimerSec };
+          t.rules = { ...defaultRules(toTavla ? 'tavla' : 'standard'), ...keep };
+          if (toTavla) for (const i of [1, 3]) t.seats[i].bot = null;
+        }
+        t.spot = spot;
         pushTable(t);
         return;
       }

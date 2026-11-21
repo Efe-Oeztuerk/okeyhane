@@ -654,3 +654,10 @@ body.tv-watch .spect-bar { display: none; }
 .lb-tabs { gap: 6px; flex-wrap: wrap; margin-bottom: 8px; }
 .lb-board table td, .lb-board table th { padding: 3px 6px; text-align: left; }
 .lb-me td { color: var(--gold); font-weight: 600; }
+
+/* Tavla */
+.tavla-info .tv-dice { font-size: 22px; line-height: 1; letter-spacing: 2px; }
+.tavla-bar { justify-content: center; gap: 10px; }
+.tavla-bar .tv-roll { font-size: 18px; padding: 10px 26px; }
+body.phone .tavla-bar .tv-roll { font-size: 16px; padding: 8px 20px; }
+.tavla-info { white-space: nowrap; gap: 6px; }

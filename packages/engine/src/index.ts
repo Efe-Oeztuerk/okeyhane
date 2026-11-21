@@ -8,3 +8,4 @@ export * from './bot.ts';
 export * from './layout.ts';
 export * from './pisti.ts';
 export * from './batak.ts';
+export * from './tavla.ts';

@@ -40,7 +40,10 @@ export const SPOTS = [
   { x: 4.6, z: -0.9, tr: 'Pencere kenarı', de: 'Am Fenster' },
   { x: -2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sol', de: 'Garten links' },
   { x: 2.9, z: ROOM.d / 2 + 2.7, tr: 'Bahçe · sağ', de: 'Garten rechts' },
+  /** Tavla-Ecke: kleiner Tisch mit zwei Stühlen – hier (und nur hier) wird Tavla gespielt */
+  { x: 5.05, z: 2.9, tr: 'Tavla köşesi', de: 'Tavla-Ecke' },
 ];
+export const TAVLA_SPOT = 4;
 /** Grafik „niedrig“ beim Laden (Lichter, Gäste, Außenwelt werden dann sparsamer gebaut) */
 const LOW = settings.quality === 'low';
 /** Bestellbares beim Çaycı (rein kosmetisch) */
@@ -362,6 +365,7 @@ export class World {
       [3, 2.6],
       [-3, -2],
       [SPOTS[1].x - 0.6, SPOTS[1].z],
+      [SPOTS[4].x - 0.6, SPOTS[4].z],
     ];
     for (const [x, z] of lampPositions) {
       const cord = new THREE.Mesh(new THREE.CylinderGeometry(0.008, 0.008, 1.1), new THREE.MeshStandardMaterial({ color: '#222' }));
@@ -682,7 +686,7 @@ export class World {
       string(new THREE.Vector3(sx * (w / 2 - 0.5), 2.5, z0 + 2.0), tree, 0.45);
       string(new THREE.Vector3(sx * (w / 2 - 0.5), 2.5, z0 + 2.0), new THREE.Vector3(sx * (w / 2 - 0.4), 2.2, z1 - 0.3), 0.3);
     }
-    for (const sp of SPOTS.slice(2)) {
+    for (const sp of SPOTS.slice(2, 4)) {
       if (LOW) break;
       const l = new THREE.PointLight('#ffcf8a', 0, 6, 1.6);
       l.position.set(sp.x, 2.6, sp.z);
@@ -838,6 +842,7 @@ export class World {
   // ------------------------------------------------------------ Tisch + Stühle
 
   private buildTable(spot: number) {
+    if (spot === TAVLA_SPOT) return this.buildTavlaTable(spot);
     const sp = SPOTS[spot];
     const meshes: THREE.Object3D[] = [];
     const wood = new THREE.MeshStandardMaterial({ color: '#5b3a22', roughness: 0.6 });
@@ -880,6 +885,64 @@ export class World {
       this.chairs.push(chair);
     }
     this.spotMeshes[spot] = meshes;
+  }
+
+  /** Tavla-Ecke: schmaler Nussbaum-Tisch mit Intarsienrand, nur zwei Stühle (Plätze 0 + 2) */
+  private buildTavlaTable(spot: number) {
+    const sp = SPOTS[spot];
+    const meshes: THREE.Object3D[] = [];
+    const wood = new THREE.MeshStandardMaterial({ color: '#4a2c18', roughness: 0.55 });
+    const W = 0.86;
+    const D2 = 1.0;
+    const top = new THREE.Mesh(new THREE.BoxGeometry(W, 0.045, D2), wood);
+    top.position.set(sp.x, TABLE_Y - 0.025, sp.z);
+    top.castShadow = top.receiveShadow = true;
+    // heller Intarsienrand
+    const inlay = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, D2 - 0.06), new THREE.MeshStandardMaterial({ color: '#b58a52', roughness: 0.6 }));
+    inlay.rotation.x = -Math.PI / 2;
+    inlay.position.set(sp.x, TABLE_Y - 0.0015, sp.z);
+    const inner = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.09, D2 - 0.09), wood);
+    inner.rotation.x = -Math.PI / 2;
+    inner.position.set(sp.x, TABLE_Y - 0.001, sp.z);
+    for (const m of [top, inlay, inner]) {
+      m.userData.table = true;
+      m.userData.spot = spot;
+      m.receiveShadow = true;
+      meshes.push(m);
+      this.scene.add(m);
+    }
+    for (const [x, z] of [
+      [-W / 2 + 0.06, -D2 / 2 + 0.06],
+      [W / 2 - 0.06, -D2 / 2 + 0.06],
+      [-W / 2 + 0.06, D2 / 2 - 0.06],
+      [W / 2 - 0.06, D2 / 2 - 0.06],
+    ]) {
+      const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.02, TABLE_Y - 0.04, 10), wood);
+      leg.position.set(sp.x + x, (TABLE_Y - 0.04) / 2, sp.z + z);
+      leg.castShadow = true;
+      this.scene.add(leg);
+    }
+    for (const s of [0, 2]) {
+      const dir = seatPos(s);
+      const chair = this.chair();
+      chair.position.set(sp.x + dir.x * 1.07, 0, sp.z + dir.z * 1.07);
+      facing(chair, dir.x, dir.z);
+      chair.traverse((o) => {
+        o.userData.seat = s;
+        o.userData.spot = spot;
+      });
+      this.scene.add(chair);
+      this.chairs.push(chair);
+    }
+    this.spotMeshes[spot] = meshes;
+    // ein Tavla-Brett liegt immer hier (auch wenn gerade nicht gespielt wird)
+    const deco = new THREE.Group();
+    deco.position.set(sp.x, TABLE_Y, sp.z);
+    this.scene.add(deco);
+    this.tavlaDeco = deco;
+    void this.loadTavlaBoard().then((b) => {
+      if (this.tavlaDeco === deco && !this.tavlaOn) deco.add(b);
+    });
   }
 
   private chair() {
@@ -1232,6 +1295,14 @@ export class World {
   private seatCam(seat: number) {
     const dir = seatPos(seat);
     const off = this.tableRoot.position;
+    if (this.tavlaOn) {
+      // Tavla: näher und steiler aufs Brett
+      const ph = document.body.classList.contains('phone');
+      const lift = Math.max(0, Math.min(1, settings.camTilt / 25));
+      const pos = new THREE.Vector3(dir.x * (ph ? 0.36 : 0.42), TABLE_Y + (ph ? 0.46 : 0.5), dir.z * (ph ? 0.36 : 0.42)).add(off);
+      const look = new THREE.Vector3(-dir.x * (0.03 + lift * 0.25), TABLE_Y + lift * 0.1, -dir.z * (0.03 + lift * 0.25)).add(off);
+      return { pos, look };
+    }
     // Handy: näher ran, damit die Steine auf dem Tisch gut lesbar sind
     const ph = document.body.classList.contains('phone');
     const pos = new THREE.Vector3(dir.x * (ph ? 1.0 : 1.18), ph ? 1.4 : 1.5, dir.z * (ph ? 1.0 : 1.18)).add(off);
@@ -1248,6 +1319,8 @@ export class World {
     if (spot === this.spot && this.tableRoot.position.x === SPOTS[spot].x) return;
     this.spot = spot;
     this.tableRoot.position.set(SPOTS[spot].x, 0, SPOTS[spot].z);
+    // Grafik „niedrig“: das eine echte Licht hängt über dem Tisch, an dem gespielt wird
+    if (LOW && this.lamps[0]) this.lamps[0].position.set(SPOTS[spot].x + (spot === 0 ? 0.6 : 0), spot >= 2 && spot <= 3 ? 2.6 : ROOM.h - 1.3, SPOTS[spot].z);
     this.tableRoot.updateMatrixWorld(true);
     for (const [k, c] of this.loungeChairs) {
       const sp = this.loungeSpot(k);
@@ -1770,7 +1843,8 @@ export class World {
       if (!touch) this.setFocus(false);
       return;
     }
-    if (hit.userData.pile) this.onPile?.();
+    if (hit.userData.tavla !== undefined) this.onTavla?.(hit.userData.tavla);
+    else if (hit.userData.pile) this.onPile?.();
     else if (hit.userData.side) this.onSide?.();
     else if (hit.userData.meld !== undefined) this.onMeld?.(hit.userData.meld);
   }
@@ -1874,7 +1948,7 @@ export class World {
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length || hits[0].distance > 5) return null;
     let o: THREE.Object3D | null = hits[0].object;
-    while (o && o.userData.seat === undefined && o.userData.lounge === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
+    while (o && o.userData.seat === undefined && o.userData.lounge === undefined && o.userData.tavla === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
     return o;
   }
 
@@ -1889,7 +1963,7 @@ export class World {
     const hits = this.raycaster.intersectObjects(targets, true);
     if (!hits.length) return null;
     let o: THREE.Object3D | null = hits[0].object;
-    while (o && o.userData.seat === undefined && o.userData.lounge === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
+    while (o && o.userData.seat === undefined && o.userData.lounge === undefined && o.userData.tavla === undefined && !o.userData.pile && !o.userData.side && o.userData.meld === undefined && !o.userData.table) o = o.parent;
     return o;
   }
 
@@ -1979,6 +2053,7 @@ export class World {
   }
 
   setPisti(v: any | null, mySeat: number | null) {
+    if (v) this.setTavla(null, null);
     this.sharpCards(!!v);
     this.visual = null;
     this.flyers = [];
@@ -2093,6 +2168,7 @@ export class World {
 
   /** Batak-Tisch: Stich in der Mitte, gewonnene Stiche, Rückseiten der anderen, offene Partner-Hand (Eşli) */
   setBatak(v: any | null, mySeat: number | null) {
+    if (v) this.setTavla(null, null);
     this.sharpCards(!!v);
     this.visual = null;
     this.flyers = [];
@@ -2473,6 +2549,7 @@ export class World {
   }
 
   setGame(v: GameVisual | null) {
+    this.setTavla(null, null);
     this.visual = v;
     this.flyers = [];
     if (!v) this.prevDiscards = [];
@@ -2952,6 +3029,7 @@ export class World {
     }
     this.updateCaycı(dt);
     this.updateWalkers(dt);
+    this.updateTavla(dt);
     this.city?.update(dt);
     for (const [i, pg] of this.pigeons.entries()) {
       const peck = Math.max(0, Math.sin(t * 3 + i * 1.7)) ** 6;
@@ -2996,6 +3074,390 @@ export class World {
 
     this.renderer.render(this.scene, this.camera);
     this.css.render(this.scene, this.camera);
+  }
+
+  // ------------------------------------------------------------ Tavla
+
+  /** Tavla läuft gerade (Brett mit Pullar im tableRoot) */
+  tavlaOn = false;
+  private tavlaDeco: THREE.Group | null = null;
+  private tavlaRoot = new THREE.Group();
+  private tavlaBoardObj: THREE.Object3D | null = null;
+  private tavlaBoardP: Promise<THREE.Object3D> | null = null;
+  private tavlaChk: THREE.Mesh[][] = [[], []];
+  private tavlaDiceM: THREE.Mesh[] = [];
+  private tavlaHi = new THREE.Group();
+  private tavlaZones: THREE.Mesh[] = [];
+  private tavlaAnims: { m: THREE.Object3D; from: THREE.Vector3; to: THREE.Vector3; t: number; dur: number; arc: number; delay: number; rot0?: THREE.Euler; rot1?: THREE.Euler }[] = [];
+  private tavlaSeq = -1;
+  private tavlaPrev: any = null;
+  private tavlaView: any = null;
+  private tavlaSel: { from: any; targets: any[] } = { from: null, targets: [] };
+  private static TS = 0.62 / 174.96; // Modell-Einheiten → Meter
+  private static TCX = 8.246;
+  private static TCZ = -24.28;
+  /** Oberfläche des Spielfelds / des Ablagefachs (lokal, Meter über der Tischplatte) */
+  private tavlaSurf = 0.009;
+  private tavlaTray = 0.03;
+  onTavla: ((key: string) => void) | null = null;
+
+  private loadTavlaBoard(): Promise<THREE.Object3D> {
+    if (!this.tavlaBoardP) {
+      this.tavlaBoardP = loadModel('tavla').then((m) => {
+        const S = World.TS;
+        const wrap = new THREE.Group();
+        m.scale.setScalar(S);
+        m.position.set(-World.TCX * S, -0.869 * S + 0.0006, -World.TCZ * S);
+        wrap.add(m);
+        // Höhe von Spielfeld und Ablage per Strahl messen
+        wrap.updateMatrixWorld(true);
+        const rc = new THREE.Raycaster();
+        const h = (x: number, z: number) => {
+          rc.set(new THREE.Vector3((x - World.TCX) * S, 1, (z - World.TCZ) * S), new THREE.Vector3(0, -1, 0));
+          const hit = rc.intersectObject(wrap, true)[0];
+          return hit ? hit.point.y : null;
+        };
+        this.tavlaSurf = h(-30, -24) ?? this.tavlaSurf;
+        this.tavlaTray = h(85, -24) ?? this.tavlaTray;
+        return wrap;
+      });
+    }
+    return this.tavlaBoardP.then((w) => w.clone(true));
+  }
+
+  /** Ort (Brettmitte = 0) in Modell-Einheiten → lokale Meter */
+  private tl(x: number, z: number, y: number) {
+    return new THREE.Vector3((x - World.TCX) * World.TS, y, (z - World.TCZ) * World.TS);
+  }
+
+  private static TX_TOP = [-53.24, -43.24, -33.14, -23.24, -12.74, -2.34, 16.65, 27.04, 37.14, 47.33, 57.53, 67.73];
+  private static TX_BOT = [-53.74, -43.64, -33.24, -22.84, -12.74, -2.24, 17.05, 27.64, 38.14, 48.33, 58.53, 68.53];
+  private static TR = 4.45; // Pul-Radius (Modell)
+  private static TH = 2.0; // Pul-Dicke (Modell)
+
+  /** Position des k-ten Pul (von n) an einem Ort */
+  private tavlaSlot(pl: number, place: number | 'bar' | 'off', k: number): { pos: THREE.Vector3; stand: boolean } {
+    const R = World.TR;
+    const T = World.TH * World.TS;
+    const layer = Math.floor(k / 5);
+    const kk = (k % 5) + layer * 0.5;
+    if (place === 'off') {
+      // rausgespielte Pullar stehen hochkant im Ablagefach rechts
+      const z = pl === 0 ? 21 - k * 2.25 : -69.5 + k * 2.25;
+      return { pos: this.tl(85, z, this.tavlaTray + R * World.TS), stand: true };
+    }
+    if (place === 'bar') {
+      const z = pl === 0 ? World.TCZ + 6 + kk * 2 * R : World.TCZ - 6 - kk * 2 * R;
+      return { pos: this.tl(6.86, z, this.tavlaSurf + layer * T), stand: false };
+    }
+    const bottom = place <= 11;
+    const x = bottom ? World.TX_BOT[11 - place] : World.TX_TOP[place - 12];
+    const z = bottom ? 24.3 - R - 0.4 - kk * 2 * R : -72.8 + R + 0.4 + kk * 2 * R;
+    return { pos: this.tl(x, z, this.tavlaSurf + layer * T), stand: false };
+  }
+
+  private tavlaMats: THREE.Material[] = [];
+  private makeChecker(pl: number) {
+    const R = World.TR * World.TS;
+    const T = World.TH * World.TS;
+    const pts = [
+      new THREE.Vector2(0, 0),
+      new THREE.Vector2(R * 0.96, 0),
+      new THREE.Vector2(R, T * 0.2),
+      new THREE.Vector2(R, T * 0.8),
+      new THREE.Vector2(R * 0.95, T),
+      new THREE.Vector2(R * 0.78, T),
+      new THREE.Vector2(R * 0.74, T * 0.86),
+      new THREE.Vector2(0, T * 0.86),
+    ];
+    if (!this.tavlaMats.length) {
+      this.tavlaMats = [
+        new THREE.MeshStandardMaterial({ color: '#efe2c6', roughness: 0.42 }),
+        new THREE.MeshStandardMaterial({ color: '#2a1a12', roughness: 0.38 }),
+      ];
+    }
+    const g = (this as any)._chkGeo ?? ((this as any)._chkGeo = new THREE.LatheGeometry(pts, 20));
+    const m = new THREE.Mesh(g, this.tavlaMats[pl]);
+    m.castShadow = !LOW;
+    return m;
+  }
+
+  private static diceMats: THREE.Material[] | null = null;
+  private makeDie() {
+    if (!World.diceMats) {
+      const face = (v: number) => {
+        const c = document.createElement('canvas');
+        c.width = c.height = 64;
+        const x = c.getContext('2d')!;
+        x.fillStyle = '#f6f1e6';
+        x.fillRect(0, 0, 64, 64);
+        x.fillStyle = v === 1 ? '#a8201a' : '#1b1b1b';
+        const P: Record<number, number[][]> = {
+          1: [[32, 32]],
+          2: [[18, 18], [46, 46]],
+          3: [[16, 16], [32, 32], [48, 48]],
+          4: [[18, 18], [46, 18], [18, 46], [46, 46]],
+          5: [[17, 17], [47, 17], [32, 32], [17, 47], [47, 47]],
+          6: [[19, 15], [45, 15], [19, 32], [45, 32], [19, 49], [45, 49]],
+        };
+        for (const [px, py] of P[v]) {
+          x.beginPath();
+          x.arc(px, py, v === 1 ? 9 : 6.2, 0, Math.PI * 2);
+          x.fill();
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.colorSpace = THREE.SRGBColorSpace;
+        return new THREE.MeshStandardMaterial({ map: t, roughness: 0.35 });
+      };
+      // Box-Reihenfolge: +x, -x, +y, -y, +z, -z  → Gegenseiten ergeben 7
+      World.diceMats = [face(3), face(4), face(1), face(6), face(2), face(5)];
+    }
+    const s = 4.1 * World.TS;
+    const m = new THREE.Mesh(new THREE.BoxGeometry(s, s, s), World.diceMats);
+    m.castShadow = !LOW;
+    return m;
+  }
+  /** Drehung, damit Augenzahl v oben liegt */
+  private static dieRot(v: number, yaw: number) {
+    const e = new THREE.Euler(0, yaw, 0, 'YXZ');
+    if (v === 6) e.x = Math.PI;
+    else if (v === 2) e.x = -Math.PI / 2;
+    else if (v === 5) e.x = Math.PI / 2;
+    else if (v === 3) e.z = Math.PI / 2;
+    else if (v === 4) e.z = -Math.PI / 2;
+    return e;
+  }
+
+  /** Tavla zeigen (v = Ansicht vom Server) oder ausblenden (null) */
+  setTavla(v: any | null, viewer: number | null) {
+    if (!v) {
+      if (this.tavlaOn) {
+        this.tavlaOn = false;
+        this.tavlaRoot.removeFromParent();
+        this.tavlaAnims = [];
+        this.tavlaSeq = -1;
+        this.tavlaPrev = null;
+        if (this.tavlaDeco) this.tavlaDeco.visible = true;
+      }
+      return;
+    }
+    if (!this.tavlaOn) {
+      this.tavlaOn = true;
+      this.sharpCards(false);
+      this.pistiFx.clear();
+      this.pistiAnims = [];
+      this.visual = null;
+      this.gameGroup.clear();
+      this.clickables = [];
+      this.sideObj = null;
+      if (this.tavlaDeco) this.tavlaDeco.visible = false;
+      this.tavlaRoot.position.y = TABLE_Y;
+      this.tableRoot.add(this.tavlaRoot);
+      if (!this.tavlaBoardObj) {
+        void this.loadTavlaBoard().then((b) => {
+          this.tavlaBoardObj = b;
+          this.tavlaRoot.add(b);
+          if (this.tavlaView) this.layoutTavla(this.tavlaView, null);
+        });
+      }
+      if (!this.tavlaChk[0].length) {
+        for (const pl of [0, 1]) for (let i = 0; i < 15; i++) {
+          const m = this.makeChecker(pl);
+          this.tavlaChk[pl].push(m);
+          this.tavlaRoot.add(m);
+        }
+        for (let i = 0; i < 2; i++) {
+          const d = this.makeDie();
+          this.tavlaDiceM.push(d);
+          this.tavlaRoot.add(d);
+        }
+        this.tavlaRoot.add(this.tavlaHi);
+        this.buildTavlaZones();
+      }
+      if (this.seated !== null) this.camTarget = this.seatCam(this.seated);
+    }
+    this.tavlaViewer = viewer ?? 0;
+    const prev = this.tavlaView;
+    this.tavlaView = v;
+    const e = v.lastEvent;
+    const fresh = e && e.seq !== this.tavlaSeq;
+    this.tavlaSeq = e?.seq ?? -1;
+    this.layoutTavla(v, fresh && prev ? { prev, e } : fresh ? { prev: null, e } : null);
+  }
+  private tavlaViewer = 0;
+
+  private buildTavlaZones() {
+    const S = World.TS;
+    const mat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, colorWrite: false });
+    const add = (key: string, x: number, z: number, w: number, d: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, 0.02, d * S), mat);
+      m.position.copy(this.tl(x, z, this.tavlaSurf + 0.004));
+      m.userData.tavla = key;
+      this.tavlaRoot.add(m);
+      this.tavlaZones.push(m);
+    };
+    for (let i = 0; i < 24; i++) {
+      const bottom = i <= 11;
+      const x = bottom ? World.TX_BOT[11 - i] : World.TX_TOP[i - 12];
+      add('p' + i, x, bottom ? 24.3 - 23 : -72.8 + 23, 10, 46);
+    }
+    add('bar', 6.86, World.TCZ, 9, 96);
+    add('off', 85, World.TCZ, 20, 100);
+  }
+
+  /** Pullar, Würfel und Markierungen an ihre Plätze (mit Animation des letzten Zugs) */
+  private layoutTavla(v: any, ev: { prev: any; e: any } | null) {
+    const used = [0, 0];
+    const placeOf = new Map<THREE.Mesh, string>();
+    const put = (pl: number, place: number | 'bar' | 'off', k: number) => {
+      const m = this.tavlaChk[pl][used[pl]++];
+      if (!m) return null;
+      const s = this.tavlaSlot(pl, place, k);
+      m.position.copy(s.pos);
+      m.rotation.set(s.stand ? Math.PI / 2 : 0, 0, 0);
+      m.visible = true;
+      m.userData.tavla = place === 'bar' ? 'bar' : place === 'off' ? 'off' : 'p' + place;
+      placeOf.set(m, m.userData.tavla);
+      return m;
+    };
+    const top: Record<string, THREE.Mesh | null> = {};
+    for (let i = 0; i < 24; i++) {
+      const val = v.board[i];
+      const pl = val > 0 ? 0 : 1;
+      for (let k = 0; k < Math.abs(val); k++) {
+        const m = put(pl, i, k);
+        top[`${pl}:${i}`] = m;
+      }
+    }
+    for (const pl of [0, 1]) {
+      for (let k = 0; k < v.bar[pl]; k++) top[`${pl}:bar`] = put(pl, 'bar', k);
+      for (let k = 0; k < v.off[pl]; k++) top[`${pl}:off`] = put(pl, 'off', k);
+    }
+    for (const pl of [0, 1]) for (let i = used[pl]; i < 15; i++) this.tavlaChk[pl][i].visible = false;
+    // laufende Animationen der Pullar abbrechen (neue Lage gilt)
+    this.tavlaAnims = this.tavlaAnims.filter((a) => this.tavlaDiceM.includes(a.m as THREE.Mesh));
+    // letzter Zug: Pul vom alten Platz zum neuen fliegen lassen
+    const e0 = ev?.e?.kind === 'handEnd' ? ev.e.before : ev?.e;
+    if (ev?.prev && e0 && (e0.kind === 'move' || e0.kind === 'undo')) {
+      const pl = e0.seat === 0 ? 0 : 1;
+      const p = ev.prev;
+      const cntAt = (view: any, who: number, place: any) => (place === 'bar' ? view.bar[who] : place === 'off' ? view.off[who] : who === 0 ? Math.max(0, view.board[place]) : Math.max(0, -view.board[place]));
+      const src = e0.kind === 'move' ? e0.from : e0.to;
+      const dst = e0.kind === 'move' ? e0.to : e0.from;
+      const m = top[`${pl}:${dst}`];
+      if (m) {
+        const n0 = cntAt(p, pl, src);
+        const fromPos = this.tavlaSlot(pl, src, Math.max(0, n0 - 1)).pos;
+        this.tavlaAnims.push({ m, from: fromPos, to: m.position.clone(), t: 0, dur: 0.38, arc: 0.04, delay: 0 });
+        m.position.copy(fromPos);
+      }
+      if (e0.hit) {
+        const op = 1 - pl;
+        if (e0.kind === 'move') {
+          const hm = top[`${op}:bar`];
+          if (hm) {
+            const fromPos = this.tavlaSlot(op, e0.to, 0).pos;
+            this.tavlaAnims.push({ m: hm, from: fromPos, to: hm.position.clone(), t: 0, dur: 0.45, arc: 0.06, delay: 0.28 });
+            hm.position.copy(fromPos);
+          }
+        } else {
+          const hm = top[`${op}:${e0.to}`];
+          if (hm) {
+            const fromPos = this.tavlaSlot(op, 'bar', Math.max(0, p.bar[op] - 1)).pos;
+            this.tavlaAnims.push({ m: hm, from: fromPos, to: hm.position.clone(), t: 0, dur: 0.4, arc: 0.05, delay: 0.15 });
+            hm.position.copy(fromPos);
+          }
+        }
+      }
+    }
+    // Würfel: rechts vom Spieler, der dran ist
+    const rolled: number[] = v.rolled ?? [];
+    const showDice = rolled.length === 2 && v.phase !== 'handOver' && v.phase !== 'gameOver' && !(v.phase === 'roll' && !(ev?.e?.kind === 'pass'));
+    const diceSeat = ev?.e?.kind === 'pass' ? ev.e.seat : v.current;
+    const dx = diceSeat === 0 ? 40 : -25;
+    const rollNow = ev?.e && (ev.e.kind === 'roll' || ev.e.kind === 'opening' || (ev.e.kind === 'pass' && ev.prev?.phase === 'roll'));
+    this.tavlaDiceM.forEach((d, i) => {
+      d.visible = showDice;
+      if (!showDice) return;
+      const val = rolled[i];
+      const yaw = (i ? 0.35 : -0.25) + (val * 0.37) % 0.6;
+      const target = this.tl(dx + (i ? 3.5 : -3.5), World.TCZ + (i ? 4 : -4), this.tavlaSurf + 2.05 * World.TS);
+      const rot = World.dieRot(val, yaw);
+      // benutzter Würfel wird blasser
+      const left: number[] = v.dice ?? [];
+      const dimmed = rolled[0] !== rolled[1] && !left.includes(val) && v.phase === 'move';
+      d.scale.setScalar(dimmed ? 0.85 : 1);
+      if (rollNow) {
+        const from = target.clone().add(new THREE.Vector3((i ? 0.05 : -0.05) * (diceSeat === 0 ? 1 : -1), 0.14, (diceSeat === 0 ? 0.12 : -0.12)));
+        this.tavlaAnims = this.tavlaAnims.filter((a) => a.m !== d);
+        this.tavlaAnims.push({ m: d, from, to: target, t: 0, dur: 0.55, arc: 0.05, delay: i * 0.05, rot0: new THREE.Euler(Math.random() * 6, Math.random() * 6, Math.random() * 6), rot1: rot });
+        d.position.copy(from);
+      } else if (!this.tavlaAnims.some((a) => a.m === d)) {
+        d.position.copy(target);
+        d.rotation.copy(rot);
+      }
+    });
+    this.clickables = [...this.tavlaZones, ...this.tavlaChk[0], ...this.tavlaChk[1]];
+    this.drawTavlaSel();
+  }
+
+  /** Auswahl (gewählter Pul + mögliche Ziele) markieren */
+  setTavlaSel(from: any, targets: any[]) {
+    this.tavlaSel = { from, targets };
+    this.drawTavlaSel();
+  }
+  private tavlaHiMat = new THREE.MeshBasicMaterial({ color: '#7dff9a', transparent: true, opacity: 0.55, depthWrite: false });
+  private tavlaSelMat = new THREE.MeshBasicMaterial({ color: '#ffd54a', transparent: true, opacity: 0.75, depthWrite: false });
+  private drawTavlaSel() {
+    this.tavlaHi.clear();
+    const v = this.tavlaView;
+    if (!v) return;
+    const R = World.TR * World.TS;
+    const ring = (pos: THREE.Vector3, mat: THREE.Material, big = 1) => {
+      const m = new THREE.Mesh(new THREE.RingGeometry(R * 0.8 * big, R * 1.12 * big, 24), mat);
+      m.rotation.x = -Math.PI / 2;
+      m.position.copy(pos).add(new THREE.Vector3(0, World.TH * World.TS + 0.0015, 0));
+      this.tavlaHi.add(m);
+    };
+    const pl = this.tavlaViewer === 0 ? 0 : 1;
+    const count = (place: any) => (place === 'bar' ? v.bar[pl] : place === 'off' ? v.off[pl] : pl === 0 ? Math.max(0, v.board[place]) : Math.max(0, -v.board[place]));
+    const { from, targets } = this.tavlaSel;
+    if (from !== null && from !== undefined) {
+      const n = count(from);
+      if (n > 0) ring(this.tavlaSlot(pl, from, n - 1).pos, this.tavlaSelMat);
+    }
+    for (const t of targets) {
+      if (t === 'off') {
+        const m = new THREE.Mesh(new THREE.PlaneGeometry(16 * World.TS, 40 * World.TS), this.tavlaHiMat);
+        m.rotation.x = -Math.PI / 2;
+        m.position.copy(this.tl(85, pl === 0 ? 4 : -52, this.tavlaTray + 0.002));
+        this.tavlaHi.add(m);
+        continue;
+      }
+      // eigener Stapel oder leer: nächster Platz; einzelner Gegner: auf ihm
+      const own = count(t);
+      ring(this.tavlaSlot(pl, t, own).pos, this.tavlaHiMat);
+    }
+  }
+
+  private updateTavla(dt: number) {
+    if (!this.tavlaOn || !this.tavlaAnims.length) return;
+    for (const a of this.tavlaAnims) {
+      if (a.delay > 0) {
+        a.delay -= dt;
+        continue;
+      }
+      a.t = Math.min(1, a.t + dt / a.dur);
+      const k = a.t < 0.5 ? 2 * a.t * a.t : 1 - Math.pow(-2 * a.t + 2, 2) / 2;
+      a.m.position.lerpVectors(a.from, a.to, k);
+      a.m.position.y += Math.sin(Math.PI * a.t) * a.arc;
+      if (a.rot0 && a.rot1) {
+        const q0 = new THREE.Quaternion().setFromEuler(a.rot0);
+        const q1 = new THREE.Quaternion().setFromEuler(a.rot1);
+        a.m.quaternion.slerpQuaternions(q0, q1, Math.min(1, a.t * 1.25));
+      }
+    }
+    this.tavlaAnims = this.tavlaAnims.filter((a) => a.t < 1);
   }
 
   // ------------------------------------------------------------ Çaycı + Bestellungen
