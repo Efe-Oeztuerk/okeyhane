@@ -253,8 +253,6 @@ on('state', (m) => {
   const wasEnded = prev && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
   if (ended && !wasEnded) {
     holdResult(2200);
-    // mit Okey beendet → die Figur ruft „Okey!“
-    if (m.lastResult?.withOkey && m.lastResult.finisher !== null && m.lastResult.finisher !== undefined) sayLine(m.lastResult.finisher, 'okey');
     if (m.lastResult?.note) toast(m.lastResult.note, '#2d5a3a');
   }
   // neue Runde beginnt → Zettel wieder zu
