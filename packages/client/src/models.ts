@@ -72,6 +72,7 @@ export function placeModel(
 
 /** Namensnennung (CC BY 4.0) – wird im Menü unter „Credits“ angezeigt */
 export const CREDITS = [
+  { what: 'Vintage Wooden Serving Tray Table (Royalty Free)', author: '3dfarm (CGTrader)', url: 'https://www.cgtrader.com/free-3d-models/furniture/table/s00044-vintage-wooden-serving-tray-table' },
   { what: '3D Model Backgammon – Tavla (Brett, CC BY 4.0)', author: 'Serhat Siri', url: 'https://sketchfab.com/3d-models/3d-model-backgammon-tavla-d9827b365a4547d58b8099698084f2ab' },
   { what: 'Hookah (Saray)', author: 'NicKravchenko', url: 'https://sketchfab.com/3d-models/hookah-adfa9957e99c469fa8cf8d9252e36707' },
   { what: 'Hookah (Usta)', author: 'QwertModels', url: 'https://sketchfab.com/3d-models/hookah-e14b842465864eada037488b7e4281f2' },

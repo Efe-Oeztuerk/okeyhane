@@ -13,6 +13,7 @@ import { settings, onSettings } from './settings.ts';
 import { sfx } from './sound.ts';
 import { makeShisha, animateShisha, type ShishaStyle } from './props.ts';
 import { placeModel, loadModel } from './models.ts';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 
 const TABLE_Y = 0.74;
 const FLAT = 1.7;
@@ -1319,6 +1320,8 @@ export class World {
     if (spot === this.spot && this.tableRoot.position.x === SPOTS[spot].x) return;
     this.spot = spot;
     this.tableRoot.position.set(SPOTS[spot].x, 0, SPOTS[spot].z);
+    // Tavla-Ecke: nur zwei Plätze → nur zwei Beistelltische
+    this.sehpas.forEach((g, i) => g.parent && (g.parent.visible = !(spot === TAVLA_SPOT && i % 2 === 1)));
     // Grafik „niedrig“: das eine echte Licht hängt über dem Tisch, an dem gespielt wird
     if (LOW && this.lamps[0]) this.lamps[0].position.set(SPOTS[spot].x + (spot === 0 ? 0.6 : 0), spot >= 2 && spot <= 3 ? 2.6 : ROOM.h - 1.3, SPOTS[spot].z);
     this.tableRoot.updateMatrixWorld(true);
@@ -3101,7 +3104,89 @@ export class World {
   private tavlaTray = 0.03;
   onTavla: ((key: string) => void) | null = null;
 
+  /** eigenes, leichtes Brett (Grafik „niedrig“): eine Textur + ein paar Kästen, gleiche Maße wie das Modell */
+  private buildTavlaBoardLow(): THREE.Object3D {
+    const S = World.TS;
+    const X0 = -79.235, X1 = 95.727, Z0 = -79.235, Z1 = 30.67;
+    const PX = 6; // Pixel pro Modell-Einheit
+    const c = document.createElement('canvas');
+    c.width = Math.round((X1 - X0) * PX);
+    c.height = Math.round((Z1 - Z0) * PX);
+    const g = c.getContext('2d')!;
+    const px = (x: number) => (x - X0) * PX;
+    const pz = (z: number) => (z - Z0) * PX;
+    // Holz mit Maserung
+    g.fillStyle = '#6e3524';
+    g.fillRect(0, 0, c.width, c.height);
+    for (let i = 0; i < 260; i++) {
+      g.strokeStyle = `rgba(${40 + Math.random() * 30},${15 + Math.random() * 15},10,${0.08 + Math.random() * 0.1})`;
+      g.lineWidth = 1 + Math.random() * 2;
+      const y = Math.random() * c.height;
+      g.beginPath();
+      g.moveTo(0, y);
+      g.bezierCurveTo(c.width * 0.3, y + (Math.random() - 0.5) * 20, c.width * 0.7, y + (Math.random() - 0.5) * 20, c.width, y + (Math.random() - 0.5) * 10);
+      g.stroke();
+    }
+    // Spielfeld etwas dunkler
+    g.fillStyle = 'rgba(30,10,5,0.25)';
+    g.fillRect(px(-58.1), pz(-72.8), px(72.8) - px(-58.1), pz(24.3) - pz(-72.8));
+    // Zungen (Dreiecke)
+    const tri = (x: number, base: number, tip: number, light: boolean) => {
+      g.fillStyle = light ? '#ecd6a6' : '#3a2015';
+      g.beginPath();
+      g.moveTo(px(x - 4.9), pz(base));
+      g.lineTo(px(x + 4.9), pz(base));
+      g.lineTo(px(x), pz(tip));
+      g.closePath();
+      g.fill();
+    };
+    World.TX_BOT.forEach((x, k) => tri(x, 24.3, 24.3 - 40, k % 2 === 0));
+    World.TX_TOP.forEach((x, k) => tri(x, -72.8, -72.8 + 40, k % 2 === 1));
+    // Mittelsteg + Ablagefach rechts
+    g.fillStyle = '#2a120a';
+    g.fillRect(px(6.86) - 3, pz(-72.8), 6, pz(24.3) - pz(-72.8));
+    g.fillStyle = 'rgba(20,6,3,0.35)';
+    g.fillRect(px(75), pz(-72.8), px(94) - px(75), pz(24.3) - pz(-72.8));
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = 4;
+    const grp = new THREE.Group();
+    const wood = new THREE.MeshStandardMaterial({ color: '#5a2a1c', roughness: 0.6 });
+    const surf = 0.008;
+    const W = (X1 - X0) * S;
+    const D2 = (Z1 - Z0) * S;
+    const cx = ((X0 + X1) / 2 - World.TCX) * S;
+    const cz = ((Z0 + Z1) / 2 - World.TCZ) * S;
+    const base = new THREE.Mesh(new THREE.BoxGeometry(W, surf, D2), wood);
+    base.position.set(cx, surf / 2, cz);
+    const top = new THREE.Mesh(new THREE.PlaneGeometry(W, D2), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55 }));
+    top.rotation.x = -Math.PI / 2;
+    top.position.set(cx, surf + 0.0004, cz);
+    grp.add(base, top);
+    // Rand (Bande) rundherum und Mittelsteg
+    const rimH = 0.012;
+    const rim = (x: number, z: number, w: number, d: number) => {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(w * S, rimH, d * S), wood);
+      m.position.set((x - World.TCX) * S, surf + rimH / 2, (z - World.TCZ) * S);
+      grp.add(m);
+    };
+    rim((X0 + X1) / 2, Z0 + 2.5, X1 - X0, 5);
+    rim((X0 + X1) / 2, Z1 - 2.5, X1 - X0, 5);
+    rim(X0 + 2.5, (Z0 + Z1) / 2, 5, Z1 - Z0);
+    rim(X1 - 2.5, (Z0 + Z1) / 2, 5, Z1 - Z0);
+    rim(74, (Z0 + Z1) / 2, 2.4, Z1 - Z0);
+    grp.traverse((o) => ((o as THREE.Mesh).receiveShadow = true));
+    this.tavlaSurf = surf + 0.0005;
+    this.tavlaTray = surf + 0.0005;
+    return grp;
+  }
+
   private loadTavlaBoard(): Promise<THREE.Object3D> {
+    if (!this.tavlaBoardP && LOW) {
+      // Grafik „niedrig“ (Handy): eigenes leichtes Brett statt des Modells
+      const b = this.buildTavlaBoardLow();
+      this.tavlaBoardP = Promise.resolve(b);
+    }
     if (!this.tavlaBoardP) {
       this.tavlaBoardP = loadModel('tavla').then((m) => {
         const S = World.TS;
@@ -3492,12 +3577,32 @@ export class World {
     const rim = new THREE.Mesh(new THREE.TorusGeometry(0.17, 0.006, 6, 28), brass);
     rim.rotation.x = Math.PI / 2;
     rim.position.y = 0.538;
-    g.add(leg, foot, top, tray, rim);
+    const simple = new THREE.Group();
+    simple.add(leg, foot, top, tray, rim);
+    g.add(simple);
     g.traverse((o) => ((o as THREE.Mesh).castShadow = true));
     frame.add(g);
     this.tableRoot.add(frame);
     this.sehpas[seat] = g;
+    // Vintage-Tablett-Tisch (3dfarm, Royalty Free) ersetzt den einfachen Beistelltisch, sobald geladen
+    void loadModel('items/tray_table')
+      .then((m) => {
+        m.scale.set(0.85, 1.7, 0.85);
+        m.position.y = 0.024 * 1.7;
+        m.rotation.y = Math.PI / 2;
+        m.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (mesh.isMesh) mesh.castShadow = !LOW;
+        });
+        g.remove(simple);
+        g.add(m);
+        this.sehpaTop = (0.224 + 0.024) * 1.7 + 0.002;
+        this.orders[seat].forEach((o) => (o.position.y = this.sehpaTop));
+      })
+      .catch(() => {});
   }
+  /** Höhe, auf der Bestellungen stehen (Tablett-Boden) */
+  private sehpaTop = 0.54;
 
   /** Bestellung als 3D-Objekt auf die Sehpa stellen (max. 3 pro Platz) */
   private placeOrder(seat: number, item: OrderItem, variant = 0) {
@@ -3508,7 +3613,7 @@ export class World {
     const m = this.orderMesh(item, variant);
     m.userData.placed = performance.now();
     list.push(m);
-    list.forEach((o, k) => o.position.copy(slots[k]).setY(0.54));
+    list.forEach((o, k) => o.position.copy(slots[k]).setY(this.sehpaTop));
     sehpa.add(m);
   }
 
@@ -3667,6 +3772,33 @@ export class World {
   }
 
   /** echtes 3D-Modell (Sketchfab / selbst gebaut) in die Gruppe laden */
+  /** kleine Spiegel-Umgebung, damit Metall (Dosen, Löffel) nicht schwarz aussieht */
+  private itemEnv: THREE.Texture | null = null;
+  private fixItemMaterials(obj: THREE.Object3D) {
+    if (!this.itemEnv) {
+      const pm = new THREE.PMREMGenerator(this.renderer);
+      this.itemEnv = pm.fromScene(new RoomEnvironment(), 0.04).texture;
+      pm.dispose();
+    }
+    obj.traverse((o) => {
+      const m = (o as THREE.Mesh).material as THREE.MeshPhysicalMaterial | undefined;
+      if (!m || !(m as any).isMeshStandardMaterial || m.userData.fixed) return;
+      m.userData.fixed = true;
+      // Transmission (echtes Glas) kostet einen ganzen Extra-Durchgang → einfaches durchsichtiges Glas
+      if ((m as any).isMeshPhysicalMaterial && m.transmission > 0) {
+        m.transmission = 0;
+        m.transparent = true;
+        m.opacity = Math.min(m.opacity, 0.45);
+        m.depthWrite = false;
+      }
+      m.envMap = this.itemEnv;
+      m.envMapIntensity = 0.9;
+      if (m.metalness > 0.6) m.metalness = 0.6;
+      if (m.roughness < 0.15) m.roughness = 0.15;
+      m.needsUpdate = true;
+    });
+  }
+
   private itemModel(g: THREE.Group, file: string, pick?: string) {
     void loadModel('items/' + file)
       .then((root) => {
@@ -3679,6 +3811,7 @@ export class World {
         }
         // Modelle sind in echten Metern; die Gruppe wird unten × 1.4 skaliert
         obj.scale.multiplyScalar(0.82);
+        this.fixItemMaterials(obj);
         g.clear();
         g.add(obj);
       })
