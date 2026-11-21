@@ -204,11 +204,12 @@ on('state', (m) => {
   if (v.kind === 'tavla') {
     world.setTavla(v, you.seat ?? you.watching);
     tavlaFeedback(prev?.view?.kind === 'tavla' ? prev.view : null, v);
-    // Auswahl nur behalten, wenn der Pul noch ziehen darf
-    if (tavlaSelFrom !== null && !(v.steps ?? []).some((s: any) => s.from === tavlaSelFrom)) {
-      tavlaSelFrom = null;
-      world.setTavlaSel(null, []);
-    } else if (v.current !== you.seat) world.setTavlaSel(null, []);
+    // Auswahl nur behalten, wenn der Pul noch ziehen darf; geschlagener Pul ist automatisch gewählt
+    const mine = v.current === you.seat && v.phase === 'move';
+    if (!mine) tavlaSelect(v, null);
+    else if (v.bar[you.seat === 0 ? 0 : 1] > 0 && tavlaTargets(v, 'bar').length) tavlaSelect(v, 'bar');
+    else if (tavlaSelFrom !== null && tavlaTargets(v, tavlaSelFrom).length) tavlaSelect(v, tavlaSelFrom);
+    else tavlaSelect(v, null);
     const endedT = v.phase === 'handOver' || v.phase === 'gameOver';
     const wasEndedT = prev?.view?.kind === 'tavla' && (prev.view.phase === 'handOver' || prev.view.phase === 'gameOver');
     if (endedT && !wasEndedT) holdResult(2300);
@@ -2712,37 +2713,36 @@ let tavlaSelFrom: any = null;
 const tavlaPlace = (key: string): any => (key === 'bar' ? 'bar' : key === 'off' ? 'off' : Number(key.slice(1)));
 const tavlaName = (seat: number) => nameOf(seat);
 
-/** Klick aufs Brett: Pul wählen, dann Ziel – bei nur einem Ziel sofort ziehen */
+/** Klick aufs Brett: erst Pul antippen → alle möglichen Ziele leuchten grün (mit Würfelzahl) → Ziel antippen */
+type TavlaReach = { from: any; to: any; path: { from: any; to: any; die: number }[] };
+function tavlaTargets(v: any, from: any): { to: any; label: string; path: TavlaReach['path'] }[] {
+  return ((v.reach ?? []) as TavlaReach[]).filter((r) => r.from === from).map((r) => ({ to: r.to, label: r.path.map((s) => s.die).join('+'), path: r.path }));
+}
+function tavlaSelect(v: any, from: any) {
+  tavlaSelFrom = from;
+  world.setTavlaSel(from, from === null ? [] : tavlaTargets(v, from));
+}
 function tavlaClick(key: string) {
   const v = st?.view;
   if (!v || v.kind !== 'tavla' || you.seat === null || v.current !== you.seat) return;
   if (v.phase === 'roll') return act({ action: 'roll' });
   if (v.phase !== 'move') return;
   const place = tavlaPlace(key);
-  const steps: { from: any; to: any; die: number }[] = v.steps ?? [];
-  const targetsOf = (f: any) => [...new Set(steps.filter((s) => s.from === f).map((s) => s.to))];
-  const moveTo = (from: any, to: any) => {
-    tavlaSelFrom = null;
-    world.setTavlaSel(null, []);
-    act({ action: 'move', from, to });
-  };
-  if (tavlaSelFrom !== null && targetsOf(tavlaSelFrom).includes(place)) return moveTo(tavlaSelFrom, place);
-  const tg = targetsOf(place);
-  if (tg.length) {
-    if (tg.length === 1) return moveTo(place, tg[0]);
-    tavlaSelFrom = place;
-    world.setTavlaSel(place, tg);
+  if (tavlaSelFrom !== null) {
+    const t = tavlaTargets(v, tavlaSelFrom).find((x) => x.to === place);
+    if (t) {
+      tavlaSelect(v, null);
+      if (t.path.length === 1) act({ action: 'move', from: t.path[0].from, to: t.path[0].to, die: t.path[0].die });
+      else act({ action: 'moves', path: t.path });
+      return;
+    }
+  }
+  if (tavlaTargets(v, place).length) {
+    tavlaSelect(v, place === tavlaSelFrom ? null : place);
     sfx.tile();
     return;
   }
-  // geschlagener Pul: direkt das Einstiegsfeld antippen
-  const fromBar = steps.filter((s) => s.from === 'bar' && s.to === place);
-  if (fromBar.length) return moveTo('bar', place);
-  // Ziel ohne Auswahl: gibt es genau einen Pul, der dorthin kann?
-  const srcs = [...new Set(steps.filter((s) => s.to === place).map((s) => s.from))];
-  if (srcs.length === 1) return moveTo(srcs[0], place);
-  tavlaSelFrom = null;
-  world.setTavlaSel(null, []);
+  tavlaSelect(v, null);
 }
 
 function tavlaFeedback(prev: any | null, v: any) {
@@ -2788,7 +2788,7 @@ function renderTavla(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
           ? '🎲 Du bist dran – würfeln'
           : '🎲 Sıra sende – zar at'
         : de
-          ? '♟ Ziehen: Pul antippen, dann Ziel'
+          ? '♟ Pul antippen – grüne Felder zeigen, wohin er kann'
           : '♟ Oyna: pula dokun, sonra hedefe'
       : `${t('waitingFor')}: ${tavlaName(v.current)}`;
   const diceTxt = v.phase === 'move' && v.dice?.length ? (v.dice as number[]).map((d) => DIE_FACE[d]).join(' ') : '';
@@ -2814,7 +2814,7 @@ function renderTavla(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
     bar.append(h('button', { class: 'primary tv-roll', onclick: () => act({ action: 'roll' }) }, de ? '🎲 Würfeln' : '🎲 Zar at'));
   } else if (!over && isMe && v.phase === 'move') {
     bar.append(h('span', { class: 'pb-text' }, (de ? 'Würfel: ' : 'Zar: ') + diceTxt));
-    if (v.canUndo) bar.append(h('button', { class: 'ghost', onclick: () => ((tavlaSelFrom = null), world.setTavlaSel(null, []), act({ action: 'undo' })) }, de ? '↶ Zurück' : '↶ Geri al'));
+    if (v.canUndo) bar.append(h('button', { class: 'ghost', onclick: () => (tavlaSelect(v, null), act({ action: 'undo' })) }, de ? '↶ Zurück' : '↶ Geri al'));
   } else if (!over) {
     bar.append(h('span', { class: 'muted' }, `${t('waitingFor')}: ${tavlaName(v.current)}`));
   }

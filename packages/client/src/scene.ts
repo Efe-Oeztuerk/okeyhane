@@ -3512,22 +3512,73 @@ export class World {
       const n = count(from);
       if (n > 0) ring(this.tavlaSlot(pl, from, n - 1).pos, this.tavlaSelMat);
     }
-    for (const t of targets) {
+    for (const tg of targets) {
+      const t = typeof tg === 'object' && tg !== null ? tg.to : tg;
+      const label: string = typeof tg === 'object' && tg !== null ? tg.label : '';
+      let pos: THREE.Vector3;
       if (t === 'off') {
         const m = new THREE.Mesh(new THREE.PlaneGeometry(16 * World.TS, 40 * World.TS), this.tavlaHiMat);
         m.rotation.x = -Math.PI / 2;
-        m.position.copy(this.tl(85, pl === 0 ? 4 : -52, this.tavlaTray + 0.002));
+        pos = this.tl(85, pl === 0 ? 4 : -52, this.tavlaTray + 0.002);
+        m.position.copy(pos);
         this.tavlaHi.add(m);
-        continue;
+      } else {
+        // eigener Stapel oder leer: nächster Platz; einzelner Gegner: auf ihm
+        pos = this.tavlaSlot(pl, t, count(t)).pos;
+        ring(pos, this.tavlaHiMat);
+        const dot = new THREE.Mesh(new THREE.CircleGeometry(R * 0.8, 20), this.tavlaHiFill);
+        dot.rotation.x = -Math.PI / 2;
+        dot.position.copy(pos).add(new THREE.Vector3(0, World.TH * World.TS * 0.5 + 0.001, 0));
+        this.tavlaHi.add(dot);
       }
-      // eigener Stapel oder leer: nächster Platz; einzelner Gegner: auf ihm
-      const own = count(t);
-      ring(this.tavlaSlot(pl, t, own).pos, this.tavlaHiMat);
+      // Würfelzahl über dem Ziel (z. B. „2“, „3“ oder „2+3“)
+      if (label) {
+        const sp = this.tavlaLabel(label);
+        sp.position.copy(pos).add(new THREE.Vector3(0, 0.03, 0));
+        this.tavlaHi.add(sp);
+      }
     }
   }
+  private tavlaHiFill = new THREE.MeshBasicMaterial({ color: '#57e07a', transparent: true, opacity: 0.35, depthWrite: false });
+  private tavlaLabels = new Map<string, THREE.SpriteMaterial>();
+  private tavlaLabel(text: string) {
+    let mat = this.tavlaLabels.get(text);
+    if (!mat) {
+      const c = document.createElement('canvas');
+      c.width = 128;
+      c.height = 64;
+      const g = c.getContext('2d')!;
+      g.fillStyle = 'rgba(20,60,30,0.85)';
+      g.beginPath();
+      g.roundRect(4, 8, 120, 48, 22);
+      g.fill();
+      g.fillStyle = '#eaffef';
+      g.font = 'bold 34px system-ui, sans-serif';
+      g.textAlign = 'center';
+      g.textBaseline = 'middle';
+      g.fillText(text, 64, 33);
+      const t = new THREE.CanvasTexture(c);
+      t.colorSpace = THREE.SRGBColorSpace;
+      mat = new THREE.SpriteMaterial({ map: t, depthTest: false, transparent: true });
+      this.tavlaLabels.set(text, mat);
+    }
+    const sp = new THREE.Sprite(mat);
+    sp.scale.set(0.034, 0.017, 1);
+    sp.renderOrder = 10;
+    return sp;
+  }
 
+  private tavlaPulse = 0;
   private updateTavla(dt: number) {
-    if (!this.tavlaOn || !this.tavlaAnims.length) return;
+    if (!this.tavlaOn) return;
+    if (this.tavlaHi.children.length) {
+      // mögliche Ziele pulsieren leicht grün
+      this.tavlaPulse += dt;
+      const k = 0.5 + 0.5 * Math.sin(this.tavlaPulse * 4);
+      this.tavlaHiMat.opacity = 0.35 + 0.35 * k;
+      this.tavlaHiFill.opacity = 0.15 + 0.25 * k;
+    }
+    if (!this.tavlaAnims.length) return;
     for (const a of this.tavlaAnims) {
       if (a.delay > 0) {
         a.delay -= dt;

@@ -127,3 +127,21 @@ describe('Tavla', () => {
     }
   });
 });
+
+describe('Tavla Ziele pro Pul', () => {
+  test('ein Pul kann mit beiden Würfeln zusammen ziehen', () => {
+    const g = new TavlaGame({ target: 5 }, 1);
+    g.pos = { board: new Array(24).fill(0), bar: [0, 0], off: [0, 0] };
+    g.pos.board[20] = 1;
+    g.pos.board[2] = -15;
+    (g as any).current = 0;
+    (g as any).dice = [2, 3];
+    (g as any).phase = 'move';
+    (g as any).computeSteps();
+    const tos = g.reach.filter((r) => r.from === 20).map((r) => r.to).sort();
+    expect(tos).toEqual([15, 17, 18]);
+    const five = g.reach.find((r) => r.to === 15)!;
+    for (const s of five.path) g.move(0, s.from, s.to, s.die);
+    expect(g.pos.board[15]).toBe(1);
+  });
+});

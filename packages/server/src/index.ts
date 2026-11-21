@@ -939,6 +939,10 @@ function handle(c: Client, m: Msg) {
             if (m.action === 'roll') g.roll(seat);
             else if (m.action === 'move') g.move(seat, from, to, m.die === undefined ? undefined : Number(m.die));
             else if (m.action === 'undo') g.undo(seat);
+            else if (m.action === 'moves' && Array.isArray(m.path)) {
+              // ein Pul mit mehreren Würfeln auf einmal (z. B. 2 + 3)
+              for (const st of m.path.slice(0, 4)) g.move(seat, st.from === 'bar' ? 'bar' : Number(st.from), st.to === 'off' ? 'off' : Number(st.to), Number(st.die));
+            }
             else throw new GameError('Unbekannte Aktion');
           } catch (e) {
             if (e instanceof TavlaError) throw new GameError(e.message);

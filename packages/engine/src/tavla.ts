@@ -165,7 +165,9 @@ export function tavlaSequences(p0: TavlaPos, pl: number, dice: number[]): { step
         best = steps.length;
         res.clear();
       }
-      const k = keyOf(p);
+      // pro erstem Schritt + Endstellung eine Folge behalten (sonst fehlen z. B. „erst die 3“-Wege)
+      const f = steps[0];
+      const k = keyOf(p) + (f ? `#${f.from}>${f.to}>${f.die}` : '');
       if (!res.has(k)) res.set(k, { steps, pos: p });
     }
   };
@@ -193,6 +195,8 @@ export class TavlaGame {
   rolled: number[] = [];
   /** erlaubte nächste Schritte */
   steps: TavlaStep[] = [];
+  /** wohin ein Pul mit einem oder mehreren Würfeln kommen kann (Weg = einzelne Schritte) */
+  reach: { from: TavlaFrom; to: TavlaTo; path: TavlaStep[] }[] = [];
   private turnStack: { pos: TavlaPos; dice: number[]; step: TavlaStep; hit: boolean }[] = [];
   scores: [number, number] = [0, 0];
   handNo = 0;
@@ -253,6 +257,17 @@ export class TavlaGame {
   private computeSteps() {
     const pl = this.playerOf(this.current);
     const seqs = tavlaSequences(this.pos, pl, this.dice);
+    // Ziele pro Pul: derselbe Pul zieht mit 1, 2 … Würfeln weiter
+    const reach = new Map<string, { from: TavlaFrom; to: TavlaTo; path: TavlaStep[] }>();
+    for (const s of seqs) {
+      for (let k = 1; k <= s.steps.length; k++) {
+        const path = s.steps.slice(0, k);
+        if (k > 1 && path[k - 1].from !== path[k - 2].to) break;
+        const key = `${path[0].from}>${path[k - 1].to}`;
+        const old = reach.get(key);
+        if (!old || old.path.length > path.length) reach.set(key, { from: path[0].from, to: path[k - 1].to, path });
+      }
+    }
     const seen = new Set<string>();
     this.steps = [];
     for (const s of seqs) {
@@ -263,6 +278,13 @@ export class TavlaGame {
       seen.add(k);
       this.steps.push(f);
     }
+    // jeder erlaubte erste Schritt ist auch ein Ziel (gleiche Endstellungen wurden oben zusammengefasst)
+    for (const f of this.steps) {
+      const key = `${f.from}>${f.to}`;
+      const old = reach.get(key);
+      if (!old || old.path.length > 1) reach.set(key, { from: f.from, to: f.to, path: [f] });
+    }
+    this.reach = [...reach.values()];
   }
 
   private check(seat: number) {
@@ -324,6 +346,7 @@ export class TavlaGame {
     this.current = this.other(this.current);
     this.dice = [];
     this.steps = [];
+    this.reach = [];
     this.turnStack = [];
     this.phase = 'roll';
   }
@@ -341,6 +364,7 @@ export class TavlaGame {
     this.phase = 'handOver';
     this.dice = [];
     this.steps = [];
+    this.reach = [];
     this.turnStack = [];
     const before = this.lastEvent && this.lastEvent.kind === 'move' ? this.lastEvent : null;
     this.event({ kind: 'handEnd', seat, points, mars, before });
@@ -376,6 +400,7 @@ export class TavlaGame {
       dice: this.dice,
       rolled: this.rolled,
       steps: this.steps,
+      reach: this.reach,
       canUndo: this.canUndo,
       pips: [this.pips(0), this.pips(1)],
       scores: this.scores,
