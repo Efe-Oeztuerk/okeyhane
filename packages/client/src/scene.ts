@@ -892,14 +892,15 @@ export class World {
   private buildTavlaTable(spot: number) {
     const sp = SPOTS[spot];
     const meshes: THREE.Object3D[] = [];
-    const wood = new THREE.MeshStandardMaterial({ color: '#4a2c18', roughness: 0.55 });
+    // helles Eichenholz, damit sich das dunkle Brett abhebt
+    const wood = new THREE.MeshStandardMaterial({ color: '#b98a55', roughness: 0.6 });
     const W = 0.86;
     const D2 = 1.0;
     const top = new THREE.Mesh(new THREE.BoxGeometry(W, 0.045, D2), wood);
     top.position.set(sp.x, TABLE_Y - 0.025, sp.z);
     top.castShadow = top.receiveShadow = true;
     // heller Intarsienrand
-    const inlay = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, D2 - 0.06), new THREE.MeshStandardMaterial({ color: '#b58a52', roughness: 0.6 }));
+    const inlay = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.06, D2 - 0.06), new THREE.MeshStandardMaterial({ color: '#5a3520', roughness: 0.6 }));
     inlay.rotation.x = -Math.PI / 2;
     inlay.position.set(sp.x, TABLE_Y - 0.0015, sp.z);
     const inner = new THREE.Mesh(new THREE.PlaneGeometry(W - 0.09, D2 - 0.09), wood);
@@ -3257,8 +3258,8 @@ export class World {
     ];
     if (!this.tavlaMats.length) {
       this.tavlaMats = [
-        new THREE.MeshStandardMaterial({ color: '#efe2c6', roughness: 0.42 }),
-        new THREE.MeshStandardMaterial({ color: '#2a1a12', roughness: 0.38 }),
+        new THREE.MeshStandardMaterial({ color: '#dcc49a', roughness: 0.45 }),
+        new THREE.MeshStandardMaterial({ color: '#4e2c18', roughness: 0.42 }),
       ];
     }
     const g = (this as any)._chkGeo ?? ((this as any)._chkGeo = new THREE.LatheGeometry(pts, 20));

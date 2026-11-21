@@ -309,10 +309,12 @@ function voiceOfSeat(seat: number | null | undefined): string | undefined {
   return (table?.seats[seat] as any)?.avatar?.voice;
 }
 /** Satz in der Stimme dieser Figur – null, wenn sie keinen dafür hat (oder Stimmen aus sind) */
+const isBotSeat = (seat: number | null | undefined) => seat !== null && seat !== undefined && !!table?.seats[seat]?.bot;
 function sayLine(seat: number | null | undefined, line: VoiceLine, gain = 1): Promise<void> | null {
   const v = voiceOfSeat(seat);
   if (!hasLine(v, line)) return null;
   if (vol('volChar') <= 0) return null;
+  if (!settings.botVoices && isBotSeat(seat)) return null;
   return playFile(voiceUrl(v!, line), gain * (seat === you.seat ? 1 : 0.85), 'volChar');
 }
 /** wenn ein Ton fertig ist (oder spätestens nach maxMs) */
@@ -353,7 +355,7 @@ on('order', (m) => {
   // Charakter-Stimmen auf 0 → auch kein Ruf nach Ahmet
   if (vol('volChar') > 0) {
     call = sayLine(m.seat, line);
-    if (!call) call = playFile(AHMET_CALL, m.seat === you.seat ? 1 : 0.8, 'volChar');
+    if (!call && !(isBotSeat(m.seat) && !settings.botVoices)) call = playFile(AHMET_CALL, m.seat === you.seat ? 1 : 0.8, 'volChar');
   }
   // Ahmet antwortet nur manchmal – erst wenn der Ruf fertig ist, dann 1–2 s Pause (nicht überlappend)
   if (typeof m.reply === 'number' && m.reply >= 0) {
@@ -1022,6 +1024,12 @@ function openSettings() {
       slider('volMusic', t('volumeMusic')),
       slider('volNpc', t('volumeNpc')),
       slider('volChar', t('volumeChar')),
+      h(
+        'label',
+        { title: getLang() === 'de' ? 'Aus: Bots rufen nicht mehr nach Ahmet und sagen kein „Pişti!“. Ahmet antwortet trotzdem.' : 'Kapalı: botlar konuşmaz. Ahmet yine cevap verir.' },
+        getLang() === 'de' ? '🤖 Bots sprechen' : '🤖 Botlar konuşsun',
+        h('input', { type: 'checkbox', checked: settings.botVoices, onchange: (e: Event) => ((settings.botVoices = (e.target as HTMLInputElement).checked), saveSettings()) }),
+      ),
       // Bedienfläche nach innen rücken (z. B. bei abgerundeten Handy-Ecken oder wenn man es zentraler mag)
       h(
         'label',
@@ -2766,7 +2774,7 @@ function renderTavla(v: any, top: HTMLElement, wrap: HTMLElement, zones: HTMLEle
   const over = v.phase === 'handOver' || v.phase === 'gameOver';
   let timer = '';
   if (st.turnDeadline) timer = ` · ${Math.max(0, Math.ceil((st.turnDeadline - Date.now()) / 1000))}s`;
-  const color = (seat: number) => (seat === 0 ? '⚪' : '⚫');
+  const color = (seat: number) => (seat === 0 ? '⚪' : '🟤');
   // --- oben: Stand, wer dran ist, Würfel, Pips
   top.innerHTML = '';
   top.classList.remove('mini');

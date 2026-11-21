@@ -11,6 +11,8 @@ export interface Settings {
   volNpc: number;
   /** Stimmen der Spielfiguren (Pişti!, Okey!, Bestellungen) – 0 = aus */
   volChar: number;
+  /** Bots sprechen (Rufe, „Pişti!“) – Ahmet bleibt immer hörbar */
+  botVoices: boolean;
   /** Abstand der Bedienelemente zum Bildschirmrand in px (Handy: alles rückt nach innen) */
   uiInset: number;
   smoke: boolean;
@@ -160,6 +162,7 @@ const defaults: Settings = {
   volMusic: 50,
   volNpc: 30,
   volChar: 60,
+  botVoices: true,
   uiInset: 0,
   smoke: true,
   quality: 'high',
