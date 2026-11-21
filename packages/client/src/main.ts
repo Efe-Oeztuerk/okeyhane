@@ -845,11 +845,53 @@ function openStats() {
       h('td', {}, (s.streak ? '🔥' + s.streak : '0') + (s.best ? ` / ${s.best}` : '')),
     );
   });
+  // Rangliste (nur angemeldete Spieler, dauerhaft gespeichert)
+  const board = h('div', { class: 'lb-board muted' }, de ? 'Lädt …' : 'Yükleniyor …');
+  let lbMode = 'standard';
+  const tabs = h('div', { class: 'row lb-tabs' });
+  const load = (m: string) => {
+    lbMode = m;
+    tabs.querySelectorAll('button').forEach((b) => b.classList.toggle('primary', (b as HTMLElement).dataset.m === m));
+    board.textContent = de ? 'Lädt …' : 'Yükleniyor …';
+    send({ type: 'leaderboard', mode: m });
+  };
+  for (const m of modes) tabs.append(h('button', { class: 'small', 'data-m': m, onclick: () => load(m) }, t(m)));
+  lbRender = (mode: string, list: any[]) => {
+    if (mode !== lbMode || !board.isConnected) return;
+    board.innerHTML = '';
+    if (!list.length) return void (board.textContent = de ? 'Noch keine Einträge.' : 'Henüz kayıt yok.');
+    board.append(
+      h(
+        'table',
+        { style: { width: '100%' } },
+        h('tr', {}, h('th', {}, '#'), h('th', {}, de ? 'Spieler' : 'Oyuncu'), h('th', {}, t('wins')), h('th', {}, t('losses')), h('th', {}, de ? 'Quote' : 'Oran'), h('th', {}, de ? 'Rekord' : 'Rekor')),
+        list.map((r, i) =>
+          h(
+            'tr',
+            { class: r.username === profile.name ? 'lb-me' : '' },
+            h('td', {}, i < 3 ? ['🥇', '🥈', '🥉'][i] : String(i + 1)),
+            h('td', {}, r.username),
+            h('td', {}, String(r.wins)),
+            h('td', {}, String(r.losses)),
+            h('td', {}, r.rate + '%'),
+            h('td', {}, r.best ? '🔥' + r.best : '–'),
+          ),
+        ),
+      ),
+    );
+  };
   modal(
     h('h2', {}, t('stats') + ' · ' + (profile.name || '')),
     h('table', { style: { width: '100%' } }, h('tr', {}, h('th', {}, t('mode')), h('th', {}, t('wins')), h('th', {}, t('losses')), h('th', {}, de ? 'Quote' : 'Oran'), h('th', {}, de ? 'Serie / Rekord' : 'Seri / Rekor')), rows),
+    account ? '' : h('div', { class: 'muted', style: { margin: '6px 0' } }, de ? 'Als Gast wird nur kurz gezählt. Melde dich an, damit deine Siege dauerhaft gespeichert werden und in der Rangliste stehen.' : 'Misafir olarak sadece geçici sayılır. Kalıcı kayıt ve sıralama için giriş yap.'),
+    h('h2', { style: { marginTop: '14px' } }, '🏆 ' + (de ? 'Rangliste' : 'Sıralama')),
+    tabs,
+    board,
   );
+  load(lbMode);
 }
+let lbRender: ((mode: string, list: any[]) => void) | null = null;
+on('leaderboard', (m) => lbRender?.(m.mode, m.rows ?? []));
 
 function openCredits() {
   modal(

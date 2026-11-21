@@ -407,9 +407,19 @@ function afterAction(t: Table) {
       const team = isPisti(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : seat % 2;
       if (g.winnerTeam === null) return;
       (team === g.winnerTeam ? winners : losers).push(seat);
-      if (s.client) {
-        recordResult(s.client.info.name, t.rules.mode, team === g.winnerTeam);
-        send(s.client, { type: 'stats', stats: getStats(s.client.info.name) });
+      const cl = s.client;
+      if (cl) {
+        const won = team === g.winnerTeam;
+        if (cl.token) {
+          // angemeldet: dauerhaft in der Datenbank (übersteht Neustarts, zählt für die Rangliste)
+          accounts
+            .recordResult(cl.token, t.rules.mode, won)
+            .then((st) => send(cl, { type: 'stats', stats: st }))
+            .catch((e) => console.error('Statistik', e));
+        } else {
+          recordResult(cl.info.name, t.rules.mode, won);
+          send(cl, { type: 'stats', stats: getStats(cl.info.name) });
+        }
       }
     });
     if (winners.length && losers.length) {
@@ -473,6 +483,12 @@ async function handleAccount(c: Client, m: Msg) {
       if (old) for (const f of friendIdsOf(old.id)) notifyPresence(f);
       return;
     }
+    if (m.type === 'leaderboard') {
+      const mode = ['standard', 'okey101', 'perisan', 'pisti', 'batak'].includes(m.mode) ? m.mode : 'standard';
+      const rows = await accounts.leaderboard(mode);
+      send(c, { type: 'leaderboard', mode, rows });
+      return;
+    }
     if (m.type === 'register' || m.type === 'login' || m.type === 'resume') {
       let res: { token: string; user: UserRow };
       if (m.type === 'register') res = await accounts.register(String(m.username ?? ''), String(m.password ?? ''), m.avatar ?? c.info.avatar);
@@ -485,6 +501,7 @@ async function handleAccount(c: Client, m: Msg) {
       if (res.user.avatar) c.info.avatar = res.user.avatar;
       setOnline(c, true);
       send(c, { type: 'auth', token: res.token, user: res.user });
+      accounts.myStats(res.token).then((st) => send(c, { type: 'stats', stats: st })).catch(() => {});
       if (c.table) pushTable(c.table);
       await refreshFriends(c);
       for (const f of c.friends) if (f.status === 'accepted') notifyPresence(f.id);
@@ -586,7 +603,8 @@ function handle(c: Client, m: Msg) {
         }
       }
       if (typeof m.signature === 'string' && m.signature.length < 200000) c.info.signature = m.signature;
-      send(c, { type: 'welcome', id: c.id, stats: getStats(c.info.name) });
+      send(c, { type: 'welcome', id: c.id, stats: c.token ? {} : getStats(c.info.name) });
+      if (c.token) accounts.myStats(c.token).then((st) => send(c, { type: 'stats', stats: st })).catch(() => {});
       if (t) pushTable(t);
       return;
     }
@@ -676,6 +694,7 @@ function handle(c: Client, m: Msg) {
     case 'friendRequest':
     case 'friendRespond':
     case 'friendRemove':
+    case 'leaderboard':
       void handleAccount(c, m);
       return;
     case 'lobbies':

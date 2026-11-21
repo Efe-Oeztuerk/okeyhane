@@ -53,7 +53,18 @@ export const accounts = {
     rpc<{ status: 'pending' | 'accepted'; id: string }>('okey_friend_request', { p_token: token, p_username: username }),
   respond: (token: string, user: string, accept: boolean) => rpc<void>('okey_friend_respond', { p_token: token, p_user: user, p_accept: accept }),
   remove: (token: string, user: string) => rpc<void>('okey_friend_remove', { p_token: token, p_user: user }),
+  recordResult: (token: string, mode: string, won: boolean) => rpc<StatsMap>('okey_record_result', { p_token: token, p_mode: mode, p_won: won }),
+  myStats: (token: string) => rpc<StatsMap>('okey_my_stats', { p_token: token }),
+  leaderboard: (mode: string) => rpc<LeaderRow[]>('okey_leaderboard', { p_mode: mode }),
 };
+export type StatsMap = Record<string, { wins: number; losses: number; streak?: number; best?: number }>;
+export interface LeaderRow {
+  username: string;
+  wins: number;
+  losses: number;
+  best: number;
+  rate: number;
+}
 
 // ------------------------------------------------------------------ Mock (lokale Tests)
 
@@ -75,8 +86,26 @@ function session(id: string) {
   const u = mUsers.get(id)!;
   return { token: t, user: { id: u.id, username: u.username, avatar: u.avatar } };
 }
+const mStats = new Map<string, StatsMap>();
 function mock(fn: string, a: Record<string, any>): unknown {
   switch (fn) {
+    case 'okey_record_result': {
+      const id = uid(a.p_token);
+      const st = mStats.get(id) ?? {};
+      const m = (st[a.p_mode] ??= { wins: 0, losses: 0, streak: 0, best: 0 });
+      if (a.p_won) (m.wins++, (m.streak = (m.streak ?? 0) + 1), (m.best = Math.max(m.best ?? 0, m.streak)));
+      else (m.losses++, (m.streak = 0));
+      mStats.set(id, st);
+      return st;
+    }
+    case 'okey_my_stats':
+      return mStats.get(uid(a.p_token)) ?? {};
+    case 'okey_leaderboard':
+      return [...mStats.entries()]
+        .map(([id, st]) => ({ username: mUsers.get(id)!.username, ...(st[a.p_mode] ?? { wins: 0, losses: 0, best: 0 }) }))
+        .filter((r) => r.wins + r.losses > 0)
+        .map((r) => ({ username: r.username, wins: r.wins, losses: r.losses, best: r.best ?? 0, rate: Math.round((100 * r.wins) / Math.max(1, r.wins + r.losses)) }))
+        .sort((x, y) => y.wins - x.wins || y.rate - x.rate);
     case 'okey_register': {
       const name = String(a.p_username).trim();
       if (!/^[A-Za-z0-9_.ÇĞİÖŞÜçğıöşüÄäß-]{3,20}$/.test(name)) throw new AccountError('badName');
