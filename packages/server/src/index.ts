@@ -400,10 +400,28 @@ function afterAction(t: Table) {
   const g = t.game;
   if (g?.gameOver && !t.recorded) {
     t.recorded = true;
+    const winners: number[] = [];
+    const losers: number[] = [];
     t.seats.forEach((s, seat) => {
+      if (!activeSeats(t).includes(seat) || (!s.client && !s.bot)) return;
       const team = isPisti(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : seat % 2;
-      if (s.client && g.winnerTeam !== null) recordResult(s.client.info.name, t.rules.mode, team === g.winnerTeam);
+      if (g.winnerTeam === null) return;
+      (team === g.winnerTeam ? winners : losers).push(seat);
+      if (s.client) {
+        recordResult(s.client.info.name, t.rules.mode, team === g.winnerTeam);
+        send(s.client, { type: 'stats', stats: getStats(s.client.info.name) });
+      }
     });
+    if (winners.length && losers.length) {
+      // Verlierer zahlt den Çay: Sieger-/Verliererpose, danach bringt Ahmet allen leise einen Tee
+      const payer = losers.find((s) => t.seats[s].client) ?? losers[0];
+      const pname = t.seats[payer].client?.info.name ?? t.seats[payer].bot?.name ?? '';
+      broadcast(t, { type: 'gameEnd', winners, losers, payer, payerName: pname });
+      setTimeout(() => {
+        if (t.game !== g) return;
+        for (const seat of [...winners, ...losers]) broadcast(t, { type: 'order', seat, items: ['cay'], item: 'cay', from: pname, variants: [0], variant: 0, reply: -1, silent: true, treat: true });
+      }, 4500);
+    }
   }
   if (g?.gameOver && seatQueued(t)) pushTable(t);
   scheduleTurnTimer(t);

@@ -43,7 +43,7 @@ interface TableSummary {
 
 let profile: Profile = loadProfile() ?? { name: '', avatar: { ...defaultAvatar }, signature: null };
 let myId = '';
-let stats: Record<string, { wins: number; losses: number }> = {};
+let stats: Record<string, { wins: number; losses: number; streak?: number; best?: number }> = {};
 let table: TableSummary | null = null;
 let you: { id: string; seat: number | null; watching: number | null } = { id: '', seat: null, watching: null };
 let st: any = null; // letzter Spielzustand
@@ -311,9 +311,26 @@ function afterAudio(p: Promise<void> | null, fn: () => void, maxMs = 6000) {
   void p.then(go);
   setTimeout(go, maxMs);
 }
+on('stats', (m) => {
+  stats = m.stats ?? stats;
+});
+on('gameEnd', (m) => {
+  // Siegerpose / Verliererpose, wenn das Ergebnis erscheint
+  setTimeout(() => {
+    for (const s of m.winners ?? []) world.emote(s, 'rubhands');
+    for (const s of m.losers ?? []) world.emote(s, 'headshake');
+  }, 2600);
+  const de = getLang() === 'de';
+  setTimeout(() => toast(de ? `☕ Verlierer zahlt: ${m.payerName} gibt allen einen Çay aus` : `☕ Kaybeden öder: ${m.payerName} herkese çay ısmarlıyor`, '#2d5a3a'), 4200);
+});
 on('order', (m) => {
   const items: OrderItem[] = (m.items ?? [m.item]) as OrderItem[];
   const variants: number[] = m.variants ?? [m.variant ?? 0];
+  if (m.silent) {
+    // ausgegebener Çay: Ahmet bringt ihn leise, ohne Ruf
+    items.forEach((item, k) => world.order(m.seat, item, variants[k] ?? 0));
+    return;
+  }
   // nur Dosen bestellt → „bi kola getir“, sonst (auch gemischt) der Tee-Ruf; ohne eigene Stimme der alte Ruf
   const line: VoiceLine = items.every((x) => x === 'icecek') ? 'kola' : 'cay';
   let call: Promise<void> | null = null;
@@ -813,14 +830,24 @@ function showMenu() {
 }
 
 function openStats() {
-  const modes = ['standard', 'okey101', 'perisan'];
+  const de = getLang() === 'de';
+  const modes = ['standard', 'okey101', 'perisan', 'pisti', 'batak'];
   const rows = modes.map((m) => {
     const s = stats[m] ?? { wins: 0, losses: 0 };
-    return h('tr', {}, h('td', {}, t(m)), h('td', {}, String(s.wins)), h('td', {}, String(s.losses)));
+    const n = s.wins + s.losses;
+    return h(
+      'tr',
+      {},
+      h('td', {}, t(m)),
+      h('td', {}, String(s.wins)),
+      h('td', {}, String(s.losses)),
+      h('td', {}, n ? Math.round((s.wins / n) * 100) + '%' : '–'),
+      h('td', {}, (s.streak ? '🔥' + s.streak : '0') + (s.best ? ` / ${s.best}` : '')),
+    );
   });
   modal(
     h('h2', {}, t('stats') + ' · ' + (profile.name || '')),
-    h('table', { style: { width: '100%' } }, h('tr', {}, h('th', {}, t('mode')), h('th', {}, t('wins')), h('th', {}, t('losses'))), rows),
+    h('table', { style: { width: '100%' } }, h('tr', {}, h('th', {}, t('mode')), h('th', {}, t('wins')), h('th', {}, t('losses')), h('th', {}, de ? 'Quote' : 'Oran'), h('th', {}, de ? 'Serie / Rekord' : 'Seri / Rekor')), rows),
   );
 }
 
