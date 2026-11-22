@@ -3622,3 +3622,11 @@ function sendEmote(k: string) {
   sync();
 }
 (window as any).__okey = { world, send, istaka, bgm, get state() { return st; }, get table() { return table; } };
+
+// Sicherheitsnetz: zurück in der App → hängengebliebene, schwebende Steine/Karten entfernen
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  document.querySelectorAll('.dragghost').forEach((g) => g.remove());
+  document.querySelectorAll('.tile.dragging').forEach((t) => t.classList.remove('dragging'));
+  document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
+});

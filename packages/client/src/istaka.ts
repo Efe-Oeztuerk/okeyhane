@@ -120,10 +120,24 @@ export class Istaka {
       const t = this.targetAt(ev.clientX, ev.clientY - lift * AIM);
       if (t?.dataset.slot !== undefined) t.classList.add('over');
     };
-    const up = (ev: PointerEvent) => {
+    const detach = () => {
       removeEventListener('pointermove', move);
       removeEventListener('pointerup', up);
-      removeEventListener('pointercancel', up);
+      removeEventListener('pointercancel', cancel);
+      removeEventListener('blur', cancel);
+      removeEventListener('pagehide', cancel);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+    // abgebrochen (App weggewischt usw.): nichts ziehen, schwebenden Stein entfernen
+    const cancel = () => {
+      detach();
+      document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
+      ghost.remove();
+      onDrop(null, true, 0, 0);
+    };
+    const onVis = () => document.visibilityState === 'hidden' && cancel();
+    const up = (ev: PointerEvent) => {
+      detach();
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
       ghost.remove();
       const t = this.targetAt(ev.clientX, ev.clientY - lift * AIM);
@@ -132,7 +146,10 @@ export class Istaka {
     };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
-    addEventListener('pointercancel', up);
+    addEventListener('pointercancel', cancel);
+    addEventListener('blur', cancel);
+    addEventListener('pagehide', cancel);
+    document.addEventListener('visibilitychange', onVis);
   }
 
   private nearestFree(slot: number) {
@@ -347,9 +364,27 @@ export class Istaka {
         this.ghost.classList.toggle('finishing', zone === 'finish');
       }
     };
-    const up = (ev: PointerEvent) => {
+    const detach = () => {
       removeEventListener('pointermove', move);
       removeEventListener('pointerup', up);
+      removeEventListener('pointercancel', cancel);
+      removeEventListener('blur', cancel);
+      removeEventListener('pagehide', cancel);
+      document.removeEventListener('visibilitychange', onVis);
+    };
+    // App weggewischt, Anruf, Tab gewechselt …: Ziehen abbrechen, Stein bleibt wo er war
+    const cancel = () => {
+      detach();
+      document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
+      this.ghost?.remove();
+      this.ghost = null;
+      this.dragId = null;
+      this.onZoneHover?.(false);
+      this.render();
+    };
+    const onVis = () => document.visibilityState === 'hidden' && cancel();
+    const up = (ev: PointerEvent) => {
+      detach();
       document.querySelectorAll('.over').forEach((x) => x.classList.remove('over'));
       if (!moved) {
         const now = performance.now();
@@ -403,6 +438,10 @@ export class Istaka {
     };
     addEventListener('pointermove', move);
     addEventListener('pointerup', up);
+    addEventListener('pointercancel', cancel);
+    addEventListener('blur', cancel);
+    addEventListener('pagehide', cancel);
+    document.addEventListener('visibilitychange', onVis);
   }
 
   private orderedSelection(): number[] {
