@@ -105,10 +105,11 @@ function mock(fn: string, a: Record<string, any>): unknown {
     case 'okey_my_exclusives': {
       // lokal: Account "Efe" besitzt "efe", Schlüssel nur aus der Umgebung (nie im Code)
       const u = mUsers.get(uid(a.p_token))!;
+      if (u.username === 'Köfteekmek' && process.env.OKEY_TEST_EXCL_KEY2) return [{ model: 'kofte', key: process.env.OKEY_TEST_EXCL_KEY2 }];
       return u.username === 'Efe' && process.env.OKEY_TEST_EXCL_KEY ? [{ model: 'efe', key: process.env.OKEY_TEST_EXCL_KEY }] : [];
     }
     case 'okey_exclusive_models':
-      return ['efe'];
+      return ['efe', 'kofte'];
     case 'okey_my_stats':
       return mStats.get(uid(a.p_token)) ?? {};
     case 'okey_leaderboard':

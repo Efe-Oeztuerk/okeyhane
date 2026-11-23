@@ -36,7 +36,10 @@ export const REAL_BASES: RealBase[] = [
   { id: 'Nurse', label: 'Hemşire · Pflegerin', fem: true, kind: 'v' },
 ];
 /** exklusive Figuren (nur für einen Account) – Datei kommt geschützt vom Server */
-export const EXCLUSIVE_BASES: RealBase[] = [{ id: 'efe', label: '⭐ Efe (exklusiv)', fem: false, kind: 'v' }];
+export const EXCLUSIVE_BASES: RealBase[] = [
+  { id: 'efe', label: '⭐ Efe (exklusiv)', fem: false, kind: 'v' },
+  { id: 'kofte', label: '⭐ Köfte Ekmek (exklusiv)', fem: true, kind: 'v' },
+];
 export const excl = { dl: '', owns: new Set<string>() };
 
 export const REAL_HAIR: Record<string, string> = {

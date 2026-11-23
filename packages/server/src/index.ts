@@ -85,7 +85,7 @@ const clients = new Map<string, Client>();
 // und wird nur mit dem Sitzungs-Token des Besitzers herausgegeben. Andere können die Figur nicht wählen
 // (Server ersetzt sie) und bekommen die Datei nur, wenn sie mit dem Besitzer am selben Tisch sind.
 const EXCL_DIR = path.resolve(__dirname, '../exclusive');
-const exclusive = new Set<string>(['ahmet', 'efe']);
+const exclusive = new Set<string>(['ahmet', 'efe', 'kofte']);
 const exclModels = new Map<string, Buffer>();
 accounts
   .exclusiveModels()
