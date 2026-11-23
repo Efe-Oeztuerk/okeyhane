@@ -35,6 +35,10 @@ export const REAL_BASES: RealBase[] = [
   { id: 'ScientistF2', label: 'Önlük · Kittel', fem: true, kind: 'v' },
   { id: 'Nurse', label: 'Hemşire · Pflegerin', fem: true, kind: 'v' },
 ];
+/** exklusive Figuren (nur für einen Account) – Datei kommt geschützt vom Server */
+export const EXCLUSIVE_BASES: RealBase[] = [{ id: 'efe', label: '⭐ Efe (exklusiv)', fem: false, kind: 'v' }];
+export const excl = { dl: '', owns: new Set<string>() };
+
 export const REAL_HAIR: Record<string, string> = {
   none: 'Kel · Glatze',
   buzzed: 'Kısa · Kurz rasiert',
@@ -51,6 +55,17 @@ function load(name: string) {
   let p = files.get(name);
   if (!p) {
     p = loader.loadAsync(`/models/people/${name}.glb`).then((g) => g.scene);
+    files.set(name, p);
+  }
+  return p;
+}
+function loadExclusive(id: string) {
+  const name = 'x:' + id;
+  let p = files.get(name);
+  if (!p) {
+    p = loader.loadAsync(`/x/${id}.glb?k=${encodeURIComponent(excl.dl)}`).then((g) => g.scene);
+    // nicht freigegeben (noch nicht am selben Tisch) → später erneut versuchen
+    p.catch(() => files.delete(name));
     files.set(name, p);
   }
   return p;
@@ -132,11 +147,14 @@ export class RealBody {
   private async build() {
     const a = this.spec;
     // Sonderfigur Ahmet (Çaycı, Avaturn) – nicht im Editor wählbar
-    const npc = a.realBase === 'ahmet';
-    const base = npc ? { id: 'ahmet', label: 'Ahmet', fem: false, kind: 'v' as const } : (REAL_BASES.find((b) => b.id === a.realBase) ?? REAL_BASES[0]);
+    const xb = EXCLUSIVE_BASES.find((b) => b.id === a.realBase);
+    let xsrc: THREE.Group | null = null;
+    if (xb) xsrc = await loadExclusive(xb.id).catch(() => null);
+    const npc = a.realBase === 'ahmet' || !!xsrc;
+    const base = npc ? (xb ?? { id: 'ahmet', label: 'Ahmet', fem: false, kind: 'v' as const }) : (REAL_BASES.find((b) => b.id === a.realBase) ?? REAL_BASES[0]);
     let model: THREE.Object3D;
     if (npc) {
-      model = skClone(await load('ahmet'));
+      model = skClone(xsrc ?? (await load('ahmet')));
       model.traverse((o) => {
         const m = o as THREE.Mesh;
         if (m.isMesh && (m.material as THREE.MeshStandardMaterial).metalnessMap) {

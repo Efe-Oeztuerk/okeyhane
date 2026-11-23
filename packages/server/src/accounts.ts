@@ -56,6 +56,10 @@ export const accounts = {
   recordResult: (token: string, mode: string, won: boolean) => rpc<StatsMap>('okey_record_result', { p_token: token, p_mode: mode, p_won: won }),
   myStats: (token: string) => rpc<StatsMap>('okey_my_stats', { p_token: token }),
   leaderboard: (mode: string) => rpc<LeaderRow[]>('okey_leaderboard', { p_mode: mode }),
+  /** exklusive Figuren dieses Accounts (Modell-ID + Schlüssel zum Entschlüsseln der Datei) */
+  myExclusives: (token: string) => rpc<{ model: string; key: string }[]>('okey_my_exclusives', { p_token: token }),
+  /** welche Figuren-IDs überhaupt exklusiv sind */
+  exclusiveModels: () => rpc<string[]>('okey_exclusive_models', {}),
 };
 export type StatsMap = Record<string, { wins: number; losses: number; streak?: number; best?: number }>;
 export interface LeaderRow {
@@ -98,6 +102,13 @@ function mock(fn: string, a: Record<string, any>): unknown {
       mStats.set(id, st);
       return st;
     }
+    case 'okey_my_exclusives': {
+      // lokal: Account "Efe" besitzt "efe", Schlüssel nur aus der Umgebung (nie im Code)
+      const u = mUsers.get(uid(a.p_token))!;
+      return u.username === 'Efe' && process.env.OKEY_TEST_EXCL_KEY ? [{ model: 'efe', key: process.env.OKEY_TEST_EXCL_KEY }] : [];
+    }
+    case 'okey_exclusive_models':
+      return ['efe'];
     case 'okey_my_stats':
       return mStats.get(uid(a.p_token)) ?? {};
     case 'okey_leaderboard':

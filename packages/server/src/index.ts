@@ -2,6 +2,7 @@
 
 import http from 'node:http';
 import fs from 'node:fs';
+import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
@@ -37,6 +38,10 @@ interface Client {
   friends: FriendRow[];
   /** zuletzt gesendete Freunde-/Lobby-Liste (nur bei Änderung neu senden) */
   lastSocial: string;
+  /** exklusive Figuren, die dieser Account besitzt */
+  owns: Set<string>;
+  /** geheimer Schlüssel nur für diesen Browser (Download exklusiver Figuren) */
+  dl: string;
 }
 
 interface Seat {
@@ -74,6 +79,52 @@ interface Table {
 
 const tables = new Map<string, Table>();
 const clients = new Map<string, Client>();
+
+// ------------------------------------------------------------------ Exklusive Figuren
+// Die Modelldatei liegt nur verschlüsselt im Repo (exclusive/<id>.bin). Der Schlüssel steht in Supabase
+// und wird nur mit dem Sitzungs-Token des Besitzers herausgegeben. Andere können die Figur nicht wählen
+// (Server ersetzt sie) und bekommen die Datei nur, wenn sie mit dem Besitzer am selben Tisch sind.
+const EXCL_DIR = path.resolve(__dirname, '../exclusive');
+const exclusive = new Set<string>(['ahmet', 'efe']);
+const exclModels = new Map<string, Buffer>();
+accounts
+  .exclusiveModels()
+  .then((l) => l.forEach((m) => exclusive.add(m)))
+  .catch(() => {});
+function unlockModel(model: string, keyHex: string) {
+  if (exclModels.has(model) || !/^[a-z0-9_]+$/.test(model)) return;
+  try {
+    const raw = fs.readFileSync(path.join(EXCL_DIR, model + '.bin'));
+    const d = crypto.createDecipheriv('aes-256-gcm', Buffer.from(keyHex, 'hex'), raw.subarray(0, 12));
+    d.setAuthTag(raw.subarray(12, 28));
+    exclModels.set(model, Buffer.concat([d.update(raw.subarray(28)), d.final()]));
+  } catch (e) {
+    console.error('Exklusive Figur konnte nicht entschlüsselt werden', model, e);
+  }
+}
+async function loadOwned(c: Client) {
+  c.owns = new Set();
+  if (!c.token) return;
+  try {
+    for (const x of await accounts.myExclusives(c.token)) {
+      c.owns.add(x.model);
+      unlockModel(x.model, x.key);
+    }
+  } catch {}
+}
+/** fremde exklusive Figur → normale Figur */
+function cleanAvatar(c: Client, a: Avatar): Avatar {
+  if (a && a.style === 'real' && a.realBase && exclusive.has(a.realBase) && !c.owns.has(a.realBase)) return { ...a, realBase: a.body === 'f' ? 'qf' : 'qm' };
+  return a;
+}
+/** darf dieser Browser die Figur laden? (Besitzer selbst oder am selben Tisch wie ein Träger) */
+function mayDownload(c: Client, model: string) {
+  if (c.owns.has(model)) return true;
+  const t = c.table;
+  if (!t) return false;
+  const people = [...t.seats.map((s) => s.client), ...t.spectators];
+  return people.some((o) => o && o.owns.has(model) && o.info.avatar?.style === 'real' && o.info.avatar.realBase === model);
+}
 /** Account-ID → offene Verbindungen */
 const online = new Map<string, Set<Client>>();
 
@@ -490,7 +541,10 @@ async function handleAccount(c: Client, m: Msg) {
       c.user = null;
       c.token = null;
       c.friends = [];
+      c.owns = new Set();
+      c.info.avatar = cleanAvatar(c, c.info.avatar);
       send(c, { type: 'loggedOut' });
+      if (c.table) pushTable(c.table);
       if (old) for (const f of friendIdsOf(old.id)) notifyPresence(f);
       return;
     }
@@ -509,9 +563,10 @@ async function handleAccount(c: Client, m: Msg) {
       c.user = res.user;
       c.token = res.token;
       c.info.name = res.user.username;
-      if (res.user.avatar) c.info.avatar = res.user.avatar;
+      await loadOwned(c);
+      if (res.user.avatar) c.info.avatar = cleanAvatar(c, res.user.avatar);
       setOnline(c, true);
-      send(c, { type: 'auth', token: res.token, user: res.user });
+      send(c, { type: 'auth', token: res.token, user: { ...res.user, avatar: c.info.avatar }, owns: [...c.owns], dl: c.dl });
       accounts.myStats(res.token).then((st) => send(c, { type: 'stats', stats: st })).catch(() => {});
       if (c.table) pushTable(c.table);
       await refreshFriends(c);
@@ -607,14 +662,15 @@ function handle(c: Client, m: Msg) {
       if (typeof m.sid === 'string' && m.sid.length <= 64) c.sid = m.sid;
       if (!c.user) c.info.name = String(m.name ?? 'Oyuncu').slice(0, 20) || 'Oyuncu';
       if (m.avatar) {
-        c.info.avatar = m.avatar;
-        if (c.token && JSON.stringify(m.avatar) !== JSON.stringify(c.user?.avatar)) {
-          c.user!.avatar = m.avatar;
-          accounts.saveAvatar(c.token, m.avatar).catch(() => {});
+        const av = cleanAvatar(c, m.avatar);
+        c.info.avatar = av;
+        if (c.token && JSON.stringify(av) !== JSON.stringify(c.user?.avatar)) {
+          c.user!.avatar = av;
+          accounts.saveAvatar(c.token, av).catch(() => {});
         }
       }
       if (typeof m.signature === 'string' && m.signature.length < 200000) c.info.signature = m.signature;
-      send(c, { type: 'welcome', id: c.id, stats: c.token ? {} : getStats(c.info.name) });
+      send(c, { type: 'welcome', id: c.id, dl: c.dl, owns: [...c.owns], stats: c.token ? {} : getStats(c.info.name) });
       if (c.token) accounts.myStats(c.token).then((st) => send(c, { type: 'stats', stats: st })).catch(() => {});
       if (t) pushTable(t);
       return;
@@ -1212,6 +1268,19 @@ const server = http.createServer((req, res) => {
     });
     return;
   }
+  const xm = /^\/x\/([a-z0-9_]+)\.glb$/.exec(url.pathname);
+  if (xm) {
+    const who = [...clients.values()].find((o) => o.dl === url.searchParams.get('k'));
+    const data = exclModels.get(xm[1]);
+    if (!who || !data || !mayDownload(who, xm[1])) {
+      res.statusCode = 403;
+      res.end();
+      return;
+    }
+    res.writeHead(200, { 'content-type': 'model/gltf-binary', 'cache-control': 'private, max-age=3600', 'content-length': String(data.length) });
+    res.end(data);
+    return;
+  }
   if (url.pathname === '/health') {
     res.end('ok');
     return;
@@ -1270,6 +1339,8 @@ wss.on('connection', (ws) => {
     token: null,
     friends: [],
     lastSocial: '',
+    owns: new Set(),
+    dl: crypto.randomBytes(18).toString('hex'),
   };
   c.info.id = c.id;
   clients.set(c.id, c);

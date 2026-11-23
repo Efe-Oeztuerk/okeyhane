@@ -11,7 +11,7 @@ const bi = (x: string) => {
 };
 import { World } from './scene.ts';
 import { KITS } from './avatar.ts';
-import { REAL_BASES, REAL_HAIR } from './realbody.ts';
+import { REAL_BASES, REAL_HAIR, EXCLUSIVE_BASES, excl } from './realbody.ts';
 import type { Profile } from './settings.ts';
 import { VOICES, playPreview, stopPreview } from './voices.ts';
 
@@ -158,14 +158,15 @@ export function openEditor(profile: Profile, onSave: (p: Profile) => void) {
       },
     );
     if (real) {
-      const base = REAL_BASES.find((b) => b.id === p.avatar.realBase) ?? REAL_BASES[0];
+      const bases = [...EXCLUSIVE_BASES.filter((b) => excl.owns.has(b.id)), ...REAL_BASES];
+      const base = bases.find((b) => b.id === p.avatar.realBase) ?? REAL_BASES[0];
       chipRow(
         'Karakter · Figur',
-        REAL_BASES.map((b) => [b.id, b.label]),
+        bases.map((b) => [b.id, b.label]),
         base.id,
         (v) => {
           p.avatar.realBase = v;
-          p.avatar.body = REAL_BASES.find((b) => b.id === v)?.fem ? 'f' : 'm';
+          p.avatar.body = bases.find((b) => b.id === v)?.fem ? 'f' : 'm';
         },
       );
       if (base.kind === 'q') {

@@ -1,5 +1,6 @@
 // Okeyhane Client: Menü, Kahvehane, Tisch-UI
 
+import { excl } from './realbody.ts';
 import './style.css';
 import type { Tile, OkeyIdentity } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from '../../server/src/protocol.ts';
@@ -153,9 +154,16 @@ initSocial({
 
 on('welcome', (m) => {
   myId = m.id;
+  if (m.dl) excl.dl = m.dl;
+  if (m.owns && m.owns.length) excl.owns = new Set(m.owns);
   stats = m.stats ?? {};
   voice.setMe(myId);
 });
+on('auth', (m) => {
+  if (m.dl) excl.dl = m.dl;
+  excl.owns = new Set(m.owns ?? []);
+});
+on('loggedOut', () => (excl.owns = new Set()));
 on('table', (m) => {
   if (m.table?.rules?.mode === 'pisti' || m.table?.rules?.mode === 'batak') preloadCards();
   rejoining = false;

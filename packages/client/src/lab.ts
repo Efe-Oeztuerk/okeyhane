@@ -3,6 +3,7 @@ import * as THREE from 'three';
 import { Avatar3D } from './avatar.ts';
 import { makeShisha } from './props.ts';
 import type { Avatar } from '../../server/src/protocol.ts';
+import { excl } from './realbody.ts';
 
 const q = new URLSearchParams(location.hash.slice(1));
 const r = new THREE.WebGLRenderer({ antialias: true });
@@ -17,7 +18,8 @@ scene.add(dl);
 const base: Avatar = { skin: '#d9a77c', face: 'round', hair: 'short', hairColor: '#2b1d14', eyebrows: 'thick', beard: 'none', mustache: 'classic', shirt: 'gomlek', shirtColor: '#7a3b2e', hat: 'none', glasses: 'none', accessory: 'tespih', jewelry: 'chain' };
 const F: Partial<Avatar> = { body: 'f', beard: 'none', mustache: 'none', eyebrows: 'thin', accessory: 'none', jewelry: 'bilezik' };
 const R = (x: Partial<Avatar>): Partial<Avatar> => ({ style: 'real', ...x });
-const specs: Partial<Avatar>[] = q.get('real') ? [
+if (q.get('k')) excl.dl = q.get('k')!;
+const specs: Partial<Avatar>[] = q.get('x') ? [R({ realBase: q.get('x')! }), R({ realBase: 'qm', realSkin: 'light', realHair: 'simpleparted' })] : q.get('real') ? [
   R({ realBase: 'qm', realSkin: 'light', realHair: 'simpleparted', realBeard: true, shirtColor: '#e8e2d4', pantsColor: '#3a342e', hairColor: '#2b1d14' }),
   R({ realBase: 'qf', realSkin: 'dark', realHair: 'long', shirtColor: '#8e1b1b', pantsColor: '#1a1a1a', hairColor: '#1a1a1a' }),
   R({ realBase: 'qm', realSkin: '#7a4f32', realHair: 'long', realBeard: true, shirtColor: '#8e1b1b', pantsColor: '#3a342e', hairColor: '#1a1a1a' }),
