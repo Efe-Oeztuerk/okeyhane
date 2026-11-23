@@ -1026,7 +1026,7 @@ function handle(c: Client, m: Msg) {
       case 'chat': {
         const text = String(m.text ?? '').slice(0, 200).trim();
         if (!text) return;
-        broadcast(t, { type: 'chat', from: c.info.name, seat: c.seat, text, spectator: c.seat === null });
+        broadcast(t, { type: 'chat', from: c.info.name, fromId: c.id, seat: c.seat, text, spectator: c.seat === null });
         return;
       }
       case 'quick':

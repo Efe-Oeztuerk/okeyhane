@@ -186,7 +186,7 @@ const defaults: Settings = {
   hudCompact: false,
   hideTop: false,
   hideChat: false,
-  radioStation: 'okeyhane',
+  radioStation: 'off',
   musicMuted: false,
   touchBtns: ['look', 'third', 'front', 'cayci', 'nargile', 'sheet', 'chat', 'mic'],
 };
@@ -214,7 +214,9 @@ if ((stored.v ?? 1) < 4) {
 }
 // v5: Mikro-Knopf rechts standardmäßig dabei
 if ((stored.v ?? 1) < 5 && !settings.touchBtns.includes('mic')) settings.touchBtns = [...settings.touchBtns, 'mic'];
-(settings as any).v = 5;
+// v6: Radio/Musik am Tisch standardmäßig aus
+if ((stored.v ?? 1) < 6) settings.radioStation = 'off';
+(settings as any).v = 6;
 const listeners = new Set<() => void>();
 
 export function saveSettings() {

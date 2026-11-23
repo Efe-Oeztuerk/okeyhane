@@ -285,7 +285,24 @@ on('state', (m) => {
   if (v.current === you.seat && prev?.view.current !== you.seat && v.phase === 'draw') sfx.bell();
   renderAll();
 });
-on('chat', (m) => addLog(h('div', {}, h('b', {}, m.from + (m.spectator ? ' 👁' : '') + ': '), m.text)));
+on('chat', (m) => {
+  addLog(h('div', {}, h('b', {}, m.from + (m.spectator ? ' 👁' : '') + ': '), m.text));
+  chatPopup(m.from, m.text, m.id === myId || m.fromId === myId);
+});
+/** neue Chat-Nachricht kurz oben einblenden (wenn der Chat zu ist) */
+function chatPopup(from: string, text: string, mine: boolean) {
+  if (mine || els.chat?.classList.contains('open')) return;
+  let wrap = document.querySelector('.chat-pops') as HTMLElement | null;
+  if (!wrap) {
+    wrap = h('div', { class: 'chat-pops' });
+    document.body.append(wrap);
+  }
+  const pop = h('div', { class: 'chat-pop', onclick: () => setChatOpen(true) }, h('b', {}, '💬 ' + from + ': '), h('span', {}, text));
+  wrap.append(pop);
+  while (wrap.children.length > 3) wrap.firstElementChild!.remove();
+  setTimeout(() => pop.classList.add('out'), 4500);
+  setTimeout(() => pop.remove(), 5000);
+}
 on('quick', (m) => {
   const text = t('q_' + m.key);
   addLog(h('div', {}, h('b', {}, m.from + ': '), text));
@@ -824,21 +841,27 @@ function showMenu() {
             )
           : h(
               'div',
-              { class: 'col', style: { gap: '6px' } },
-              h('button', { class: 'primary', onclick: () => openAuth() }, '👤 ' + (getLang() === 'de' ? 'Anmelden / Registrieren' : 'Giriş yap / Kayıt ol')),
-              h('label', {}, (getLang() === 'de' ? 'oder als Gast: ' : 'ya da misafir olarak: ') + t('yourName')),
+              { class: 'm-guest' },
               nameInput,
+              h('button', { class: 'small', onclick: () => openAuth() }, '👤 ' + (getLang() === 'de' ? 'Anmelden' : 'Giriş yap')),
             ),
-        h('button', { class: 'primary', onclick: () => go({ type: 'createTable', isPublic: false }) }, '🀄 ' + t('createTable')),
-        h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, codeInput, h('label', { class: 'row', style: { gap: '4px' } }, specBox, t('spectate')), h('button', { onclick: () => go({ type: 'joinTable', code: codeInput.value, spectate: specBox.checked }) }, t('join'))),
+        h('button', { class: 'primary big', onclick: () => go({ type: 'createTable', isPublic: false }) }, '🀄 ' + t('createTable')),
         h(
           'div',
-          { class: 'row', style: { flexWrap: 'nowrap' } },
-          h('button', { onclick: () => (commitName(), unlockAudio(), openLobbies()) }, '🌐 ' + (getLang() === 'de' ? 'Offene Tische' : 'Açık masalar')),
-          friendsBtn,
+          { class: 'm-join' },
+          codeInput,
+          h('button', { onclick: () => go({ type: 'joinTable', code: codeInput.value, spectate: specBox.checked }) }, t('join')),
         ),
-        h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, h('button', { class: 'ghost', onclick: () => openStats() }, '📊 ' + t('stats')), h('button', { class: 'ghost', onclick: () => openSettings() }, '⚙️ ' + t('settings'))),
-        h('div', { class: 'row', style: { flexWrap: 'nowrap' } }, h('span', { id: 'install-slot', style: { display: 'contents' } }, installButton()), h('button', { class: 'ghost small', onclick: () => openCredits() }, '© Credits')),
+        h('label', { class: 'm-spec' }, specBox, '👁 ' + t('spectate')),
+        h('button', { class: 'm-lobbies', onclick: () => (commitName(), unlockAudio(), openLobbies()) }, '🌐 ' + (getLang() === 'de' ? 'Offene Tische' : 'Açık masalar')),
+        h(
+          'div',
+          { class: 'm-tiles' },
+          friendsBtn,
+          h('button', { class: 'ghost', onclick: () => openStats() }, '📊 ' + t('stats')),
+          h('button', { class: 'ghost', onclick: () => openSettings() }, '⚙️ ' + t('settings')),
+        ),
+        h('div', { class: 'm-foot' }, h('span', { id: 'install-slot', style: { display: 'contents' } }, installButton()), h('button', { class: 'ghost small', onclick: () => openCredits() }, '© Credits')),
       ),
     ),
   );
@@ -953,6 +976,14 @@ function modal(...children: (HTMLElement | string)[]) {
   return m;
 }
 
+let settingsTab = 'sound';
+/** Marker: alles davor gehört in diesen Reiter */
+function TAB(key: string, label: string) {
+  const m = h('i');
+  m.dataset.tab = key;
+  m.dataset.label = label;
+  return m;
+}
 function openSettings() {
   // nochmal ⚙️ drücken = Einstellungen wieder zu
   const open = ui.querySelector(':scope > .modal.settings-modal');
@@ -1021,11 +1052,14 @@ function openSettings() {
   };
   const check = (key: keyof typeof settings, label: string) =>
     h('label', {}, label, h('input', { type: 'checkbox', checked: settings[key] as boolean, onchange: (e: Event) => (((settings as any)[key] = (e.target as HTMLInputElement).checked), saveSettings()) }));
+  const de = getLang() === 'de';
+  const tabs: [string, string, (HTMLElement | null)[]][] = [];
   const settingsM = modal(
     h('h2', {}, '⚙️ ' + t('settings')),
     h(
       'div',
       { class: 'settings' },
+      h('div', { class: 'set-sec' }, de ? '🔊 Lautstärke' : '🔊 Ses seviyesi'),
       slider('volMaster', t('volumeMaster')),
       slider('volSfx', t('volumeSfx')),
       slider('volVoice', t('volumeVoice')),
@@ -1039,6 +1073,41 @@ function openSettings() {
         getLang() === 'de' ? '🤖 Bots sprechen' : '🤖 Botlar konuşsun',
         h('input', { type: 'checkbox', checked: settings.botVoices, onchange: (e: Event) => ((settings.botVoices = (e.target as HTMLInputElement).checked), saveSettings()) }),
       ),
+      h('div', { class: 'set-sec' }, de ? '🎵 Musik & Fernseher' : '🎵 Müzik & televizyon'),
+      h('label', {}, '📻 Radio', radioSelect()),
+      check('menuMusic', getLang() === 'de' ? '🎶 Musik im Menü' : '🎶 Menüde müzik'),
+      check('musicMuted', getLang() === 'de' ? '🔇 Menümusik & Radio stumm' : '🔇 Menü müziği & radyo sessiz'),
+      select('tvMode', getLang() === 'de' ? '📺 Fernseher' : '📺 Televizyon', [
+        ['table', getLang() === 'de' ? 'An' : 'Açık'],
+        ['off', getLang() === 'de' ? 'Ganz aus' : 'Tamamen kapalı'],
+      ], () => applyMedia()),
+      h('div', { class: 'set-sec' }, de ? '🎙️ Sprachchat' : '🎙️ Sesli sohbet'),
+      check('pushToTalk', t('pushToTalk')),
+      TAB('sound', de ? '🔊 Ton' : '🔊 Ses'),
+      select('quality', t('quality'), [
+        ['high', 'High'],
+        ['low', 'Low'],
+        ['eco', getLang() === 'de' ? '🔋 Sparmodus (Handy wird nicht heiß)' : '🔋 Tasarruf modu (telefon ısınmaz)'],
+      ], () => toast(getLang() === 'de' ? 'Lichter, Gäste und Außenwelt ändern sich nach dem Neuladen der Seite' : 'Işıklar, misafirler ve dış dünya sayfa yenilenince değişir')),
+      select('timeOfDay', t('timeOfDay'), [
+        ['auto', t('auto')],
+        ['day', '☀️'],
+        ['evening', '🌇'],
+        ['night', '🌙'],
+      ]),
+      check('smoke', t('smoke')),
+      h(
+        'label',
+        {},
+        t('language'),
+        h(
+          'select',
+          { onchange: (e: Event) => (setLang((e.target as HTMLSelectElement).value as any), inCafe ? renderAll() : showMenu()) },
+          h('option', { value: 'tr', selected: getLang() === 'tr' }, 'Türkçe'),
+          h('option', { value: 'de', selected: getLang() === 'de' }, 'Deutsch'),
+        ),
+      ),
+      TAB('look', de ? '✨ Grafik' : '✨ Grafik'),
       // Bedienfläche nach innen rücken (z. B. bei abgerundeten Handy-Ecken oder wenn man es zentraler mag)
       h(
         'label',
@@ -1057,7 +1126,6 @@ function openSettings() {
           },
         }),
       ),
-      check('smoke', t('smoke')),
       // Touch: Knöpfe rechts selbst auswählen
       document.body.classList.contains('touch')
         ? h(
@@ -1080,26 +1148,7 @@ function openSettings() {
             ),
           )
         : null,
-      check('pushToTalk', t('pushToTalk')),
-      check('menuMusic', getLang() === 'de' ? '🎶 Musik im Menü' : '🎶 Menüde müzik'),
-      check('musicMuted', getLang() === 'de' ? '🔇 Menümusik & Radio stumm' : '🔇 Menü müziği & radyo sessiz'),
-      h('label', {}, '📻 Radio', radioSelect()),
-      select('tvMode', getLang() === 'de' ? '📺 Fernseher' : '📺 Televizyon', [
-        ['table', getLang() === 'de' ? 'An' : 'Açık'],
-        ['off', getLang() === 'de' ? 'Ganz aus' : 'Tamamen kapalı'],
-      ], () => applyMedia()),
-      select('quality', t('quality'), [
-        ['high', 'High'],
-        ['low', 'Low'],
-        ['eco', getLang() === 'de' ? '🔋 Sparmodus (Handy wird nicht heiß)' : '🔋 Tasarruf modu (telefon ısınmaz)'],
-      ], () => toast(getLang() === 'de' ? 'Lichter, Gäste und Außenwelt ändern sich nach dem Neuladen der Seite' : 'Işıklar, misafirler ve dış dünya sayfa yenilenince değişir')),
-      select('timeOfDay', t('timeOfDay'), [
-        ['auto', t('auto')],
-        ['day', '☀️'],
-        ['evening', '🌇'],
-        ['night', '🌙'],
-      ]),
-      h('b', { style: { marginTop: '10px' } }, getLang() === 'de' ? '🎥 Ansicht & Steuerung' : '🎥 Görüş & kontrol'),
+      TAB('screen', de ? '📱 Bildschirm' : '📱 Ekran'),
       range('fovTable', getLang() === 'de' ? 'Sichtfeld am Tisch' : 'Masada görüş açısı', 50, 90, '°'),
       range('camTilt', getLang() === 'de' ? 'Blick am Tisch heben (Gesichter)' : 'Masada bakışı kaldır (yüzler)', 0, 25, '', () => world.seated !== null && world.sitAt(world.seated)),
       range('fovWalk', getLang() === 'de' ? 'Sichtfeld beim Laufen' : 'Yürürken görüş açısı', 50, 90, '°'),
@@ -1123,6 +1172,7 @@ function openSettings() {
         },
         '↺ ' + (getLang() === 'de' ? 'Kamera auf Standard zurücksetzen' : 'Kamerayı varsayılana sıfırla'),
       ),
+      TAB('cam', de ? '🎥 Kamera' : '🎥 Kamera'),
       select('touchUi', getLang() === 'de' ? 'Touch-Steuerung (Handy/iPad)' : 'Dokunmatik kontrol (telefon/iPad)', [
         ['auto', t('auto')],
         ['on', getLang() === 'de' ? 'An' : 'Açık'],
@@ -1131,20 +1181,34 @@ function openSettings() {
       check('showKeyHints', getLang() === 'de' ? '❔ Bedienhinweise einblenden' : '❔ Kullanım ipuçlarını göster'),
       keybindSection(),
       controllerSection(),
-      h(
-        'label',
-        {},
-        t('language'),
-        h(
-          'select',
-          { onchange: (e: Event) => (setLang((e.target as HTMLSelectElement).value as any), inCafe ? renderAll() : showMenu()) },
-          h('option', { value: 'tr', selected: getLang() === 'tr' }, 'Türkçe'),
-          h('option', { value: 'de', selected: getLang() === 'de' }, 'Deutsch'),
-        ),
-      ),
+      TAB('keys', de ? '🎮 Steuerung' : '🎮 Kontrol'),
     ),
   );
   settingsM.classList.add('settings-modal');
+  // flache Liste an den TAB-Markern in Reiter aufteilen
+  const box = settingsM.querySelector('.settings') as HTMLElement;
+  const bar = h('div', { class: 'set-tabs' });
+  const panes: HTMLElement[] = [];
+  let cur: HTMLElement[] = [];
+  for (const node of [...box.children] as HTMLElement[]) {
+    if (node.dataset.tab) {
+      const pane = h('div', { class: 'set-pane' }, cur);
+      pane.dataset.tab = node.dataset.tab;
+      panes.push(pane);
+      const b = h('button', { class: 'set-tab', onclick: () => show(pane.dataset.tab!) }, node.dataset.label!);
+      b.dataset.tab = node.dataset.tab;
+      bar.append(b);
+      node.remove();
+      cur = [];
+    } else cur.push(node);
+  }
+  const show = (k: string) => {
+    settingsTab = k;
+    panes.forEach((p) => p.classList.toggle('hidden', p.dataset.tab !== k));
+    bar.querySelectorAll('.set-tab').forEach((b) => b.classList.toggle('on', (b as HTMLElement).dataset.tab === k));
+  };
+  box.replaceChildren(bar, ...panes);
+  show(panes.some((p) => p.dataset.tab === settingsTab) ? settingsTab : 'sound');
 }
 
 /** kleiner Punkt: Sprachverbindung zu diesem Spieler */
@@ -1717,10 +1781,6 @@ function renderLeft() {
         ? h('button', { class: 'small ghost', onclick: () => send({ type: 'setPublic', isPublic: !table!.isPublic }) }, table!.isPublic ? '🌐 ' + t('publicTable') : '🔒 ' + t('privateTable'))
         : h('span', { class: 'muted' }, table!.isPublic ? '🌐 ' + t('publicTable') : '🔒 ' + t('privateTable')),
       h('button', { class: 'small ghost', onclick: () => openFriends() }, '👥 ' + (getLang() === 'de' ? 'Einladen' : 'Davet et') + (pendingCount() ? ` (${pendingCount()})` : '')),
-    ),
-    h(
-      'div',
-      { class: 'row', style: { margin: '0 0 6px' } },
       world.seated !== null && !table!.started && you.seat !== null ? h('button', { class: 'small ghost', onclick: () => (world.sitAt(null), renderAll()) }, '🚶 ' + t('leave')) : null,
       h('button', { class: 'small danger', onclick: () => send({ type: 'leaveTable' }) }, '🚪 ' + t('back')),
     ),
@@ -1844,6 +1904,21 @@ function renderRight() {
       const tt = (b as HTMLElement).title || (b.classList.contains('mic-btn') ? (voice.micOn ? t('voiceOn') : t('voiceOff')) : b.classList.contains('radio') ? 'Radyo' : '');
       if (tt) b.append(h('span', { class: 'cd-lbl' }, tt));
     });
+    // in Gruppen mit Überschrift sortieren
+    const groups: [string, RegExp][] = [
+      [de ? '🔊 Ton & Musik' : '🔊 Ses & müzik', /^(📺|📻|🔇|🔊|🎙)/],
+      [de ? '👁 Ansicht' : '👁 Görünüm', /^(👁|⛶)/],
+      [de ? '☰ Mehr' : '☰ Diğer', /./],
+    ];
+    const items = [...el.children] as HTMLElement[];
+    const used = new Set<HTMLElement>();
+    el.innerHTML = '';
+    for (const [label, re] of groups) {
+      const mine = items.filter((b) => !used.has(b) && (b.classList.contains('radiochip') ? /📺|🔊/.test(label) : re.test(b.textContent!.trim())));
+      if (!mine.length) continue;
+      mine.forEach((b) => used.add(b));
+      el.append(h('div', { class: 'cd-sec' }, label), ...mine);
+    }
   }
 }
 
