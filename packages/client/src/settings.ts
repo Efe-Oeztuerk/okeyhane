@@ -16,7 +16,8 @@ export interface Settings {
   /** Abstand der Bedienelemente zum Bildschirmrand in px (Handy: alles rückt nach innen) */
   uiInset: number;
   smoke: boolean;
-  quality: 'low' | 'high';
+  /** eco = Sparmodus: 30 FPS, geringere Auflösung, keine Stadt/Autos/Gäste/Tauben/Deko-Rauch */
+  quality: 'eco' | 'low' | 'high';
   timeOfDay: 'auto' | 'day' | 'evening' | 'night';
   tvMode: 'table' | 'off' | 'own';
   /** eigenes Fernsehprogramm (nur man selbst sieht es) */

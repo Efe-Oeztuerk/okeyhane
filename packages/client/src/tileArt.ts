@@ -79,17 +79,28 @@ export function tileTexture(tile: Tile | null): THREE.Texture {
   return tex;
 }
 
+// Leistung: 3 statt 6 Zeichenaufrufe pro Stein (alle 4 Seiten zusammen), verdeckte Steine nur 1
 const tileGeo = new THREE.BoxGeometry(0.036, 0.05, 0.012);
+tileGeo.clearGroups();
+tileGeo.addGroup(0, 24, 0);
+tileGeo.addGroup(24, 6, 1);
+tileGeo.addGroup(30, 6, 2);
+const tileGeoDown = new THREE.BoxGeometry(0.036, 0.05, 0.012);
 const sideMat = new THREE.MeshStandardMaterial({ color: '#efe3c8', roughness: 0.5 });
 const backMat = new THREE.MeshStandardMaterial({ color: '#e6d8b8', roughness: 0.5 });
 
 /** Ein Stein als 3D-Objekt. Vorderseite +Z. */
 export function tileMesh(tile: Tile | null, faceUp = true): THREE.Mesh {
   // Gesicht leuchtet leicht selbst → im dunklen Café nicht matschig, Farben bleiben kräftig
-  const map = tileTexture(faceUp ? tile : null);
+  if (!faceUp) {
+    const d = new THREE.Mesh(tileGeoDown, backMat);
+    d.castShadow = true;
+    d.userData.tile = tile;
+    return d;
+  }
+  const map = tileTexture(tile);
   const faceMat = new THREE.MeshStandardMaterial({ map, roughness: 0.6, emissive: '#ffffff', emissiveMap: map, emissiveIntensity: 0.45 });
-  const mats = [sideMat, sideMat, sideMat, sideMat, faceUp ? faceMat : backMat, backMat];
-  const m = new THREE.Mesh(tileGeo, mats);
+  const m = new THREE.Mesh(tileGeo, [sideMat, faceMat, backMat]);
   m.castShadow = true;
   m.userData.tile = tile;
   return m;

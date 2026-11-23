@@ -46,7 +46,11 @@ export const SPOTS = [
 ];
 export const TAVLA_SPOT = 4;
 /** Grafik „niedrig“ beim Laden (Lichter, Gäste, Außenwelt werden dann sparsamer gebaut) */
-const LOW = settings.quality === 'low';
+/** Sparmodus (Handy wird sonst warm) – schließt „niedrig“ mit ein */
+const ECO = settings.quality === 'eco';
+const LOW = settings.quality !== 'high';
+/** Grund-Auflösung je Grafikstufe */
+const basePR = () => Math.min(devicePixelRatio, settings.quality === 'high' ? 2 : settings.quality === 'eco' ? 0.85 : 1);
 /** Bestellbares beim Çaycı (rein kosmetisch) */
 export const ORDER_ITEMS = ['cay', 'kahve', 'kuruyemis', 'su', 'icecek', 'oralet', 'sahlep'] as const;
 /** Dosen in /models/items/drinks.glb (Reihenfolge = variant vom Server) */
@@ -162,13 +166,13 @@ export class World {
   private visual: GameVisual | null = null;
 
   constructor(private container: HTMLElement) {
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    this.renderer = new THREE.WebGLRenderer({ antialias: !ECO, alpha: true, powerPreference: ECO ? 'low-power' : 'default' });
     this.renderer.setClearColor(0x000000, 0);
     this.renderer.shadowMap.enabled = settings.quality === 'high';
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.05;
-    this.renderer.setPixelRatio(Math.min(devicePixelRatio, settings.quality === 'high' ? 2 : 1));
+    this.renderer.setPixelRatio(basePR());
     setCardUploader((t) => this.renderer.initTexture(t));
     this.css = new CSS3DRenderer();
     this.css.domElement.className = 'css3d';
@@ -198,7 +202,13 @@ export class World {
     [300, 1500].forEach((ms) => setTimeout(() => this.resize(), ms));
     this.resize();
     this.bindInput();
-    this.renderer.setAnimationLoop(() => this.frame());
+    // Sparmodus: höchstens 30 Bilder pro Sekunde
+    let last = 0;
+    this.renderer.setAnimationLoop((now: number) => {
+      if (ECO && now - last < 31) return;
+      last = now;
+      this.frame();
+    });
   }
 
   // ------------------------------------------------------------ Raum
@@ -521,8 +531,11 @@ export class World {
     floor.receiveShadow = true;
     this.scene.add(floor);
     // echte 3D-Stadt: Straße, Gehwege, Häuserzeilen, Bäume, Ampeln, Autos, Sonne/Mond
-    this.city = new City(z1, w / 2, ROOM.d / 2, LOW);
-    this.scene.add(this.city.group);
+    // Sparmodus: keine Stadt (Häuser, Autos, Ampeln) – nur ein schlichter Hintergrund
+    if (!ECO) {
+      this.city = new City(z1, w / 2, ROOM.d / 2, LOW);
+      this.scene.add(this.city.group);
+    } else this.scene.background = new THREE.Color('#2c3442');
     // Straßenlaternen (leuchten abends) + geparkte Autos + Tauben
     const lampPost = new THREE.MeshStandardMaterial({ color: '#2b2f3a', roughness: 0.5, metalness: 0.4 });
     for (const [lx, lz] of [
@@ -554,7 +567,7 @@ export class World {
       this.streetBulbs.push(bulb);
     }
     // Tauben auf dem Pflaster
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < (ECO ? 0 : 5); i++) {
       const pg = new THREE.Group();
       const grey = new THREE.MeshStandardMaterial({ color: ['#8a8f99', '#6f747d', '#a2a6ae'][i % 3], roughness: 0.9 });
       const b = new THREE.Mesh(new THREE.SphereGeometry(0.09, 10, 8), grey);
@@ -1180,6 +1193,7 @@ export class World {
 
   puff(pos: THREE.Vector3, n = 10, dir?: THREE.Vector3, amount = 1) {
     if (!settings.smoke) return;
+    if (ECO) n = Math.max(1, Math.ceil(n / 3));
     for (let i = 0; i < n; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.smokeTex, transparent: true, depthWrite: false, opacity: 0.6 * amount }));
       s.position.copy(pos).add(new THREE.Vector3((Math.random() - 0.5) * 0.03, 0, (Math.random() - 0.5) * 0.03));
@@ -2049,7 +2063,7 @@ export class World {
   /** Pişti-Tisch: Mitte (Stapel), Talon, gestochene Karten, Handkarten der anderen (Rückseiten) */
   /** Pişti: höhere Renderauflösung, damit die Karten auf dem Handy scharf sind (Szene ist ohne Steine leicht) */
   sharpCards(on: boolean) {
-    const pr = Math.min(devicePixelRatio, on ? (settings.quality === 'high' ? 2.5 : 1.75) : settings.quality === 'high' ? 2 : 1);
+    const pr = on ? Math.min(devicePixelRatio, settings.quality === 'high' ? 2.5 : ECO ? 1.25 : 1.75) : basePR();
     if (Math.abs(this.renderer.getPixelRatio() - pr) > 0.01) {
       this.renderer.setPixelRatio(pr);
       this.resize();
@@ -3041,7 +3055,7 @@ export class World {
       (pg.userData.beak as THREE.Object3D).position.y = 0.18 - peck * 0.09;
       if (Math.random() < dt * 0.15) pg.rotation.y += (Math.random() - 0.5) * 1.5;
     }
-    if (Math.random() < dt * 0.05) sfx.murmur();
+    if (!ECO && Math.random() < dt * 0.05) sfx.murmur();
     // Rauchringe
     for (let i = this.ringList.length - 1; i >= 0; i--) {
       const r = this.ringList[i];
@@ -3072,12 +3086,13 @@ export class World {
     for (const sh of [...this.decoShishas, ...this.seatShishas]) {
       if (!sh) continue;
       animateShisha(sh, t);
-      if (settings.smoke && Math.random() < dt * 0.25) this.puff(sh.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.84, 0)), 1, new THREE.Vector3(0, 0.12, 0), 0.5);
+      if (settings.smoke && !ECO && Math.random() < dt * 0.25) this.puff(sh.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.84, 0)), 1, new THREE.Vector3(0, 0.12, 0), 0.5);
     }
     if (Math.random() < dt * 0.02) this.applyTimeOfDay();
 
     this.renderer.render(this.scene, this.camera);
-    this.css.render(this.scene, this.camera);
+    // CSS-Ebene (Video im Fernseher) nur rechnen, wenn ein Video läuft
+    if (!ECO || this.tvs.some((t) => t.css.visible)) this.css.render(this.scene, this.camera);
   }
 
   // ------------------------------------------------------------ Tavla
