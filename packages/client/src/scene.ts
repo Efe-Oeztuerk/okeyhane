@@ -70,6 +70,8 @@ export interface GameVisual {
   revealed: Tile[][] | null;
   /** wer die Hand beendet hat (sein letzter Stein liegt in der Mitte) */
   finisher?: number | null;
+  /** linker Nachbar je Platz (bei 2/3 Spielern nicht immer s−1) */
+  leftOf?: number[];
 }
 
 export class World {
@@ -2722,7 +2724,7 @@ export class World {
           this.flyers.push({ m, from: new THREE.Vector3(from.x, TABLE_Y + 0.09, from.z), to: m.position.clone(), t: 0, spin: (Math.random() - 0.5) * 3 });
           m.position.copy(this.flyers[this.flyers.length - 1].from);
         }
-        if (isTop && v.mySeat !== null && (s + 1) % 4 === v.mySeat) {
+        if (isTop && v.mySeat !== null && (v.leftOf ? v.leftOf[v.mySeat] === s : (s + 1) % 4 === v.mySeat)) {
           this.sideObj = m;
           m.userData.side = true;
           this.clickables.push(m);

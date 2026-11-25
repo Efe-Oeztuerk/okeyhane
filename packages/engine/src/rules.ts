@@ -27,6 +27,10 @@ export interface TableRules {
   hardMode: boolean;
   /** Zug-Timer in Sekunden, null = aus (nur Client/Server-Timer) */
   turnTimerSec: number | null;
+  /** Okey: Anzahl Spieler (2 = 1 gegen 1, 3, 4) */
+  okeyPlayers: 2 | 3 | 4;
+  /** Okey zu viert: eşli (Teams gegenüber) oder alle gegen alle */
+  okeyTeams: boolean;
   /** Bots dürfen leere Plätze füllen */
   allowBots: boolean;
   /** Pişti: 2 oder 4 Spieler, Zielpunkte, Bluff (Kapalı Pişti) */
@@ -67,6 +71,8 @@ export function defaultRules(mode: Mode): TableRules {
     stealing: { enabled: false, maxPerHand: 1 },
     hardMode: false,
     turnTimerSec: null,
+    okeyPlayers: 4,
+    okeyTeams: true,
     allowBots: true,
     pistiPlayers: 4,
     pistiTarget: 151,
@@ -84,4 +90,14 @@ export function defaultRules(mode: Mode): TableRules {
     batakOverLimit: 0,
     batakZeroBatar: true,
   };
+}
+
+/** Okey: welche Plätze spielen mit (2 Spieler sitzen sich gegenüber) */
+export function okeySeats(rules: Pick<TableRules, 'okeyPlayers'>): number[] {
+  const n = rules.okeyPlayers ?? 4;
+  return n === 2 ? [0, 2] : n === 3 ? [0, 1, 2] : [0, 1, 2, 3];
+}
+/** Okey: wird in Teams gespielt? (nur zu viert möglich) */
+export function okeyIsTeams(rules: Pick<TableRules, 'okeyPlayers' | 'okeyTeams'>): boolean {
+  return (rules.okeyPlayers ?? 4) === 4 && rules.okeyTeams !== false;
 }

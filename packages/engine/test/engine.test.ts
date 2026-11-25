@@ -169,3 +169,42 @@ describe('Regeln im Ablauf', () => {
     expect(g.accuse((s + 1) % 4, (s + 2) % 4)).toBe(false);
   });
 });
+
+describe('Okey mit 2/3/4 Spielern und alle gegen alle', () => {
+  const cases: [number, boolean][] = [[2, false], [3, false], [4, false]];
+  for (const mode of ['standard', 'okey101', 'perisan'] as Mode[]) {
+    for (const [n, teams] of cases) {
+      it(`${mode} · ${n} Spieler · ${teams ? 'eşli' : 'tekli'}`, () => {
+        const rules = { ...defaultRules(mode), okeyPlayers: n as 2 | 3 | 4, okeyTeams: teams };
+        const game = new OkeyGame(rules, 7 + n);
+        const seats = n === 2 ? [0, 2] : n === 3 ? [0, 1, 2] : [0, 1, 2, 3];
+        expect(game.teamScores.length).toBe(4);
+        let guard = 0;
+        while (!game.gameOver && guard++ < 50000) {
+          if (game.hand.phase === 'handOver') game.nextHand();
+          else {
+            expect(seats).toContain(game.hand.current);
+            botTurn(game, game.hand.current);
+          }
+          // nicht mitspielende Plätze haben nie Steine
+          for (let s = 0; s < 4; s++) if (!seats.includes(s)) expect(game.hand.players[s].hand.length).toBe(0);
+        }
+        expect(game.gameOver).toBe(true);
+        if (game.winnerTeam !== null) expect(seats).toContain(game.winnerTeam);
+        const h = game.hand;
+        const total = h.pile.length + h.players.reduce((s, p) => s + p.hand.length + p.discards.length, 0) + h.tableMelds.reduce((s, m) => s + m.tiles.length, 0) + (h.okeyBirTile ? 1 : 0) + 1;
+        expect(total).toBe(106);
+      }, 60000);
+    }
+  }
+  it('1 gegen 1: linker Nachbar ist der Gegenüber', () => {
+    const game = new OkeyGame({ ...defaultRules('standard'), okeyPlayers: 2, okeyTeams: false }, 3);
+    expect(game.leftOf(0)).toBe(2);
+    expect(game.leftOf(2)).toBe(0);
+    expect(game.nextSeat(0)).toBe(2);
+  });
+  it('Standard tekli: alle anderen verlieren Punkte', () => {
+    const r = scoreStandardFinish(defaultRules('standard'), { winner: 1, withOkey: false, withPairs: false, winnerDidOkeyBir: false }, { seats: [0, 1, 2], team: false });
+    expect(r.teamDelta).toEqual([-2, 0, -2, 0]);
+  });
+});

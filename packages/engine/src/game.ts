@@ -1,8 +1,8 @@
-// Spielablauf: ein Tisch mit 4 Plätzen, Teams = gegenüber (0+2, 1+3).
+// Spielablauf: Tisch mit 2–4 Spielern. Zu viert eşli (Teams gegenüber 0+2, 1+3) oder alle gegen alle.
 // Der Server hält diese Klasse; Clients schicken nur Aktionen und bekommen Ansichten.
 
 import { Rng } from './rng.ts';
-import type { TableRules } from './rules.ts';
+import { type TableRules, okeySeats, okeyIsTeams } from './rules.ts';
 import {
   type OkeyIdentity,
   type Tile,
@@ -27,7 +27,10 @@ import {
   scorePerisanIndicator,
   scoreStandardFinish,
   scoreStandardIndicator,
-  teamOf,
+  type Seating,
+  sideOf,
+  sidesOf,
+  zeroDelta,
 } from './scoring.ts';
 
 export class GameError extends Error {}
@@ -53,8 +56,8 @@ export interface TableMeld {
 
 export interface SheetRow {
   hand: number;
-  teamDelta: [number, number];
-  totals: [number, number];
+  teamDelta: number[];
+  totals: number[];
   notes: string[];
 }
 
@@ -72,7 +75,7 @@ export interface HandState {
   okeyBirTile: Tile | null;
   pendingSteal: { seat: number } | null;
   /** Punkte, die während der Hand anfallen (Gösterge, Taş Çalma) */
-  runningDelta: [number, number];
+  runningDelta: number[];
   notes: string[];
   lastResult: HandResult | null;
 }
@@ -82,16 +85,20 @@ export class OkeyGame {
   private rng: Rng;
   handNo = 0;
   dealer = 0;
-  teamScores: [number, number];
+  /** Punkte pro Wertung: Team 0/1 oder (alle gegen alle) pro Platz */
+  teamScores: number[];
   sheet: SheetRow[] = [];
   hand!: HandState;
-  winnerTeam: 0 | 1 | null = null;
+  winnerTeam: number | null = null;
+  readonly seating: Seating;
   gameOver = false;
 
   constructor(rules: TableRules, seed = Date.now()) {
     this.rules = rules;
     this.rng = new Rng(seed);
-    this.teamScores = rules.mode === 'standard' ? [rules.startPoints, rules.startPoints] : [0, 0];
+    this.seating = { seats: okeySeats(rules), team: okeyIsTeams(rules) };
+    this.dealer = this.seating.seats[this.seating.seats.length - 1];
+    this.teamScores = zeroDelta(this.seating).map(() => (rules.mode === 'standard' ? rules.startPoints : 0));
     this.startHand();
   }
 
@@ -105,7 +112,7 @@ export class OkeyGame {
     const indicator = deck.splice(indIdx, 1)[0];
     const okey = okeyFromIndicator(indicator);
     const big = this.rules.mode === 'okey101';
-    const starter = (this.dealer + 1) % 4;
+    const starter = this.nextSeat(this.dealer);
     const players: PlayerState[] = [0, 1, 2, 3].map(() => ({
       hand: [],
       discards: [],
@@ -116,7 +123,7 @@ export class OkeyGame {
       penalty: 0,
       stealsUsed: 0,
     }));
-    for (let seat = 0; seat < 4; seat++) {
+    for (const seat of this.seating.seats) {
       const n = (big ? 21 : 14) + (seat === starter ? 1 : 0);
       players[seat].hand = deck.splice(0, n);
     }
@@ -131,7 +138,7 @@ export class OkeyGame {
       okeyBirBy: null,
       okeyBirTile: null,
       pendingSteal: null,
-      runningDelta: [0, 0],
+      runningDelta: zeroDelta(this.seating),
       notes: [],
       lastResult: null,
     };
@@ -139,11 +146,28 @@ export class OkeyGame {
 
   nextHand(): void {
     if (this.hand.phase !== 'handOver') throw new GameError('Hand läuft noch');
-    this.dealer = (this.dealer + 1) % 4;
+    this.dealer = this.nextSeat(this.dealer);
     this.startHand();
   }
 
   // ------------------------------------------------------------ Hilfen
+
+  /** nächster mitspielender Platz (rechts) */
+  nextSeat(seat: number): number {
+    const a = this.seating.seats;
+    for (let i = 1; i <= 4; i++) if (a.includes((seat + i) % 4)) return (seat + i) % 4;
+    return seat;
+  }
+  /** linker Nachbar: von dem man abgeworfene Steine nimmt */
+  leftOf(seat: number): number {
+    const a = this.seating.seats;
+    for (let i = 1; i <= 4; i++) if (a.includes((seat + 4 - i) % 4)) return (seat + 4 - i) % 4;
+    return seat;
+  }
+  /** Wertung (Team oder Platz) */
+  sideOf(seat: number): number {
+    return sideOf(this.seating, seat);
+  }
 
   private p(seat: number): PlayerState {
     return this.hand.players[seat];
@@ -164,7 +188,7 @@ export class OkeyGame {
 
   /** Oberster Abwurf des linken Nachbarn (der Spieler vor dir). */
   topDiscardFor(seat: number): Tile | null {
-    const d = this.p((seat + 3) % 4).discards;
+    const d = this.p(this.leftOf(seat)).discards;
     return d.length ? d[d.length - 1] : null;
   }
 
@@ -172,10 +196,10 @@ export class OkeyGame {
     const h = this.hand;
     this.p(h.current).openedThisTurn = false;
     if (h.pile.length === 0) {
-      this.endHand({ teamDelta: [0, 0], note: 'Ortaya bitti' });
+      this.endHand({ teamDelta: zeroDelta(this.seating), note: 'Ortaya bitti' });
       return;
     }
-    h.current = (h.current + 1) % 4;
+    h.current = this.nextSeat(h.current);
     h.phase = 'draw';
   }
 
@@ -192,7 +216,7 @@ export class OkeyGame {
   drawDiscard(seat: number): Tile {
     this.requireTurn(seat, 'draw');
     if (this.hand.okeyBirBy !== null) throw new GameError('Nach Okey bir nur aus der Mitte ziehen');
-    const left = this.p((seat + 3) % 4);
+    const left = this.p(this.leftOf(seat));
     const t = left.discards.pop();
     if (!t) throw new GameError('Kein Abwurf da');
     this.p(seat).hand.push(t);
@@ -246,6 +270,7 @@ export class OkeyGame {
         h.okey,
         { winner: seat, withOkey, withPairs: pl.opened === 'pairs', winnerDidOkeyBir: false, elden },
         h.players.map((p, i) => ({ hand: i === seat ? [] : p.hand, opened: p.opened, penalty: p.penalty })),
+        this.seating,
       );
     } else {
       if (rest.length !== 14) throw new GameError('Falsche Steinanzahl');
@@ -255,7 +280,7 @@ export class OkeyGame {
       const info = { winner: seat, withOkey, withPairs: pairs, winnerDidOkeyBir: h.okeyBirBy === seat };
       result =
         this.rules.mode === 'standard'
-          ? scoreStandardFinish(this.rules, info)
+          ? scoreStandardFinish(this.rules, info, this.seating)
           : scorePerisanFinish(
               this.rules,
               h.okey,
@@ -263,6 +288,7 @@ export class OkeyGame {
               info,
               h.players.map((p) => p.hand),
               h.okeyBirBy,
+              this.seating,
             );
     }
     this.takeFromHand(seat, tileId);
@@ -284,8 +310,8 @@ export class OkeyGame {
     const has = pl.hand.some((t) => !t.fake && t.color === h.indicator.color && t.value === h.indicator.value);
     if (!has) throw new GameError('Du hast die Gösterge nicht');
     pl.shownIndicator = true;
-    if (this.rules.mode === 'standard') this.addRunning(scoreStandardIndicator(this.rules, seat));
-    else if (this.rules.mode === 'perisan') this.addRunning(scorePerisanIndicator(this.rules, h.okey, seat));
+    if (this.rules.mode === 'standard') this.addRunning(scoreStandardIndicator(this.rules, seat, this.seating));
+    else if (this.rules.mode === 'perisan') this.addRunning(scorePerisanIndicator(this.rules, h.okey, seat, this.seating));
     else {
       pl.penalty -= 101;
       h.notes.push(`Gösterge (Platz ${seat + 1}) −101`);
@@ -434,19 +460,20 @@ export class OkeyGame {
     if (!this.rules.stealing.enabled) throw new GameError('Taş Çalma ist aus');
     const h = this.hand;
     if (accuser === target) throw new GameError('Ungültig');
+    if (!this.seating.seats.includes(target)) throw new GameError('Ungültig');
     const caught = h.pendingSteal?.seat === target;
     const mode = this.rules.mode;
-    const delta: [number, number] = [0, 0];
+    const delta = zeroDelta(this.seating);
     if (caught) {
       h.pendingSteal = null;
       if (mode === 'okey101') this.p(target).penalty += 101;
-      else if (mode === 'standard') delta[teamOf(target)] = -2;
-      else delta[teamOf(target)] = perisanMultiplier(this.rules, h.okey) * 10;
+      else if (mode === 'standard') delta[this.sideOf(target)] = -2;
+      else delta[this.sideOf(target)] = perisanMultiplier(this.rules, h.okey) * 10;
       h.notes.push(`Hırsız yakalandı (Platz ${target + 1})`);
     } else {
       if (mode === 'okey101') this.p(accuser).penalty += 50;
-      else if (mode === 'standard') delta[teamOf(accuser)] = -1;
-      else delta[teamOf(accuser)] = perisanMultiplier(this.rules, h.okey) * 5;
+      else if (mode === 'standard') delta[this.sideOf(accuser)] = -1;
+      else delta[this.sideOf(accuser)] = perisanMultiplier(this.rules, h.okey) * 5;
       h.notes.push(`Haksız suçlama (Platz ${accuser + 1})`);
     }
     if (mode !== 'okey101') this.addRunning({ teamDelta: delta, note: '' });
@@ -456,8 +483,7 @@ export class OkeyGame {
   // ------------------------------------------------------------ Hand-Ende
 
   private addRunning(r: HandResult): void {
-    this.hand.runningDelta[0] += r.teamDelta[0];
-    this.hand.runningDelta[1] += r.teamDelta[1];
+    r.teamDelta.forEach((d, i) => (this.hand.runningDelta[i] += d));
     if (r.note) this.hand.notes.push(r.note);
   }
 
@@ -466,24 +492,22 @@ export class OkeyGame {
     // 101: Mitte leer ohne Gewinner → jeder zählt seine Hand (ohne Verdopplung) + Strafen
     if (this.rules.mode === 'okey101' && result.note === 'Ortaya bitti') {
       h.players.forEach((p, seat) => {
+        if (!this.seating.seats.includes(seat)) return;
         let pts = 202;
         if (p.opened) {
           pts = p.hand.reduce((s, t) => s + (isRealOkey(t, h.okey) ? 101 : tileValue(t, h.okey)), 0);
           if (p.opened === 'pairs') pts *= 2;
         }
-        result.teamDelta[teamOf(seat)] += pts + p.penalty;
+        result.teamDelta[this.sideOf(seat)] += pts + p.penalty;
       });
     }
-    const delta: [number, number] = [
-      result.teamDelta[0] + h.runningDelta[0],
-      result.teamDelta[1] + h.runningDelta[1],
-    ];
-    this.teamScores = [this.teamScores[0] + delta[0], this.teamScores[1] + delta[1]];
+    const delta = this.teamScores.map((_, i) => (result.teamDelta[i] ?? 0) + (h.runningDelta[i] ?? 0));
+    this.teamScores = this.teamScores.map((v, i) => v + delta[i]);
     this.handNo++;
     this.sheet.push({
       hand: this.handNo,
       teamDelta: delta,
-      totals: [...this.teamScores] as [number, number],
+      totals: [...this.teamScores],
       notes: [...h.notes, result.note],
     });
     h.lastResult = result;
@@ -492,15 +516,23 @@ export class OkeyGame {
   }
 
   private checkGameOver(): void {
-    const [a, b] = this.teamScores;
+    const sides = sidesOf(this.seating);
+    const sc = (i: number) => this.teamScores[i];
+    // bester Wert gewinnt (Standard: höchster, sonst niedrigster); Gleichstand → niemand
+    const best = (high: boolean) => {
+      const v = sides.map(sc);
+      const top = high ? Math.max(...v) : Math.min(...v);
+      const w = sides.filter((i) => sc(i) === top);
+      return w.length === 1 ? w[0] : null;
+    };
     if (this.rules.mode === 'standard') {
-      if (a <= 0 || b <= 0) {
+      if (sides.some((i) => sc(i) <= 0)) {
         this.gameOver = true;
-        this.winnerTeam = a <= 0 && b <= 0 ? (a > b ? 0 : 1) : a <= 0 ? 1 : 0;
+        this.winnerTeam = best(true);
       }
     } else if (this.handNo >= this.rules.handCount) {
       this.gameOver = true;
-      this.winnerTeam = a === b ? null : a < b ? 0 : 1;
+      this.winnerTeam = best(false);
     }
     if (this.gameOver) this.hand.phase = 'gameOver';
   }
@@ -520,9 +552,13 @@ export class OkeyGame {
       okeyBirTile: h.okeyBirTile,
       pileCount: h.pile.length,
       myHand: h.players[seat].hand,
+      seats: this.seating.seats,
+      team: this.seating.team,
+      teamOfSeat: [0, 1, 2, 3].map((s) => this.sideOf(s)),
+      leftOf: [0, 1, 2, 3].map((s) => this.leftOf(s)),
       players: h.players.map((p, i) => ({
         seat: i,
-        team: teamOf(i),
+        team: this.sideOf(i),
         tileCount: p.hand.length,
         discards: p.discards,
         opened: p.opened,

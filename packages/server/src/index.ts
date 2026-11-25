@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { WebSocketServer, WebSocket } from 'ws';
-import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, BatakGame, BatakError, batakBotTurn, TavlaGame, TavlaError, tavlaBotTurn, type TableRules, type Mode } from '@okeyhane/engine';
+import { OkeyGame, GameError, botTurn, defaultRules, autoLayout, rackIsFinished, isCompleteMelds, isCompletePairs, PistiGame, PistiError, pistiBotTurn, BatakGame, BatakError, batakBotTurn, TavlaGame, TavlaError, tavlaBotTurn, okeySeats, okeyIsTeams, type TableRules, type Mode } from '@okeyhane/engine';
 import type { Avatar, MediaState, PlayerInfo } from './protocol.ts';
 import { loadStats, recordResult, getStats } from './stats.ts';
 import { accounts, AccountError, type UserRow, type FriendRow } from './accounts.ts';
@@ -233,7 +233,24 @@ const TAVLA_SPOT = 4;
 function activeSeats(t: Table): number[] {
   if (t.rules.mode === 'batak' && t.rules.batakMode === 'gommeli') return [0, 1, 2];
   if (t.rules.mode === 'tavla') return [0, 2];
-  return t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2 ? [0, 2] : [0, 1, 2, 3];
+  if (t.rules.mode === 'pisti') return t.rules.pistiPlayers === 2 ? [0, 2] : [0, 1, 2, 3];
+  if (t.rules.mode === 'batak') return [0, 1, 2, 3];
+  return okeySeats(t.rules);
+}
+/** Menschen auf nicht mitspielenden Plätzen auf freie mitspielende Plätze setzen (vor dem Start) */
+function compactSeats(t: Table) {
+  const act = activeSeats(t);
+  for (let i = 0; i < 4; i++) {
+    if (act.includes(i)) continue;
+    t.seats[i].bot = null;
+    const cl = t.seats[i].client;
+    if (!cl) continue;
+    const to = act.find((j) => !t.seats[j].client && !t.seats[j].bot) ?? act.find((j) => !t.seats[j].client);
+    if (to === undefined) continue;
+    t.seats[to] = { client: cl, bot: null, sid: t.seats[i].sid };
+    t.seats[i] = { client: null, bot: null };
+    cl.seat = to;
+  }
 }
 function isPisti(g: Table['game']): g is PistiGame {
   return !!g && (g as any).kind === 'pisti';
@@ -466,7 +483,7 @@ function afterAction(t: Table) {
     const losers: number[] = [];
     t.seats.forEach((s, seat) => {
       if (!activeSeats(t).includes(seat) || (!s.client && !s.bot)) return;
-      const team = isPisti(g) || isTavla(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : seat % 2;
+      const team = isPisti(g) || isTavla(g) ? g.teamOf(seat) : isBatak(g) ? (g.team ? seat % 2 : seat) : g.sideOf(seat);
       if (g.winnerTeam === null) return;
       (team === g.winnerTeam ? winners : losers).push(seat);
       const cl = s.client;
@@ -727,7 +744,8 @@ function handle(c: Client, m: Msg) {
         scheduleBots(table);
         return;
       }
-      const free = table.seats.findIndex((s) => !s.client && !s.bot);
+      const isFree = (i: number) => !table.seats[i].client && !table.seats[i].bot;
+      const free = activeSeats(table).find(isFree) ?? table.seats.findIndex((s, i) => isFree(i));
       if (!m.spectate && free >= 0 && !table.started) {
         table.seats[free].client = c;
         c.seat = free;
@@ -861,6 +879,9 @@ function handle(c: Client, m: Msg) {
           t.spot = TAVLA_SPOT;
         } else if (t.spot === TAVLA_SPOT) t.spot = 0;
         if (t.rules.mode === 'pisti' && t.rules.pistiPlayers === 2) for (const i of [1, 3]) t.seats[i].bot = null;
+        t.rules.okeyPlayers = ([2, 3, 4] as const).includes(Number(t.rules.okeyPlayers) as any) ? (Number(t.rules.okeyPlayers) as 2 | 3 | 4) : 4;
+        t.rules.okeyTeams = t.rules.okeyTeams !== false;
+        compactSeats(t);
         {
           const r = t.rules;
           r.batakMode = (['ihaleli', 'esli', 'gommeli'] as const).includes(r.batakMode) ? r.batakMode : 'ihaleli';
@@ -918,7 +939,8 @@ function handle(c: Client, m: Msg) {
       case 'start': {
         if (!isOwner) throw new GameError('Nur der Tischbesitzer');
         const act = activeSeats(t);
-        if (act.some((i) => !t.seats[i].client && !t.seats[i].bot)) throw new GameError(act.length === 2 ? 'Beide Plätze müssen besetzt sein' : 'Alle 4 Plätze müssen besetzt sein');
+        compactSeats(t);
+        if (act.some((i) => !t.seats[i].client && !t.seats[i].bot)) throw new GameError(act.length === 2 ? 'Beide Plätze müssen besetzt sein' : `Alle ${act.length} Plätze müssen besetzt sein`);
         // Pişti zu zweit: die anderen beiden Plätze bleiben frei
         for (let i = 0; i < 4; i++) if (!act.includes(i)) t.seats[i].bot = null;
         t.game = newGame(t);

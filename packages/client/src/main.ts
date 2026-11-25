@@ -272,6 +272,7 @@ on('state', (m) => {
     tableMelds: v.tableMelds,
     revealed: v.revealedHands,
     finisher: v.phase === 'handOver' || v.gameOver ? m.lastResult?.finisher ?? null : null,
+    leftOf: v.leftOf,
   };
   world.setGame(visual);
   const ended = v.phase === 'handOver' || v.phase === 'gameOver';
@@ -1436,7 +1437,7 @@ function enterCafe() {
   };
   world.onDrawDragStart = (kind, e) => {
     if (!myTurn('draw') || !st) return false;
-    const left = st.topDiscards[(you.seat! + 3) % 4];
+    const left = st.topDiscards[st.view.leftOf?.[you.seat!] ?? (you.seat! + 3) % 4];
     if (kind === 'side' && (!left || st.view.okeyBirTile)) return false;
     const ghost = kind === 'side' ? tileElement(left, st.okey) : h('div', { class: 'tile back' });
     istaka.externalDrag(ghost, e, (slot, moved, x, y) => {
@@ -2167,6 +2168,18 @@ function openCayci() {
 
 // ------------------------------------------------------------------ Lobby + Regeln
 
+/** Okey: welche Plätze spielen mit / Teams? (wie Engine okeySeats/okeyIsTeams) */
+function okeySeatsC(r: any): number[] {
+  const n = r.okeyPlayers ?? 4;
+  return n === 2 ? [0, 2] : n === 3 ? [0, 1, 2] : [0, 1, 2, 3];
+}
+const okeyTeamsC = (r: any) => (r.okeyPlayers ?? 4) === 4 && r.okeyTeams !== false;
+const isOkeyMode = (m: string) => m === 'standard' || m === 'okey101' || m === 'perisan';
+/** Name einer Wertung: Team (zwei Namen) oder ein einzelner Spieler */
+function sideName(v: any, side: number): string {
+  return v.team === false ? (nameOf(side) ?? '?') : [side, side + 2].map((s) => table!.seats[s]?.name ?? '?').join(' & ');
+}
+
 function renderLobby() {
   const show = !table!.started && world.seated !== null;
   const el = slot('lobby', 'lobby panel');
@@ -2181,7 +2194,28 @@ function renderLobby() {
   const pistiDuo = (r.mode === 'pisti' && r.pistiPlayers === 2) || r.mode === 'tavla';
   const batakSolo = r.mode === 'batak' && r.batakMode !== 'esli';
   const gommeli3 = r.mode === 'batak' && r.batakMode === 'gommeli';
+  const okeyMode = isOkeyMode(r.mode);
+  const okSeats = okeySeatsC(r);
+  const okSolo = okeyMode && !okeyTeamsC(r);
   table!.seats.forEach((p, s) => {
+    if (okeyMode && !okSeats.includes(s)) {
+      seats.append(h('div', { class: 'seat off' }, h('div', { class: 'muted' }, '—'), h('span', { class: 'muted' }, getLang() === 'de' ? `frei (${okSeats.length} Spieler)` : `boş (${okSeats.length} kişilik)`)));
+      return;
+    }
+    if (okSolo) {
+      seats.append(
+        h(
+          'div',
+          { class: 'seat' },
+          h('div', { class: 'muted' }, ['①', '②', '③', '④'][okSeats.indexOf(s)]),
+          h('b', {}, p ? p.name + (p.bot ? ' 🤖' : '') : t('empty')),
+          !p && you.seat !== null ? h('button', { class: 'small ghost', onclick: () => send({ type: 'sit', seat: s }) }, t('sitHere')) : null,
+          !p && isOwner && r.allowBots ? h('button', { class: 'small', onclick: () => send({ type: 'addBot', seat: s }) }, '🤖 ' + t('addBot')) : null,
+          p?.bot && isOwner ? h('button', { class: 'small ghost', onclick: () => send({ type: 'removeBot', seat: s }) }, t('removeBot')) : null,
+        ),
+      );
+      return;
+    }
     if (gommeli3 && s === 3) {
       seats.append(h('div', { class: 'seat off' }, h('div', { class: 'muted' }, '—'), h('span', { class: 'muted' }, getLang() === 'de' ? 'frei (zu dritt)' : 'boş (üç kişilik)')));
       return;
@@ -2394,6 +2428,37 @@ function renderLobby() {
     }
     return;
   }
+  {
+    const de = getLang() === 'de';
+    const n = r.okeyPlayers ?? 4;
+    rules.append(
+      h(
+        'label',
+        {},
+        de ? 'Spieler' : 'Oyuncu',
+        h(
+          'select',
+          { disabled: dis, onchange: (e: Event) => set({ okeyPlayers: Number((e.target as HTMLSelectElement).value) }) },
+          h('option', { value: 4, selected: n === 4 }, '4'),
+          h('option', { value: 3, selected: n === 3 }, '3'),
+          h('option', { value: 2, selected: n === 2 }, de ? '2 (1 gegen 1)' : '2 (teke tek)'),
+        ),
+      ),
+      n === 4
+        ? h(
+            'label',
+            {},
+            de ? 'Spielart' : 'Oyun türü',
+            h(
+              'select',
+              { disabled: dis, onchange: (e: Event) => set({ okeyTeams: (e.target as HTMLSelectElement).value === 'team' }) },
+              h('option', { value: 'team', selected: r.okeyTeams !== false }, de ? 'Eşli (2 gegen 2)' : 'Eşli (2’ye 2)'),
+              h('option', { value: 'solo', selected: r.okeyTeams === false }, de ? 'Alle gegen alle' : 'Herkes kendine (tekli)'),
+            ),
+          )
+        : h('span', { class: 'muted' }, de ? 'Jeder spielt für sich' : 'Herkes kendine'),
+    );
+  }
   if (r.mode === 'standard') rules.append(chk('colorful', t('colorful')), num('startPoints', t('startPoints'), 2, 100));
   if (r.mode !== 'standard') rules.append(num('handCount', t('handCount'), 1, 30));
   if (r.mode === 'okey101') rules.append(num('openThreshold', 'Açma ≥', 50, 200), num('pairOpenCount', 'Çift açma', 3, 7), chk('doubling101', t('doubling101')));
@@ -2430,7 +2495,7 @@ function renderLobby() {
   );
   el.append(rules);
   if (isOwner) {
-    const full = table!.seats.every((s) => s);
+    const full = okeySeatsC(r).every((i) => table!.seats[i]);
     el.append(h('div', { class: 'row', style: { justifyContent: 'flex-end', marginTop: '14px' } }, h('button', { class: 'primary', disabled: !full, onclick: () => (unlockAudio(), send({ type: 'start' })) }, '▶ ' + t('startGame'))));
   }
 }
@@ -2487,7 +2552,11 @@ function renderGame() {
       topToggle,
     );
   } else top.append(
-    h('div', { class: 'score' + (mine === 0 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(0)), String(v.teamScores[0])),
+    ...(v.team === false
+      ? (v.seats as number[])
+          .slice(0, Math.ceil(v.seats.length / 2))
+          .map((s) => h('div', { class: 'score solo' + (you.seat === s ? ' mine' : '') }, h('div', { class: 'muted' }, (nameOf(s) ?? '?').split(' ')[0]), String(v.teamScores[s])))
+      : [h('div', { class: 'score' + (mine === 0 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(0)), String(v.teamScores[0]))]),
     v.phase === 'handOver' || v.phase === 'gameOver'
       ? h('div', { class: 'turn' }, v.gameOver ? t('gameOver') : t('handOver'))
       : h(
@@ -2506,7 +2575,7 @@ function renderGame() {
         ),
     (() => {
       // statt Steinanzahl: zuletzt geworfener Stein (klein)
-      const last: Tile | null = st.topDiscards?.[(v.current + 3) % 4] ?? null;
+      const last: Tile | null = st.topDiscards?.[v.leftOf?.[v.current] ?? (v.current + 3) % 4] ?? null;
       return h(
         'div',
         { class: 'okeyinfo' },
@@ -2517,7 +2586,11 @@ function renderGame() {
         h('span', { class: 'muted ok-meta' }, `${t(table!.rules.mode)} · El ${v.handNo + (v.phase === 'handOver' || v.gameOver ? 0 : 1)}`),
       );
     })(),
-    h('div', { class: 'score' + (mine === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(1)), String(v.teamScores[1])),
+    ...(v.team === false
+      ? (v.seats as number[])
+          .slice(Math.ceil(v.seats.length / 2))
+          .map((s) => h('div', { class: 'score solo' + (you.seat === s ? ' mine' : '') }, h('div', { class: 'muted' }, (nameOf(s) ?? '?').split(' ')[0]), String(v.teamScores[s])))
+      : [h('div', { class: 'score' + (mine === 1 ? ' mine' : '') }, h('div', { class: 'muted' }, teamName(1)), String(v.teamScores[1]))]),
     topToggle,
   );
 
@@ -2531,7 +2604,7 @@ function renderGame() {
         'div',
         { class: 'row' },
         h('span', { class: 'muted' }, t('watching') + ':'),
-        [0, 1, 2, 3].map((s) => h('button', { class: 'small ' + (you.watching === s ? 'primary' : 'ghost'), onclick: () => (send({ type: 'watch', seat: s }), watchAt(s)) }, nameOf(s))),
+        ((v.seats as number[] | undefined) ?? [0, 1, 2, 3]).map((s) => h('button', { class: 'small ' + (you.watching === s ? 'primary' : 'ghost'), onclick: () => (send({ type: 'watch', seat: s }), watchAt(s)) }, nameOf(s))),
       ),
     );
   }
@@ -2552,9 +2625,9 @@ function renderGame() {
     const isOwner = table!.ownerId === myId;
     if (v.gameOver) {
       const w = v.winnerTeam;
-      result.append(h('h2', {}, w === null ? t('draw') : `🏆 ${t('winner')}: ${teamName(w)}`));
-      const losing = w === null ? -1 : 1 - w;
-      const canSign = you.seat !== null && you.seat % 2 === losing && profile.signature && !table!.signatures[you.seat];
+      result.append(h('h2', {}, w === null ? t('draw') : `🏆 ${t('winner')}: ${sideName(v, w)}`));
+      const mySide = you.seat === null ? -1 : v.team === false ? you.seat : you.seat % 2;
+      const canSign = you.seat !== null && w !== null && mySide !== w && profile.signature && !table!.signatures[you.seat];
       result.append(
         h(
           'div',
@@ -2625,7 +2698,7 @@ function handsPanel(v: any): HTMLElement {
   const revealed: any[][] | null = v.revealedHands;
   const layouts: Record<number, (number | null)[]> | null = st?.layouts ?? null;
   const finisher = st?.lastResult?.finisher;
-  for (let s = 0; s < 4; s++) {
+  for (const s of (v.seats as number[] | undefined) ?? [0, 1, 2, 3]) {
     const tiles: any[] = (s === you.seat ? v.myHand : revealed?.[s]) ?? [];
     const byId = new Map(tiles.map((x: any) => [x.id, x]));
     // Anordnung wie auf dem eigenen Brett (eigenes: lokal, andere: vom Server; Bots: sortiert)
@@ -2641,7 +2714,7 @@ function handsPanel(v: any): HTMLElement {
     const row = h('div', { class: 'handrow' + (s === finisher ? ' winner' : '') + (s % 2 === 0 ? ' tA' : ' tB') });
     // nur am Ende der Hand: was hatte jeder selbst noch auf der Hand?
     const pd: number[] | undefined = st?.lastResult?.playerDelta;
-    const loser = finisher === undefined || finisher === null ? true : s % 2 !== finisher % 2;
+    const loser = finisher === undefined || finisher === null ? true : v.team === false ? s !== finisher : s % 2 !== finisher % 2;
     let handInfo: HTMLElement | string = '';
     if (s !== finisher && loser && tiles.length && st?.okey) {
       const ls = looseSum(tiles as any, st.okey);
@@ -3466,7 +3539,7 @@ function renderActions() {
   if (draw)
     bar.append(
       btn('🀫 ' + t('drawPile'), true, () => act({ action: 'drawPile' }), 'primary'),
-      btn('↘ ' + t('drawSide'), !!st.topDiscards[(you.seat + 3) % 4] && !v.okeyBirTile, () => act({ action: 'drawDiscard' })),
+      btn('↘ ' + t('drawSide'), !!st.topDiscards[v.leftOf?.[you.seat] ?? (you.seat + 3) % 4] && !v.okeyBirTile, () => act({ action: 'drawDiscard' })),
     );
   if (disc)
     bar.append(
@@ -3506,21 +3579,23 @@ function renderSheet() {
   const v = st.view;
   if (v.kind === 'pisti') return renderPistiSheet(el, v);
   if (v.kind === 'batak') return renderBatakSheet(el, v);
-  const rows = v.sheet as { hand: number; teamDelta: [number, number]; totals: [number, number]; notes: string[] }[];
-  const short = (team: number) => [team, team + 2].map((s) => (table!.seats[s]?.name ?? '?').split(' ')[0]).join('-');
+  const rows = v.sheet as { hand: number; teamDelta: number[]; totals: number[]; notes: string[] }[];
+  const solo = v.team === false;
+  const cols: number[] = solo ? v.seats : [0, 1];
+  const short = (side: number) => (solo ? [side] : [side, side + 2]).map((s) => (table!.seats[s]?.name ?? '?').split(' ')[0]).join('-');
   el.innerHTML = '';
-  const tbl = h('table', {}, h('tr', {}, h('th', {}, '#'), h('th', {}, short(0)), h('th', {}, short(1))));
+  const tbl = h('table', {}, h('tr', {}, h('th', {}, '#'), cols.map((c) => h('th', {}, short(c)))));
   const standard = table!.rules.mode === 'standard';
-  if (standard) tbl.append(h('tr', {}, h('td', {}, ''), h('td', {}, String(table!.rules.startPoints)), h('td', {}, String(table!.rules.startPoints))));
+  if (standard) tbl.append(h('tr', {}, h('td', {}, ''), cols.map(() => h('td', {}, String(table!.rules.startPoints)))));
   rows.forEach((r, i) => {
     const fresh = i >= seenRows;
     const cell = (n: number) => h('td', { class: n < 0 ? 'neg' : '' }, h('span', { class: fresh ? 'write' : '', style: { animationDelay: fresh ? `${(i - seenRows) * 0.4}s` : '0s' } }, String(n)));
-    tbl.append(h('tr', {}, h('td', {}, String(r.hand)), cell(standard ? r.totals[0] : r.teamDelta[0]), cell(standard ? r.totals[1] : r.teamDelta[1])));
+    tbl.append(h('tr', {}, h('td', {}, String(r.hand)), cols.map((c) => cell(standard ? r.totals[c] : r.teamDelta[c]))));
     const note = r.notes.filter(Boolean).join(', ');
-    if (note) tbl.append(h('tr', {}, h('td', {}, ''), h('td', { class: 'note', colSpan: 2 }, note)));
+    if (note) tbl.append(h('tr', {}, h('td', {}, ''), h('td', { class: 'note', colSpan: cols.length }, note)));
   });
   if (!standard)
-    tbl.append(h('tr', { class: 'total' }, h('td', {}, 'Σ'), h('td', {}, String(v.teamScores[0])), h('td', {}, String(v.teamScores[1]))));
+    tbl.append(h('tr', { class: 'total' }, h('td', {}, 'Σ'), cols.map((c) => h('td', {}, String(v.teamScores[c])))));
   seenRows = rows.length;
   el.append(h('div', { class: 'tear' }, '— ✂ —'), tbl);
   // Unterschriften

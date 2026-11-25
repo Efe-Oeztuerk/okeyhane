@@ -6,6 +6,21 @@ import { isCompleteMelds, isCompletePairs, looseSum } from './evaluate.ts';
 
 export const teamOf = (seat: number) => seat % 2;
 
+/** Wer spielt mit und wer gehört zu welcher Wertung (Team oder einzeln) */
+export interface Seating {
+  /** aktive Plätze in Spielreihenfolge */
+  seats: number[];
+  /** Teams (0+2 gegen 1+3) oder alle gegen alle */
+  team: boolean;
+}
+/** Wertungs-Index eines Platzes: Team 0/1 oder der Platz selbst */
+export const sideOf = (s: Seating, seat: number) => (s.team ? seat % 2 : seat);
+/** alle aktiven Wertungs-Indizes */
+export const sidesOf = (s: Seating) => (s.team ? [0, 1] : [...s.seats]);
+/** leeres Punkte-Array passender Länge */
+export const zeroDelta = (s: Seating): number[] => (s.team ? [0, 0] : [0, 0, 0, 0]);
+export const TEAMS4: Seating = { seats: [0, 1, 2, 3], team: true };
+
 export interface FinishInfo {
   winner: number;
   withOkey: boolean;
@@ -16,7 +31,7 @@ export interface FinishInfo {
 
 /** Ergebnis einer Hand: Punktänderung pro Team und eine Notiz für den Zettel. */
 export interface HandResult {
-  teamDelta: [number, number];
+  teamDelta: number[];
   note: string;
   /** 101: Punkte pro Spieler (für Details) */
   playerDelta?: number[];
@@ -29,21 +44,22 @@ export interface HandResult {
 
 // ---------- Standard ----------
 
-export function scoreStandardFinish(rules: TableRules, f: FinishInfo): HandResult {
+export function scoreStandardFinish(rules: TableRules, f: FinishInfo, seating: Seating = TEAMS4): HandResult {
   const base = rules.colorful ? 4 : 2;
   let mult = 1;
   if (f.withOkey) mult *= 2;
   if (f.withPairs) mult *= 2;
-  const loser = 1 - teamOf(f.winner);
-  const delta: [number, number] = [0, 0];
-  delta[loser] = -base * mult;
+  const delta = zeroDelta(seating);
+  const win = sideOf(seating, f.winner);
+  for (const sd of sidesOf(seating)) if (sd !== win) delta[sd] = -base * mult;
   const parts = [f.withPairs ? 'Çift' : null, f.withOkey ? 'Okey' : null].filter(Boolean).join(' + ');
   return { teamDelta: delta, note: `Bitti${parts ? ' (' + parts + ')' : ''}` };
 }
 
-export function scoreStandardIndicator(rules: TableRules, shower: number): HandResult {
-  const delta: [number, number] = [0, 0];
-  delta[1 - teamOf(shower)] = rules.colorful ? -2 : -1;
+export function scoreStandardIndicator(rules: TableRules, shower: number, seating: Seating = TEAMS4): HandResult {
+  const delta = zeroDelta(seating);
+  const me = sideOf(seating, shower);
+  for (const sd of sidesOf(seating)) if (sd !== me) delta[sd] = rules.colorful ? -2 : -1;
   return { teamDelta: delta, note: 'Gösterge' };
 }
 
@@ -65,6 +81,7 @@ export function scorePerisanFinish(
   f: FinishInfo,
   hands: Tile[][],
   okeyBirBy: number | null,
+  seating: Seating = TEAMS4,
 ): HandResult {
   const M = perisanMultiplier(rules, okey);
   let W = 10;
@@ -77,14 +94,14 @@ export function scorePerisanFinish(
     W *= 2;
     F *= 2;
   }
-  const winTeam = teamOf(f.winner);
-  const delta: [number, number] = [0, 0];
+  const winTeam = sideOf(seating, f.winner);
+  const delta = zeroDelta(seating);
   delta[winTeam] = -M * W;
   const playerDelta = [0, 0, 0, 0];
   playerDelta[f.winner] = -M * W;
   const caught: number[] = [];
-  for (let seat = 0; seat < 4; seat++) {
-    if (teamOf(seat) === winTeam) continue;
+  for (const seat of seating.seats) {
+    if (sideOf(seating, seat) === winTeam) continue;
     const hand = hands[seat];
     const wasReady =
       hand.length === 14 &&
@@ -96,7 +113,7 @@ export function scorePerisanFinish(
     } else {
       playerDelta[seat] = looseSum(hand, okey) * M * F;
     }
-    delta[1 - winTeam] += playerDelta[seat];
+    delta[sideOf(seating, seat)] += playerDelta[seat];
   }
   const parts = [
     f.withPairs ? 'Çift' : null,
@@ -113,9 +130,9 @@ export function scorePerisanFinish(
   };
 }
 
-export function scorePerisanIndicator(rules: TableRules, okey: OkeyIdentity, shower: number): HandResult {
-  const delta: [number, number] = [0, 0];
-  delta[teamOf(shower)] = -perisanMultiplier(rules, okey) * 10;
+export function scorePerisanIndicator(rules: TableRules, okey: OkeyIdentity, shower: number, seating: Seating = TEAMS4): HandResult {
+  const delta = zeroDelta(seating);
+  delta[sideOf(seating, shower)] = -perisanMultiplier(rules, okey) * 10;
   return { teamDelta: delta, note: 'Gösterge' };
 }
 
@@ -132,6 +149,7 @@ export function score101Finish(
   okey: OkeyIdentity,
   f: FinishInfo & { elden: boolean },
   players: Player101[],
+  seating: Seating = TEAMS4,
 ): HandResult {
   const winnerBonus = -101;
   let mult = 1;
@@ -141,6 +159,7 @@ export function score101Finish(
     if (f.elden) mult *= 2;
   }
   const playerDelta = players.map((p, seat) => {
+    if (!seating.seats.includes(seat)) return 0;
     if (seat === f.winner) return winnerBonus + p.penalty;
     let pts: number;
     if (!p.opened) pts = 202;
@@ -150,8 +169,8 @@ export function score101Finish(
     }
     return pts * mult + p.penalty;
   });
-  const teamDelta: [number, number] = [0, 0];
-  playerDelta.forEach((d, seat) => (teamDelta[teamOf(seat)] += d));
+  const teamDelta = zeroDelta(seating);
+  for (const seat of seating.seats) teamDelta[sideOf(seating, seat)] += playerDelta[seat];
   const parts = [f.elden ? 'Elden' : null, f.withPairs ? 'Çift' : null, f.withOkey ? 'Okey' : null]
     .filter(Boolean)
     .join(' + ');
